@@ -16,6 +16,23 @@ cards:
       - entity: sensor.mein_pc_aktives_fenster
       - entity: sensor.mein_pc_betriebszeit
       - entity: switch.mein_pc_screenshots_senden
+      - entity: number.mein_pc_lautstarke
+      - entity: switch.mein_pc_ton_stumm
+      - entity: switch.mein_pc_mikrofon_stumm
+  - type: horizontal-stack
+    cards:
+      - type: button
+        entity: button.mein_pc_vorheriger_titel
+        name: Zurück
+        icon: mdi:skip-previous
+      - type: button
+        entity: button.mein_pc_wiedergabe_pause
+        name: Play/Pause
+        icon: mdi:play-pause
+      - type: button
+        entity: button.mein_pc_nachster_titel
+        name: Weiter
+        icon: mdi:skip-next
   - type: horizontal-stack
     cards:
       - type: button

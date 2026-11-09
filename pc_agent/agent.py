@@ -43,6 +43,7 @@ DEFAULT_CONFIG = {
                    "jpeg_quality": 55, "all_monitors": True},
     "sensors_interval_seconds": 15,
     "allow_power_commands": True,
+    "media_controls": True,
 }
 
 
@@ -175,6 +176,80 @@ def active_window_title() -> str:
         return ""
 
 
+# --------------------------------------------------------------------------- Audio (Lautstärke/Mikrofon)
+try:
+    import comtypes
+    from ctypes import POINTER as _POINTER
+    from ctypes import cast as _cast
+    from comtypes import CLSCTX_ALL as _CLSCTX_ALL
+    from pycaw.pycaw import AudioUtilities as _AU
+    from pycaw.pycaw import IAudioEndpointVolume as _IAEV
+    AUDIO_AVAILABLE = True
+except Exception:
+    AUDIO_AVAILABLE = False
+
+_com_local = threading.local()
+
+
+def _ensure_com():
+    if not getattr(_com_local, "ready", False):
+        try:
+            comtypes.CoInitialize()
+        except Exception:
+            pass
+        _com_local.ready = True
+
+
+def _speaker_ep():
+    return _AU.GetSpeakers().EndpointVolume
+
+
+def _mic_ep():
+    mic = _AU.GetMicrophone()
+    return _cast(mic.Activate(_IAEV._iid_, _CLSCTX_ALL, None), _POINTER(_IAEV))
+
+
+def get_volume() -> int:
+    _ensure_com()
+    return int(round(_speaker_ep().GetMasterVolumeLevelScalar() * 100))
+
+
+def set_volume(pct: int):
+    _ensure_com()
+    _speaker_ep().SetMasterVolumeLevelScalar(max(0, min(100, int(pct))) / 100.0, None)
+
+
+def get_mute() -> bool:
+    _ensure_com()
+    return bool(_speaker_ep().GetMute())
+
+
+def set_mute(on: bool):
+    _ensure_com()
+    _speaker_ep().SetMute(1 if on else 0, None)
+
+
+def get_mic_mute() -> bool:
+    _ensure_com()
+    return bool(_mic_ep().GetMute())
+
+
+def set_mic_mute(on: bool):
+    _ensure_com()
+    _mic_ep().SetMute(1 if on else 0, None)
+
+
+_MEDIA_VK = {"play_pause": 0xB3, "next": 0xB0, "prev": 0xB1, "stop": 0xB2}
+
+
+def media_key(name: str):
+    vk = _MEDIA_VK.get(name)
+    if vk and _win():
+        u = ctypes.windll.user32
+        u.keybd_event(vk, 0, 0, 0)
+        u.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP
+
+
 # --------------------------------------------------------------------------- Screenshot / Sensoren
 def grab_screenshot(opts: dict) -> bytes | None:
     try:
@@ -292,6 +367,29 @@ class Agent:
                 b["icon"] = icon
                 entities.append(("button", obj, b))
 
+        if self.cfg.get("media_controls", True):
+            for obj, name, icon in [("media_play_pause", "Wiedergabe/Pause", "mdi:play-pause"),
+                                    ("media_next", "Nächster Titel", "mdi:skip-next"),
+                                    ("media_prev", "Vorheriger Titel", "mdi:skip-previous")]:
+                b = base_entity(obj, name)
+                b["command_topic"] = f"{self.base}/button/{obj}"
+                b["icon"] = icon
+                entities.append(("button", obj, b))
+            if AUDIO_AVAILABLE:
+                n = base_entity("volume", "Lautstärke")
+                n["state_topic"] = f"{self.base}/number/volume/state"
+                n["command_topic"] = f"{self.base}/number/volume/set"
+                n.update({"min": 0, "max": 100, "step": 1, "mode": "slider",
+                          "unit_of_measurement": "%", "icon": "mdi:volume-high"})
+                entities.append(("number", "volume", n))
+                for obj, name, icon in [("mute", "Ton stumm", "mdi:volume-mute"),
+                                        ("mic_mute", "Mikrofon stumm", "mdi:microphone-off")]:
+                    s = base_entity(obj, name)
+                    s["state_topic"] = f"{self.base}/switch/{obj}/state"
+                    s["command_topic"] = f"{self.base}/switch/{obj}/set"
+                    s["icon"] = icon
+                    entities.append(("switch", obj, s))
+
         for component, obj, payload in entities:
             self.client.publish(f"{DISCOVERY_PREFIX}/{component}/{self.node_id}/{obj}/config",
                                 json.dumps(payload), retain=True)
@@ -311,6 +409,24 @@ class Agent:
         client.subscribe(f"{self.base}/switch/screenshots/set")
         client.publish(f"{self.base}/switch/screenshots/state",
                        "OFF" if self.screenshots_paused else "ON", retain=True)
+        if self.cfg.get("media_controls", True):
+            for obj in ("media_play_pause", "media_next", "media_prev"):
+                client.subscribe(f"{self.base}/button/{obj}")
+            if AUDIO_AVAILABLE:
+                client.subscribe(f"{self.base}/number/volume/set")
+                client.subscribe(f"{self.base}/switch/mute/set")
+                client.subscribe(f"{self.base}/switch/mic_mute/set")
+                self._publish_audio_state()
+
+    def _publish_audio_state(self):
+        if not (AUDIO_AVAILABLE and self.cfg.get("media_controls", True)):
+            return
+        try:
+            self.client.publish(f"{self.base}/number/volume/state", str(get_volume()))
+            self.client.publish(f"{self.base}/switch/mute/state", "ON" if get_mute() else "OFF")
+            self.client.publish(f"{self.base}/switch/mic_mute/state", "ON" if get_mic_mute() else "OFF")
+        except Exception:
+            log.exception("Audio-Status")
 
     def _on_disconnect(self, client, userdata, *args):
         if not self._stop.is_set():
@@ -325,6 +441,25 @@ class Agent:
             client.publish(f"{self.base}/switch/screenshots/state",
                            "OFF" if self.screenshots_paused else "ON", retain=True)
             return
+        # Medien / Lautstärke
+        if topic.endswith("/number/volume/set"):
+            try:
+                set_volume(int(float(payload)))
+            except Exception:
+                log.exception("Lautstärke")
+            self._publish_audio_state()
+            return
+        if topic.endswith("/switch/mute/set"):
+            set_mute(payload.upper() == "ON")
+            self._publish_audio_state()
+            return
+        if topic.endswith("/switch/mic_mute/set"):
+            set_mic_mute(payload.upper() == "ON")
+            self._publish_audio_state()
+            return
+        if "/button/media_" in topic:
+            media_key(topic.rsplit("/button/media_", 1)[-1])
+            return
         if not self.cfg.get("allow_power_commands", True):
             return
         action = topic.rsplit("/", 1)[-1]
@@ -338,6 +473,7 @@ class Agent:
             try:
                 for obj, val in read_sensors().items():
                     self.client.publish(f"{self.base}/sensor/{obj}", str(val))
+                self._publish_audio_state()
             except Exception:
                 log.exception("Sensoren")
             self._stop.wait(max(1, interval - 2))
@@ -481,6 +617,7 @@ def run_gui(manager: Manager):
         "quality": tk.StringVar(value=str(sc.get("jpeg_quality", 55))),
         "sens": tk.StringVar(value=str(cfg.get("sensors_interval_seconds", 15))),
         "power": tk.BooleanVar(value=cfg.get("allow_power_commands", True)),
+        "media": tk.BooleanVar(value=cfg.get("media_controls", True)),
         "autostart": tk.BooleanVar(value=autostart_enabled()),
     }
 
@@ -531,6 +668,12 @@ def run_gui(manager: Manager):
     ttk.Checkbutton(frm, text="Herunterfahren / Neustart / Sperren erlauben", variable=V["power"]
                     ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
     row += 1
+    media_text = "Medientasten & Lautstärke steuern"
+    if not AUDIO_AVAILABLE:
+        media_text += "  (Lautstärke/Mikrofon nicht verfügbar)"
+    ttk.Checkbutton(frm, text=media_text, variable=V["media"]
+                    ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+    row += 1
     ttk.Checkbutton(frm, text="Automatisch mit Windows starten", variable=V["autostart"]
                     ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
     row += 1
@@ -555,6 +698,7 @@ def run_gui(manager: Manager):
                            "all_monitors": True},
             "sensors_interval_seconds": num(V["sens"].get(), 15),
             "allow_power_commands": V["power"].get(),
+            "media_controls": V["media"].get(),
         }
 
     def on_test():
