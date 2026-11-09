@@ -8,3 +8,6 @@ __pycache__/
 # PC-Agent: lokale Konfiguration mit Zugangsdaten
 pc_agent/config.json
 pc_agent/venv/
+pc_agent/dist/
+pc_agent/build/
+pc_agent/*.spec
