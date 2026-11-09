@@ -11,6 +11,8 @@ das in den Einstellungen eingetragene Home Assistant gesendet, sonst nirgendwohi
 - **Knöpfe** – Herunterfahren, Neustart, Sperren, Energie sparen, Herunterfahren abbrechen
 - **Medien & Ton** – Lautstärke-Regler, Ton stumm, Mikrofon stumm, Wiedergabe/Pause,
   nächster/vorheriger Titel
+- **Programme & Spiele** – eigene Knöpfe, die ein Programm, eine Datei/einen Ordner
+  oder ein **Steam-Spiel** auf dem PC starten
 - **Schalter** – Screenshots senden an/aus
 
 ## Bedienung
@@ -21,6 +23,10 @@ das in den Einstellungen eingetragene Home Assistant gesendet, sonst nirgendwohi
 - Im Fenster: MQTT-Zugang, Gerätename, Screenshot-Takt/Größe, Sensoren-Takt,
   Abschaltbefehle erlauben, **„Automatisch mit Windows starten“**, sowie
   **„Verbindung testen“** und **„Speichern & Anwenden“**.
+- **Programme & Spiele:** Unter „Programm/Datei …“ eine `.exe` oder Datei wählen,
+  oder „Steam-Spiel …“ für eine Liste deiner installierten Steam-Spiele. Jeder
+  Eintrag wird nach „Speichern & Anwenden“ zu einem Knopf in HA, der ihn startet.
+  (Steam-Spiele brauchen ein installiertes, angemeldetes Steam.)
 
 ## Variante A – fertige .exe bauen (empfohlen)
 Einmalig, danach brauchst du kein Python mehr auf dem Ziel-PC.

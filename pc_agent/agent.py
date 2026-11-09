@@ -44,6 +44,7 @@ DEFAULT_CONFIG = {
     "sensors_interval_seconds": 15,
     "allow_power_commands": True,
     "media_controls": True,
+    "launchers": [],
 }
 
 
@@ -250,6 +251,74 @@ def media_key(name: str):
         u.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP
 
 
+# --------------------------------------------------------------------------- Programme / Spiele starten
+MAX_LAUNCHERS = 32
+
+
+def run_launcher(target: str):
+    """Startet ein Programm, eine Datei/Ordner, eine Steam-Spiel-URI oder eine URL."""
+    if not target:
+        return
+    t = os.path.expandvars(str(target)).strip()
+    try:
+        if t.lower().startswith(("steam://", "http://", "https://", "mailto:")):
+            os.startfile(t)  # Windows-Protokoll-Handler (z. B. Steam)
+        else:
+            os.startfile(t)  # Datei/Programm/Ordner mit Standardanwendung
+        log.info("Gestartet: %s", t)
+    except Exception:
+        log.exception("Start fehlgeschlagen: %s", t)
+
+
+_STEAM_SKIP = {"228980"}  # Steamworks Common Redistributables u. ä.
+
+
+def steam_path() -> "Path | None":
+    try:
+        import winreg
+    except Exception:
+        return None
+    for root, key, val in [(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+                           (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath")]:
+        try:
+            with winreg.OpenKey(root, key) as k:
+                return Path(winreg.QueryValueEx(k, val)[0])
+        except OSError:
+            continue
+    return None
+
+
+def steam_games() -> list[dict]:
+    """Liste installierter Steam-Spiele: [{'appid','name'}] (leer, wenn kein Steam)."""
+    import re
+    base = steam_path()
+    if not base:
+        return []
+    libs = [base]
+    vdf = base / "steamapps" / "libraryfolders.vdf"
+    try:
+        txt = vdf.read_text(encoding="utf-8", errors="replace")
+        for m in re.finditer(r'"path"\s*"([^"]+)"', txt):
+            libs.append(Path(m.group(1).replace("\\\\", "\\")))
+    except Exception:
+        pass
+    games: dict[str, str] = {}
+    for lib in libs:
+        apps = lib / "steamapps"
+        if not apps.exists():
+            continue
+        for f in apps.glob("appmanifest_*.acf"):
+            try:
+                t = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            a = re.search(r'"appid"\s*"(\d+)"', t)
+            n = re.search(r'"name"\s*"([^"]+)"', t)
+            if a and n and a.group(1) not in _STEAM_SKIP and "Redistributable" not in n.group(1):
+                games[a.group(1)] = n.group(1)
+    return sorted(({"appid": a, "name": n} for a, n in games.items()), key=lambda x: x["name"].lower())
+
+
 # --------------------------------------------------------------------------- Screenshot / Sensoren
 def grab_screenshot(opts: dict) -> bytes | None:
     try:
@@ -390,6 +459,19 @@ class Agent:
                     s["icon"] = icon
                     entities.append(("switch", obj, s))
 
+        # Programme / Spiele – entfernte zuerst löschen, dann aktuelle anlegen
+        launchers = (self.cfg.get("launchers") or [])[:MAX_LAUNCHERS]
+        for i in range(MAX_LAUNCHERS):
+            self.client.publish(f"{DISCOVERY_PREFIX}/button/{self.node_id}/launch_{i}/config",
+                                "", retain=True)
+        for i, item in enumerate(launchers):
+            if not item.get("target"):
+                continue
+            b = base_entity(f"launch_{i}", item.get("name") or f"Programm {i + 1}")
+            b["command_topic"] = f"{self.base}/button/launch_{i}"
+            b["icon"] = "mdi:steam" if str(item.get("target", "")).lower().startswith("steam://") else "mdi:rocket-launch"
+            entities.append(("button", f"launch_{i}", b))
+
         for component, obj, payload in entities:
             self.client.publish(f"{DISCOVERY_PREFIX}/{component}/{self.node_id}/{obj}/config",
                                 json.dumps(payload), retain=True)
@@ -417,6 +499,8 @@ class Agent:
                 client.subscribe(f"{self.base}/switch/mute/set")
                 client.subscribe(f"{self.base}/switch/mic_mute/set")
                 self._publish_audio_state()
+        for i in range(len(self.cfg.get("launchers") or [])):
+            client.subscribe(f"{self.base}/button/launch_{i}")
 
     def _publish_audio_state(self):
         if not (AUDIO_AVAILABLE and self.cfg.get("media_controls", True)):
@@ -459,6 +543,15 @@ class Agent:
             return
         if "/button/media_" in topic:
             media_key(topic.rsplit("/button/media_", 1)[-1])
+            return
+        if "/button/launch_" in topic:
+            try:
+                idx = int(topic.rsplit("/button/launch_", 1)[-1])
+            except ValueError:
+                return
+            ls = self.cfg.get("launchers") or []
+            if 0 <= idx < len(ls):
+                run_launcher(ls[idx].get("target"))
             return
         if not self.cfg.get("allow_power_commands", True):
             return
@@ -596,7 +689,7 @@ def run_gui(manager: Manager):
 
     root = tk.Tk()
     root.title(APP_NAME)
-    root.minsize(430, 560)
+    root.minsize(440, 680)
     try:
         root.iconbitmap(str(resource_path("icon.ico")))
     except Exception:
@@ -678,6 +771,106 @@ def run_gui(manager: Manager):
                     ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
     row += 1
 
+    # --- Programme & Spiele -----------------------------------------------
+    section("Programme & Spiele (je ein Button in HA)")
+    launchers = [dict(x) for x in (cfg.get("launchers") or [])]
+    lb = tk.Listbox(frm, height=5, activestyle="none")
+    lb.grid(row=row, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 4))
+    row += 1
+
+    def refresh_lb():
+        lb.delete(0, "end")
+        for it in launchers:
+            steam = str(it.get("target", "")).lower().startswith("steam://")
+            lb.insert("end", ("🎮 " if steam else "▶ ") + (it.get("name") or it.get("target", "")))
+
+    def add_file():
+        from tkinter import filedialog
+        p = filedialog.askopenfilename(
+            title="Programm oder Datei wählen",
+            filetypes=[("Programme", "*.exe *.lnk *.bat *.cmd"), ("Alle Dateien", "*.*")])
+        if p:
+            launchers.append({"name": Path(p).stem, "target": p})
+            refresh_lb()
+
+    def open_steam_dialog():
+        from tkinter import simpledialog
+        games = steam_games()
+        if not games:
+            appid = simpledialog.askstring(
+                APP_NAME, "Keine installierten Steam-Spiele gefunden.\nSteam-AppID von Hand eingeben:",
+                parent=root)
+            if appid and appid.strip().isdigit():
+                launchers.append({"name": f"Steam {appid.strip()}",
+                                  "target": f"steam://rungameid/{appid.strip()}"})
+                refresh_lb()
+            return
+        dlg = tk.Toplevel(root)
+        dlg.title("Steam-Spiel wählen")
+        dlg.transient(root)
+        dlg.grab_set()
+        dlg.geometry("360x430")
+        ttk.Label(dlg, text="Suchen:").pack(anchor="w", padx=10, pady=(10, 2))
+        search = tk.StringVar()
+        ent = ttk.Entry(dlg, textvariable=search)
+        ent.pack(fill="x", padx=10)
+        lst = tk.Listbox(dlg)
+        lst.pack(fill="both", expand=True, padx=10, pady=8)
+        view: list[dict] = []
+
+        def fill(*_):
+            q = search.get().lower()
+            lst.delete(0, "end")
+            view.clear()
+            for g in games:
+                if q in g["name"].lower():
+                    view.append(g)
+                    lst.insert("end", g["name"])
+
+        def choose(*_):
+            sel = lst.curselection()
+            if not sel:
+                return
+            g = view[sel[0]]
+            launchers.append({"name": g["name"], "target": f"steam://rungameid/{g['appid']}"})
+            refresh_lb()
+            dlg.destroy()
+
+        fill()
+        search.trace_add("write", fill)
+        lst.bind("<Double-Button-1>", choose)
+        bf = ttk.Frame(dlg)
+        bf.pack(fill="x", padx=10, pady=(0, 10))
+        ttk.Button(bf, text="Hinzufügen", command=choose).pack(side="right")
+        ttk.Button(bf, text="Abbrechen", command=dlg.destroy).pack(side="right", padx=6)
+        ent.focus_set()
+
+    def rename_sel():
+        from tkinter import simpledialog
+        sel = lb.curselection()
+        if not sel:
+            return
+        cur = launchers[sel[0]]
+        new = simpledialog.askstring(APP_NAME, "Anzeigename:", initialvalue=cur.get("name", ""), parent=root)
+        if new:
+            cur["name"] = new
+            refresh_lb()
+
+    def remove_sel():
+        sel = lb.curselection()
+        if sel:
+            launchers.pop(sel[0])
+            refresh_lb()
+
+    refresh_lb()
+    lbtn = ttk.Frame(frm)
+    lbtn.grid(row=row, column=0, columnspan=3, sticky="ew", padx=10)
+    row += 1
+    ttk.Button(lbtn, text="Programm/Datei …", command=add_file).pack(side="left")
+    ttk.Button(lbtn, text="Steam-Spiel …", command=open_steam_dialog).pack(side="left", padx=6)
+    ttk.Button(lbtn, text="Umbenennen", command=rename_sel).pack(side="left")
+    ttk.Button(lbtn, text="Entfernen", command=remove_sel).pack(side="right")
+
     status_var = tk.StringVar(value="")
     ttk.Label(frm, textvariable=status_var, foreground="#c96442").grid(
         row=row, column=0, columnspan=3, sticky="w", pady=(12, 2))
@@ -699,6 +892,7 @@ def run_gui(manager: Manager):
             "sensors_interval_seconds": num(V["sens"].get(), 15),
             "allow_power_commands": V["power"].get(),
             "media_controls": V["media"].get(),
+            "launchers": launchers,
         }
 
     def on_test():
