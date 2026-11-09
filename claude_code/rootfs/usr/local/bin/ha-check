@@ -1,0 +1,6 @@
+#!/bin/bash
+# Prüft die Home-Assistant-Konfiguration (wie Entwicklerwerkzeuge -> Konfiguration prüfen).
+set -euo pipefail
+resp="$(curl -sS -X POST -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/core/check)"
+echo "$resp" | jq .
+[ "$(echo "$resp" | jq -r .result)" = "ok" ]

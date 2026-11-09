@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Scripts run inside Linux containers: always LF
+*.sh text eol=lf
+Dockerfile text eol=lf
+claude_code/rootfs/** text eol=lf

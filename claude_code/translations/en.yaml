@@ -1,0 +1,13 @@
+configuration:
+  remote_control:
+    name: Remote Control
+    description: Keeps "claude remote-control" running so you can drive the add-on from claude.ai/code or the Claude app.
+  session_name:
+    name: Session name
+    description: Name shown for the session in claude.ai/code and the app.
+  model:
+    name: Model
+    description: Optional model (e.g. "sonnet" or "opus"). Empty = default.
+  permission_mode:
+    name: Permission mode
+    description: default = ask before changes, acceptEdits = auto-approve file edits, plan = plan only.

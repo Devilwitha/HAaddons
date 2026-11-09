@@ -1,0 +1,40 @@
+name: Claude Code
+version: "0.1.0"
+slug: claude_code
+description: Claude Code direkt auf HAOS – Web-Terminal plus Remote Control über claude.ai / Claude App
+url: https://github.com/Devilwitha/HAaddons
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+
+# Web-Terminal (ttyd) in der HA-Seitenleiste
+ingress: true
+ingress_port: 7681
+panel_icon: mdi:robot-outline
+panel_title: Claude Code
+
+# Zugriff auf die HA Core REST-API und Supervisor (Config-Check, Restart, Logs)
+homeassistant_api: true
+hassio_api: true
+hassio_role: homeassistant
+
+map:
+  - type: homeassistant_config
+    read_only: false
+    path: /config
+  - type: share
+    read_only: false
+
+options:
+  remote_control: true
+  session_name: HAOS
+  model: ""
+  permission_mode: default
+schema:
+  remote_control: bool
+  session_name: str
+  model: str?
+  permission_mode: list(default|acceptEdits|plan)
