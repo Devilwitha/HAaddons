@@ -57,8 +57,13 @@ function clearChat() {
   $("#empty").classList.remove("hidden");
 }
 
+function hasOpenPerm() {
+  for (const c of permCards.values()) if (!c.classList.contains("answered")) return true;
+  return false;
+}
+
 function showThinking() {
-  if (S.thinkingEl || S.stream) return;
+  if (S.thinkingEl || S.stream || hasOpenPerm()) return;
   S.thinkingEl = el("div", "thinking", `${ICON.spark}<span>Denkt nach …</span>`);
   msgs.append(S.thinkingEl); scrollDown();
 }
@@ -206,6 +211,7 @@ function permDone(id, allow) {
   const c = permCards.get(id); if (!c || c.classList.contains("answered")) return;
   c.classList.add("answered");
   c.append(el("div", "verdict muted", allow ? "✓ Erlaubt" : "✕ Abgelehnt"));
+  if (S.busy) showThinking();
 }
 
 // ------------------------------------------------------------------ WebSocket
@@ -232,11 +238,13 @@ function handle(m) {
     case "session":
       if (m.id !== S.session) { S.session = m.id; }
       loadSessions();
+      setTimeout(loadSessions, 2500); // Verlaufsdatei wird kurz danach geschrieben
       break;
     case "result":
       if (S.stream) { S.stream.classList.remove("cursor"); S.stream = null; }
       finishRunningTools();
       if (!m.ok && m.text) add(el("div", "notice", esc(m.text)));
+      loadSessions();
       break;
   }
 }

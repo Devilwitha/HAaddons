@@ -1,5 +1,5 @@
 name: Claude Code
-version: "0.2.1"
+version: "0.2.2"
 slug: claude_code
 description: Claude direkt in Home Assistant – Automationen und Änderungen per Chat, auch von unterwegs in der Claude App
 url: https://github.com/Devilwitha/HAaddons
