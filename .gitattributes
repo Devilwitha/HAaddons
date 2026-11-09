@@ -4,3 +4,6 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 claude_code/rootfs/** text eol=lf
+
+# PowerShell-Skripte: CRLF für Windows
+*.ps1 text eol=crlf

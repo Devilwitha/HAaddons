@@ -4,3 +4,7 @@ secrets*
 .secrets/
 __pycache__/
 *.pyc
+
+# PC-Agent: lokale Konfiguration mit Zugangsdaten
+pc_agent/config.json
+pc_agent/venv/

@@ -1,0 +1,38 @@
+# Beispiel-Dashboard-Karte für den HA PC Agent.
+# In Home Assistant: Übersicht -> Bearbeiten -> Karte hinzufügen -> Manuell -> einfügen.
+# Entitätsnamen ggf. an deinen device_name anpassen (hier: "Mein PC" -> mein_pc).
+type: vertical-stack
+cards:
+  - type: picture-entity
+    entity: camera.mein_pc_bildschirm
+    camera_view: live
+    show_name: true
+    show_state: false
+  - type: entities
+    title: Mein PC
+    entities:
+      - entity: sensor.mein_pc_cpu_auslastung
+      - entity: sensor.mein_pc_ram_auslastung
+      - entity: sensor.mein_pc_aktives_fenster
+      - entity: sensor.mein_pc_betriebszeit
+      - entity: switch.mein_pc_screenshots_senden
+  - type: horizontal-stack
+    cards:
+      - type: button
+        entity: button.mein_pc_sperren
+        name: Sperren
+        icon: mdi:lock
+      - type: button
+        entity: button.mein_pc_energie_sparen
+        name: Sleep
+        icon: mdi:sleep
+      - type: button
+        entity: button.mein_pc_neustart
+        name: Neustart
+        icon: mdi:restart
+      - type: button
+        entity: button.mein_pc_herunterfahren
+        name: Aus
+        icon: mdi:power
+        confirmation:
+          text: PC wirklich herunterfahren?

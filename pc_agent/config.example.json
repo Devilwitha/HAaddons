@@ -1,0 +1,18 @@
+{
+  "mqtt": {
+    "host": "192.168.1.201",
+    "port": 1883,
+    "username": "pc_agent",
+    "password": "BITTE-AENDERN"
+  },
+  "device_name": "Mein PC",
+  "screenshot": {
+    "enabled": true,
+    "interval_seconds": 10,
+    "max_width": 1280,
+    "jpeg_quality": 55,
+    "all_monitors": true
+  },
+  "sensors_interval_seconds": 15,
+  "allow_power_commands": true
+}
