@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claude Code</title>
+<link rel="stylesheet" href="static/app.css">
+</head>
+<body>
+
+<!-- ============ Anmeldung ============ -->
+<div id="login" class="login hidden">
+  <div class="login-card">
+    <div class="logo big"><svg viewBox="0 0 24 24"><path d="M12 2.5l1.9 6.2 6.1-2.3-3.9 5.1 4.9 4-6.4.2-.9 6.3-2.6-5.8-5.7 2.9 2.3-6-5.8-2.8 6.3-1.2-.9-6.3z"/></svg></div>
+    <h1>Mit Claude verbinden</h1>
+    <p class="muted">Melde dich einmal mit deinem Claude-Konto an. Danach bleibt die Verbindung bestehen – auch in der Claude App unter „Remote Control“.</p>
+    <div id="login-step1">
+      <button id="btn-login" class="btn primary wide">Anmelden</button>
+    </div>
+    <div id="login-step2" class="hidden">
+      <ol class="steps">
+        <li>Im neuen Fenster bei Claude anmelden und auf <b>Autorisieren</b> tippen.</li>
+        <li>Den angezeigten Code kopieren und hier einfügen.</li>
+      </ol>
+      <a id="login-link" class="small-link" target="_blank" rel="noopener">Anmeldeseite erneut öffnen</a>
+      <input id="login-code" class="input" placeholder="Code einfügen" autocomplete="off" spellcheck="false">
+      <button id="btn-code" class="btn primary wide">Verbinden</button>
+    </div>
+    <p id="login-error" class="error hidden"></p>
+  </div>
+</div>
+
+<!-- ============ App ============ -->
+<div id="app" class="app hidden">
+  <aside id="sidebar" class="sidebar">
+    <div class="side-top">
+      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24"><path d="M12 2.5l1.9 6.2 6.1-2.3-3.9 5.1 4.9 4-6.4.2-.9 6.3-2.6-5.8-5.7 2.9 2.3-6-5.8-2.8 6.3-1.2-.9-6.3z"/></svg></span>Claude Code</div>
+      <button id="btn-close-side" class="icon-btn only-mobile" aria-label="Schließen">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <button id="btn-new" class="new-chat">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Neuer Chat</button>
+    <div class="side-label">Verlauf</div>
+    <nav id="sessions" class="sessions"></nav>
+    <div class="side-foot">
+      <div id="rc-status" class="rc"><span class="dot"></span><span class="rc-text">Remote Control</span></div>
+      <div class="account">
+        <div class="avatar" id="avatar">?</div>
+        <div class="acc-text"><div id="acc-mail" class="acc-mail"></div><div id="acc-plan" class="muted small"></div></div>
+        <button id="btn-logout" class="icon-btn" title="Abmelden" aria-label="Abmelden">
+          <svg viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3M10 16l4-4-4-4M14 12H4"/></svg></button>
+      </div>
+    </div>
+  </aside>
+  <div id="scrim" class="scrim"></div>
+
+  <main class="main">
+    <header class="topbar">
+      <button id="btn-menu" class="icon-btn only-mobile" aria-label="Menü">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <div id="chat-title" class="chat-title"></div>
+      <button id="btn-new2" class="icon-btn only-mobile" aria-label="Neuer Chat">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </header>
+
+    <div id="scroll" class="scroll">
+      <div id="empty" class="empty">
+        <div class="logo big"><svg viewBox="0 0 24 24"><path d="M12 2.5l1.9 6.2 6.1-2.3-3.9 5.1 4.9 4-6.4.2-.9 6.3-2.6-5.8-5.7 2.9 2.3-6-5.8-2.8 6.3-1.2-.9-6.3z"/></svg></div>
+        <h2 id="greeting">Was steht an?</h2>
+        <div class="chips">
+          <button class="chip">Erstelle eine Automation: Flurlicht bei Bewegung nach Sonnenuntergang einschalten</button>
+          <button class="chip">Welche Geräte haben schwache Batterien?</button>
+          <button class="chip">Prüfe meine Konfiguration auf Fehler</button>
+          <button class="chip">Zeig mir eine Übersicht meiner Automationen</button>
+        </div>
+      </div>
+      <div id="messages" class="messages"></div>
+    </div>
+
+    <div class="composer-wrap">
+      <form id="composer" class="composer">
+        <textarea id="input" rows="1" placeholder="Schreib Claude, was geändert werden soll …"></textarea>
+        <div class="composer-row">
+          <span class="muted small hint only-desktop">Enter senden · Shift+Enter neue Zeile</span>
+          <button id="btn-send" class="send" type="submit" aria-label="Senden" disabled>
+            <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          <button id="btn-stop" class="send stop hidden" type="button" aria-label="Stoppen">
+            <svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg></button>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+
+<script src="static/marked.min.js"></script>
+<script src="static/purify.min.js"></script>
+<script src="static/app.js"></script>
+</body>
+</html>

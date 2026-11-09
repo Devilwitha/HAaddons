@@ -1,46 +1,29 @@
-# Claude Code für Home Assistant OS
+# Claude für Home Assistant
 
-Läuft Claude Code direkt auf deinem HAOS-Rechner (z. B. Raspberry Pi 4/5) mit
-Schreibzugriff auf `/config` und Zugriff auf die Home-Assistant-API. Über
-**Remote Control** steuerst du die Session vom Handy (Claude App) oder Browser
-(claude.ai/code) aus – Claude kann so Automationen anlegen, YAML ändern, die
-Konfiguration prüfen und neu laden.
+Chatte direkt in Home Assistant mit Claude – so wie auf claude.ai. Claude kann
+Automationen anlegen, deine Konfiguration ändern, prüfen und neu laden. Jede
+Änderung musst du vorher mit **Erlauben** bestätigen.
 
-## Voraussetzungen
-- Claude Pro/Max (oder Team/Enterprise) – Remote Control funktioniert nur mit
-  claude.ai-Login, nicht mit einem API-Key.
-- 64-bit HAOS (aarch64 oder amd64).
+Über **Remote Control** erscheint dein Home Assistant zusätzlich in der Claude App
+und auf claude.ai/code – so kannst du auch von unterwegs Änderungen machen.
 
-## Einrichtung
-1. Add-on starten, dann **Claude Code** in der Seitenleiste öffnen.
-2. Im Terminal `claude` eingeben und `/login` ausführen. Den angezeigten Link
-   im Browser öffnen, anmelden, den Code zurück ins Terminal kopieren.
-3. Claude mit `/exit` beenden. Das Fenster **remote** (`Ctrl-b 1`) verbindet sich
-   innerhalb von 30 Sekunden und zeigt einen Link/QR-Code.
-4. In der Claude App bzw. auf claude.ai/code erscheint die Session unter dem
-   eingestellten Namen (Standard: „HAOS“).
+## Erste Schritte
+1. Add-on starten und **Claude** in der Seitenleiste öffnen.
+2. Auf **Anmelden** tippen, im neuen Fenster mit deinem Claude-Konto anmelden.
+3. Den angezeigten Code kopieren, einfügen, **Verbinden** – fertig.
 
-Login und Einstellungen liegen in `/data/home` und überleben Updates und Neustarts.
+Die Anmeldung bleibt gespeichert, auch nach Updates und Neustarts.
+Voraussetzung ist ein Claude-Abo (Pro, Max, Team oder Enterprise).
 
 ## Optionen
 | Option | Bedeutung |
 |---|---|
-| `remote_control` | Remote Control dauerhaft laufen lassen |
-| `session_name` | Name der Session in App/Web |
-| `model` | Optionales Modell, z. B. `sonnet` oder `opus` |
-| `permission_mode` | `default` (fragt nach), `acceptEdits` (Dateiänderungen ohne Rückfrage), `plan` |
+| Remote Control | Home Assistant in der Claude App / auf claude.ai/code verfügbar machen |
+| Session-Name | Name, unter dem es dort erscheint (Standard: „HAOS“) |
+| Modell | Optional, z. B. `sonnet` oder `opus`. Leer = Standard |
+| Berechtigungsmodus | `default`: jede Änderung bestätigen · `acceptEdits`: Dateiänderungen ohne Rückfrage · `plan`: Claude macht erst einen Plan |
 
-## Helfer im Terminal
-- `ha-api GET /states` – Entitäten abfragen
-- `ha-api POST /services/automation/reload` – Automationen neu laden
-- `ha-check` – Konfiguration prüfen
-- `ha-logs 100` – Core-Log
-
-Claude kennt diese Befehle automatisch (über `~/.claude/haos-addon.md`).
-
-## Sicherheit
-Das Add-on kann deine gesamte HA-Konfiguration ändern und Dienste aufrufen.
-Lass `permission_mode` auf `default`, damit jede Änderung im Handy/Browser
-bestätigt werden muss, und erstelle vorher ein Backup – oder mach `/config` zu
-einem Git-Repository (`cd /config && git init && git add -A && git commit -m init`;
-`secrets.yaml` und `.storage` vorher in `.gitignore` eintragen).
+## Tipps
+- Mach vor größeren Änderungen ein Backup (Einstellungen → System → Backups).
+- Beispiele: „Schalte das Flurlicht bei Bewegung nach Sonnenuntergang ein“,
+  „Welche Batterien sind fast leer?“, „Prüfe meine Konfiguration“.

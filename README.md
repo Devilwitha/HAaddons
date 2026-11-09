@@ -7,9 +7,9 @@ Home-Assistant-Add-on-Repository.
 ## Add-ons
 
 ### [Claude Code](claude_code/)
-Claude Code direkt auf HAOS, mit Web-Terminal in der Seitenleiste und Remote Control
-über die Claude App oder claude.ai/code. Damit legst du Automationen an und änderst die
-Konfiguration, ohne am Rechner zu sitzen. Details: [DOCS.md](claude_code/DOCS.md)
+Chatte mit Claude direkt in der HA-Seitenleiste, im Stil von claude.ai. Claude legt
+Automationen an und ändert die Konfiguration, jede Änderung bestätigst du per Klick.
+Mit Remote Control geht das auch von unterwegs in der Claude App. Details: [DOCS.md](claude_code/DOCS.md)
 
 ## Installation
 Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories →

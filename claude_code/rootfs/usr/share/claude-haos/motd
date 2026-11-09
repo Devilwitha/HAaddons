@@ -1,9 +1,0 @@
-
-  Claude Code auf HAOS
-  ---------------------------------------------------------------
-  claude            Claude starten (beim ersten Mal: /login)
-  Ctrl-b 1          Fenster "remote" (Remote Control Status/Link)
-  Ctrl-b 0          zurück zur Shell
-  ha-api / ha-check / ha-logs   Helfer für die HA-API
-  ---------------------------------------------------------------
-
