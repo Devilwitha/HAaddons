@@ -319,7 +319,18 @@ function setAuto(on) {
   }
   if (on) for (const [id, c] of permCards) if (!c.classList.contains("answered") && !c.querySelector(".q")) permDone(id, true);
 }
-$("#btn-auto").onclick = () => send({ t: "auto", on: !S.auto });
+$("#btn-auto").onclick = async () => {
+  const want = !S.auto;
+  setAuto(want);  // sofort anzeigen
+  try {
+    const res = await fetch("api/auto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on: want }) });
+    if (!res.ok) throw new Error(res.status);
+    setAuto(!!(await res.json()).auto);
+  } catch (e) {
+    setAuto(!want);
+    alert("Die Einstellung konnte nicht gespeichert werden. Bitte noch einmal versuchen.");
+  }
+};
 document.querySelectorAll(".chip").forEach((c) => c.onclick = () => { input.value = c.textContent; autosize(); input.focus(); });
 $("#btn-new").onclick = newChat; $("#btn-new2").onclick = newChat;
 

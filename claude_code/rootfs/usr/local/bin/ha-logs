@@ -1,4 +1,5 @@
 #!/bin/bash
-# Letzte Zeilen des Home-Assistant-Core-Logs.   ha-logs [zeilen]
+# Letzte Zeilen des Home-Assistant-Core-Logs (ohne Farbcodes).   ha-logs [zeilen]
 set -euo pipefail
-curl -sS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/core/logs | tail -n "${1:-200}"
+curl -sS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/core/logs \
+    | sed 's/\x1b\[[0-9;]*m//g' | tail -n "${1:-200}"

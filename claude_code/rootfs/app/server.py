@@ -487,6 +487,21 @@ async def api_status(_req):
     })
 
 
+async def apply_auto(on: bool):
+    set_auto_mode(on)
+    log.info("Automatik-Modus %s", "an" if on else "aus")
+    await broadcast({"t": "auto", "on": on})
+    if on and runner:
+        await runner.approve_all_pending()
+    asyncio.create_task(RemoteControl.restart())
+
+
+async def api_auto(req):
+    on = bool((await req.json()).get("on"))
+    await apply_auto(on)
+    return web.json_response({"auto": auto_mode()})
+
+
 async def api_sessions(_req):
     return web.json_response(list_sessions())
 
@@ -522,13 +537,7 @@ async def ws_handler(req):
                 elif t == "perm" and runner:
                     await runner.answer(d["id"], bool(d.get("allow")), bool(d.get("always")), d.get("answers"))
                 elif t == "auto":
-                    on = bool(d.get("on"))
-                    set_auto_mode(on)
-                    log.info("Automatik-Modus %s", "an" if on else "aus")
-                    await broadcast({"t": "auto", "on": on})
-                    if on and runner:
-                        await runner.approve_all_pending()
-                    asyncio.create_task(RemoteControl.restart())
+                    await apply_auto(bool(d.get("on")))
                 elif t == "stop" and runner:
                     await runner.interrupt()
                 elif t == "new":
@@ -555,6 +564,7 @@ def main():
         web.get("/ws", ws_handler),
         web.get("/api/status", api_status),
         web.get("/api/sessions", api_sessions),
+        web.post("/api/auto", api_auto),
         web.get("/api/sessions/{sid}", api_session),
         web.post("/api/auth/login", auth_login),
         web.post("/api/auth/code", auth_code),
