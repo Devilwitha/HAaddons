@@ -81,6 +81,11 @@
       <form id="composer" class="composer">
         <textarea id="input" rows="1" placeholder="Schreib Claude, was geändert werden soll …"></textarea>
         <div class="composer-row">
+          <button id="btn-auto" class="auto-toggle" type="button" role="switch" aria-checked="false"
+                  title="Automatisch: Claude führt Änderungen ohne Rückfrage aus">
+            <span class="switch"><span class="knob"></span></span>
+            <span class="auto-label">Nachfragen</span>
+          </button>
           <span class="muted small hint only-desktop">Enter senden · Shift+Enter neue Zeile</span>
           <button id="btn-send" class="send" type="submit" aria-label="Senden" disabled>
             <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>

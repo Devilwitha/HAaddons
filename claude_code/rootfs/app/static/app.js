@@ -228,6 +228,7 @@ function handle(m) {
     case "perm": renderPerm(m); break;
     case "perm_done": permDone(m.id, m.allow); break;
     case "busy": setBusy(m.busy); break;
+    case "auto": setAuto(m.on); break;
     case "session":
       if (m.id !== S.session) { S.session = m.id; }
       loadSessions();
@@ -294,6 +295,23 @@ $("#composer").addEventListener("submit", (e) => {
   input.value = ""; autosize();
 });
 $("#btn-stop").onclick = () => send({ t: "stop" });
+
+// Automatik-Schalter: Claude arbeitet ohne Rückfragen
+S.auto = false;
+function setAuto(on) {
+  const changed = S.auto !== on && S.autoKnown;
+  S.auto = on; S.autoKnown = true;
+  const b = $("#btn-auto");
+  b.classList.toggle("on", on);
+  b.setAttribute("aria-checked", String(on));
+  b.querySelector(".auto-label").textContent = on ? "Automatisch" : "Nachfragen";
+  if (changed && msgs.children.length) {
+    add(el("div", "auto-note", on ? "Automatik an – Claude führt Änderungen jetzt ohne Rückfrage aus."
+                                  : "Automatik aus – Claude fragt wieder vor jeder Änderung."));
+  }
+  if (on) for (const [id, c] of permCards) if (!c.classList.contains("answered") && !c.querySelector(".q")) permDone(id, true);
+}
+$("#btn-auto").onclick = () => send({ t: "auto", on: !S.auto });
 document.querySelectorAll(".chip").forEach((c) => c.onclick = () => { input.value = c.textContent; autosize(); input.focus(); });
 $("#btn-new").onclick = newChat; $("#btn-new2").onclick = newChat;
 
@@ -328,7 +346,7 @@ async function boot() {
   showRc(st.remote); greet();
   if (!S.ws) connect();
   if (st.session) await openSession(st.session, false); else await loadSessions();
-  setBusy(st.busy);
+  setBusy(st.busy); setAuto(!!st.auto);
   setInterval(async () => { try { showRc((await status()).remote); } catch {} }, 15000);
 }
 

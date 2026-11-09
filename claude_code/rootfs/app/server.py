@@ -32,6 +32,34 @@ def options() -> dict:
         return {}
 
 
+# UI-Einstellungen (z. B. Automatik-Modus), persistent in /data
+UI_SETTINGS_FILE = Path(os.environ.get("CC_UI_SETTINGS", "/data/ui_settings.json"))
+
+
+def ui_settings() -> dict:
+    try:
+        return json.loads(UI_SETTINGS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def auto_mode() -> bool:
+    return bool(ui_settings().get("auto"))
+
+
+def set_auto_mode(on: bool):
+    s = ui_settings()
+    s["auto"] = on
+    try:
+        UI_SETTINGS_FILE.write_text(json.dumps(s))
+    except OSError:
+        log.exception("Einstellungen konnten nicht gespeichert werden")
+
+
+# Abfragen, die auch im Automatik-Modus den Benutzer brauchen
+NEEDS_USER = {"AskUserQuestion"}
+
+
 def projects_dir() -> Path:
     base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     return base / "projects" / re.sub(r"[^a-zA-Z0-9]", "-", CWD)
@@ -107,7 +135,13 @@ class Runner:
         await self._write({"type": "user", "message": {"role": "user", "content": text},
                            "parent_tool_use_id": None, "session_id": self.session_id or "default"})
 
-    async def answer(self, rid: str, allow: bool, always: bool = False, answers: dict | None = None):
+    async def approve_all_pending(self):
+        for rid, req in list(self.pending.items()):
+            if req.get("tool_name") not in NEEDS_USER:
+                await self.answer(rid, True)
+
+    async def answer(self, rid: str, allow: bool, always: bool = False, answers: dict | None = None,
+                     quiet: bool = False):
         req = self.pending.pop(rid, None)
         if not req:
             return
@@ -122,7 +156,8 @@ class Runner:
             resp = {"behavior": "deny", "message": "Der Benutzer hat das abgelehnt."}
         await self._write({"type": "control_response",
                            "response": {"subtype": "success", "request_id": rid, "response": resp}})
-        await broadcast({"t": "perm_done", "id": rid, "allow": allow})
+        if not quiet:
+            await broadcast({"t": "perm_done", "id": rid, "allow": allow})
 
     async def interrupt(self):
         if self.alive() and self.busy:
@@ -169,6 +204,9 @@ class Runner:
                 req = o.get("request", {})
                 if req.get("subtype") == "can_use_tool":
                     self.pending[o["request_id"]] = req
+                    if auto_mode() and req.get("tool_name") not in NEEDS_USER:
+                        await self.answer(o["request_id"], True, quiet=True)
+                        continue
                     await broadcast({"t": "perm", "id": o["request_id"], "tool": req.get("tool_name"),
                                      "input": req.get("input"), "description": req.get("description"),
                                      "can_always": bool(req.get("permission_suggestions"))})
@@ -370,9 +408,19 @@ class RemoteControl:
         if cls.proc and cls.proc.returncode is None:
             cls.proc.kill()
 
+    bypass_failed = False  # bypassPermissions als root abgelehnt -> acceptEdits als Ersatz
+
+    @classmethod
+    async def restart(cls):
+        """Mit neuen Einstellungen (z. B. Automatik) sofort neu starten."""
+        cls.bypass_failed = False
+        await cls.stop()
+        cls.kick()
+
     @classmethod
     async def loop(cls):
         while True:
+            cls._wake.clear()
             opts = options()
             if not opts.get("remote_control", True):
                 cls.state = "aus"
@@ -380,10 +428,20 @@ class RemoteControl:
                 cls.state = "wartet auf Anmeldung"
             else:
                 cls.state = "verbindet"
+                env = dict(os.environ)
+                mode = opts.get("permission_mode") or "default"
+                use_bypass = auto_mode() and not cls.bypass_failed
+                if use_bypass:
+                    mode = "bypassPermissions"
+                    env["IS_SANDBOX"] = "1"  # Container läuft als root
+                elif auto_mode():
+                    mode = "acceptEdits"
                 args = [CLAUDE, "remote-control", "--name", opts.get("session_name") or "HAOS",
-                        "--permission-mode", opts.get("permission_mode") or "default"]
+                        "--permission-mode", mode]
+                log.info("remote-control startet (Modus %s)", mode)
+                started = time.time()
                 cls.proc = await asyncio.create_subprocess_exec(
-                    *args, cwd=CWD, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                    *args, cwd=CWD, env=env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT)
                 proc = cls.proc
 
@@ -400,8 +458,11 @@ class RemoteControl:
                 code = await proc.wait()
                 activate.cancel()
                 log.info("remote-control beendet (exit %s)", code)
+                if use_bypass and code not in (0, None, -9) and time.time() - started < 15:
+                    log.warning("bypassPermissions nicht möglich – nutze acceptEdits")
+                    cls.bypass_failed = True
+                    cls.kick()
                 cls.state = "neu verbinden"
-            cls._wake.clear()
             try:
                 await asyncio.wait_for(cls._wake.wait(), 30)
             except asyncio.TimeoutError:
@@ -422,6 +483,7 @@ async def api_status(_req):
                    "state": RemoteControl.state},
         "session": runner.session_id if runner else None,
         "busy": bool(runner and runner.busy),
+        "auto": auto_mode(),
     })
 
 
@@ -440,6 +502,7 @@ async def ws_handler(req):
     ws = web.WebSocketResponse(heartbeat=25)
     await ws.prepare(req)
     clients.add(ws)
+    await ws.send_json({"t": "auto", "on": auto_mode()})
     if runner:
         await ws.send_json({"t": "busy", "busy": runner.busy})
         for rid, r in runner.pending.items():
@@ -458,6 +521,14 @@ async def ws_handler(req):
                     await r.send(d.get("text", ""))
                 elif t == "perm" and runner:
                     await runner.answer(d["id"], bool(d.get("allow")), bool(d.get("always")), d.get("answers"))
+                elif t == "auto":
+                    on = bool(d.get("on"))
+                    set_auto_mode(on)
+                    log.info("Automatik-Modus %s", "an" if on else "aus")
+                    await broadcast({"t": "auto", "on": on})
+                    if on and runner:
+                        await runner.approve_all_pending()
+                    asyncio.create_task(RemoteControl.restart())
                 elif t == "stop" and runner:
                     await runner.interrupt()
                 elif t == "new":

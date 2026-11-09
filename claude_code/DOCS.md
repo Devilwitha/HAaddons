@@ -15,6 +15,13 @@ und auf claude.ai/code – so kannst du auch von unterwegs Änderungen machen.
 Die Anmeldung bleibt gespeichert, auch nach Updates und Neustarts.
 Voraussetzung ist ein Claude-Abo (Pro, Max, Team oder Enterprise).
 
+## Automatik
+Unten links im Eingabefeld sitzt der Schalter **Nachfragen / Automatisch**.
+Steht er auf **Automatisch**, führt Claude Befehle und Dateiänderungen ohne Rückfrage
+aus. Das gilt auch für Remote Control in der Claude App. Nur wenn Claude dir eine
+echte Frage stellt (Auswahl), wartet es auf deine Antwort. Die Einstellung bleibt
+gespeichert.
+
 ## Optionen
 | Option | Bedeutung |
 |---|---|
