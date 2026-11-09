@@ -16,7 +16,7 @@ Write-Host "Installiere Abhaengigkeiten + PyInstaller ..."
 
 Write-Host "Baue .exe ..."
 & "$here\venv\Scripts\pyinstaller.exe" --noconsole --onefile `
-    --name "HA PC Agent" --icon "icon.ico" --add-data "icon.ico;." `
+    --name "HA PC Agent" --icon "$here\icon.ico" --add-data "$here\icon.ico;." `
     --distpath "$here\dist" --workpath "$here\build" --specpath "$here\build" `
     "$here\agent.py"
 
