@@ -1,4 +1,4 @@
-"""HA PC Agent – meldet diesen Windows-PC an das eigene Home Assistant.
+"""HA PC Agent – meldet diesen PC an das eigene Home Assistant.
 
 Transparentes Selbst-Überwachungs-Werkzeug (wie HASS.Agent): sichtbares Tray-Icon,
 Einstellungsfenster, alles abschaltbar. Verbindet sich per MQTT mit dem eigenen
@@ -7,21 +7,20 @@ Home Assistant und legt dort per MQTT-Discovery automatisch ein Gerät an mit:
   - Kamera: regelmäßiger Screenshot des Desktops
   - Sensoren: CPU, RAM, aktives Fenster, Betriebszeit (Akku nur bei Laptops)
   - Schalter/Knöpfe: Herunterfahren, Neustart, Sperren, Energie sparen
+  - Medien/Ton, Programme & Spiele
 
-Es läuft nur gegen das in den Einstellungen eingetragene Home Assistant. Nichts
-wird an Dritte gesendet. Fenster schließen minimiert in den Infobereich; Beenden
-über das Tray-Icon.
+Läuft unter Windows und Linux (inkl. Steam Deck / SteamOS und Bazzite). Es läuft
+nur gegen das in den Einstellungen eingetragene Home Assistant. Nichts wird an
+Dritte gesendet.
 """
 from __future__ import annotations
 
-import ctypes
 import io
 import json
 import logging
 import logging.handlers
 import os
 import socket
-import subprocess
 import sys
 import threading
 import time
@@ -29,11 +28,13 @@ from pathlib import Path
 
 import paho.mqtt.client as mqtt
 import psutil
-from PIL import Image, ImageDraw, ImageGrab
+from PIL import Image, ImageDraw
+
+import osbackend as osb
 
 APP_NAME = "HA PC Agent"
 DISCOVERY_PREFIX = "homeassistant"
-CREATE_NO_WINDOW = 0x08000000  # Windows: Unterprozess ohne Konsolenfenster
+MAX_LAUNCHERS = 32
 log = logging.getLogger("pc-agent")
 
 DEFAULT_CONFIG = {
@@ -48,33 +49,14 @@ DEFAULT_CONFIG = {
 }
 
 
-# --------------------------------------------------------------------------- Pfade / Umgebung
-def is_frozen() -> bool:
-    return bool(getattr(sys, "frozen", False))
-
-
-def data_dir() -> Path:
-    d = Path(os.environ.get("APPDATA", str(Path.home()))) / "HA-PC-Agent"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
+# --------------------------------------------------------------------------- Pfade
 def config_path() -> Path:
-    return data_dir() / "config.json"
+    return osb.data_dir() / "config.json"
 
 
 def resource_path(name: str) -> Path:
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
     return base / name
-
-
-def launch_target() -> tuple[str, str]:
-    """(Programm, Argumente) für den Autostart – exe direkt oder pythonw + Skript."""
-    if is_frozen():
-        return sys.executable, ""
-    pyw = Path(sys.executable).with_name("pythonw.exe")
-    exe = str(pyw if pyw.exists() else sys.executable)
-    return exe, f'"{os.path.abspath(__file__)}"'
 
 
 # --------------------------------------------------------------------------- Konfiguration
@@ -103,228 +85,10 @@ def config_is_valid(cfg: dict) -> bool:
     return bool(cfg.get("mqtt", {}).get("host"))
 
 
-# --------------------------------------------------------------------------- Autostart
-def autostart_link() -> Path:
-    startup = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Startup"
-    return startup / f"{APP_NAME}.lnk"
-
-
-def autostart_enabled() -> bool:
-    return autostart_link().exists()
-
-
-def set_autostart(enabled: bool):
-    lnk = autostart_link()
-    if not enabled:
-        if lnk.exists():
-            lnk.unlink()
-        return
-    target, args = launch_target()
-    workdir = str(Path(target).parent if is_frozen() else Path(__file__).parent)
-    ps = (
-        "$w=New-Object -ComObject WScript.Shell;"
-        f"$s=$w.CreateShortcut('{lnk}');"
-        f"$s.TargetPath='{target}';"
-        f"$s.Arguments='{args}';"
-        f"$s.WorkingDirectory='{workdir}';"
-        "$s.Save()"
-    )
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps],
-                   creationflags=CREATE_NO_WINDOW, check=False)
-
-
-# --------------------------------------------------------------------------- Windows-Aktionen
-def _win() -> bool:
-    return os.name == "nt"
-
-
-def do_lock():
-    if _win():
-        ctypes.windll.user32.LockWorkStation()
-
-
-def do_sleep():
-    if _win():
-        ctypes.windll.powrprof.SetSuspendState(0, 0, 0)
-
-
-def do_shutdown():
-    if _win():
-        subprocess.run(["shutdown", "/s", "/t", "5"], creationflags=CREATE_NO_WINDOW, check=False)
-
-
-def do_restart():
-    if _win():
-        subprocess.run(["shutdown", "/r", "/t", "5"], creationflags=CREATE_NO_WINDOW, check=False)
-
-
-def do_cancel_shutdown():
-    if _win():
-        subprocess.run(["shutdown", "/a"], creationflags=CREATE_NO_WINDOW, check=False)
-
-
-def active_window_title() -> str:
-    if not _win():
-        return ""
-    try:
-        u = ctypes.windll.user32
-        hwnd = u.GetForegroundWindow()
-        length = u.GetWindowTextLengthW(hwnd)
-        buf = ctypes.create_unicode_buffer(length + 1)
-        u.GetWindowTextW(hwnd, buf, length + 1)
-        return buf.value[:255]
-    except Exception:
-        return ""
-
-
-# --------------------------------------------------------------------------- Audio (Lautstärke/Mikrofon)
-try:
-    import comtypes
-    from ctypes import POINTER as _POINTER
-    from ctypes import cast as _cast
-    from comtypes import CLSCTX_ALL as _CLSCTX_ALL
-    from pycaw.pycaw import AudioUtilities as _AU
-    from pycaw.pycaw import IAudioEndpointVolume as _IAEV
-    AUDIO_AVAILABLE = True
-except Exception:
-    AUDIO_AVAILABLE = False
-
-_com_local = threading.local()
-
-
-def _ensure_com():
-    if not getattr(_com_local, "ready", False):
-        try:
-            comtypes.CoInitialize()
-        except Exception:
-            pass
-        _com_local.ready = True
-
-
-def _speaker_ep():
-    return _AU.GetSpeakers().EndpointVolume
-
-
-def _mic_ep():
-    mic = _AU.GetMicrophone()
-    return _cast(mic.Activate(_IAEV._iid_, _CLSCTX_ALL, None), _POINTER(_IAEV))
-
-
-def get_volume() -> int:
-    _ensure_com()
-    return int(round(_speaker_ep().GetMasterVolumeLevelScalar() * 100))
-
-
-def set_volume(pct: int):
-    _ensure_com()
-    _speaker_ep().SetMasterVolumeLevelScalar(max(0, min(100, int(pct))) / 100.0, None)
-
-
-def get_mute() -> bool:
-    _ensure_com()
-    return bool(_speaker_ep().GetMute())
-
-
-def set_mute(on: bool):
-    _ensure_com()
-    _speaker_ep().SetMute(1 if on else 0, None)
-
-
-def get_mic_mute() -> bool:
-    _ensure_com()
-    return bool(_mic_ep().GetMute())
-
-
-def set_mic_mute(on: bool):
-    _ensure_com()
-    _mic_ep().SetMute(1 if on else 0, None)
-
-
-_MEDIA_VK = {"play_pause": 0xB3, "next": 0xB0, "prev": 0xB1, "stop": 0xB2}
-
-
-def media_key(name: str):
-    vk = _MEDIA_VK.get(name)
-    if vk and _win():
-        u = ctypes.windll.user32
-        u.keybd_event(vk, 0, 0, 0)
-        u.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP
-
-
-# --------------------------------------------------------------------------- Programme / Spiele starten
-MAX_LAUNCHERS = 32
-
-
-def run_launcher(target: str):
-    """Startet ein Programm, eine Datei/Ordner, eine Steam-Spiel-URI oder eine URL."""
-    if not target:
-        return
-    t = os.path.expandvars(str(target)).strip()
-    try:
-        if t.lower().startswith(("steam://", "http://", "https://", "mailto:")):
-            os.startfile(t)  # Windows-Protokoll-Handler (z. B. Steam)
-        else:
-            os.startfile(t)  # Datei/Programm/Ordner mit Standardanwendung
-        log.info("Gestartet: %s", t)
-    except Exception:
-        log.exception("Start fehlgeschlagen: %s", t)
-
-
-_STEAM_SKIP = {"228980"}  # Steamworks Common Redistributables u. ä.
-
-
-def steam_path() -> "Path | None":
-    try:
-        import winreg
-    except Exception:
-        return None
-    for root, key, val in [(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
-                           (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath")]:
-        try:
-            with winreg.OpenKey(root, key) as k:
-                return Path(winreg.QueryValueEx(k, val)[0])
-        except OSError:
-            continue
-    return None
-
-
-def steam_games() -> list[dict]:
-    """Liste installierter Steam-Spiele: [{'appid','name'}] (leer, wenn kein Steam)."""
-    import re
-    base = steam_path()
-    if not base:
-        return []
-    libs = [base]
-    vdf = base / "steamapps" / "libraryfolders.vdf"
-    try:
-        txt = vdf.read_text(encoding="utf-8", errors="replace")
-        for m in re.finditer(r'"path"\s*"([^"]+)"', txt):
-            libs.append(Path(m.group(1).replace("\\\\", "\\")))
-    except Exception:
-        pass
-    games: dict[str, str] = {}
-    for lib in libs:
-        apps = lib / "steamapps"
-        if not apps.exists():
-            continue
-        for f in apps.glob("appmanifest_*.acf"):
-            try:
-                t = f.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                continue
-            a = re.search(r'"appid"\s*"(\d+)"', t)
-            n = re.search(r'"name"\s*"([^"]+)"', t)
-            if a and n and a.group(1) not in _STEAM_SKIP and "Redistributable" not in n.group(1):
-                games[a.group(1)] = n.group(1)
-    return sorted(({"appid": a, "name": n} for a, n in games.items()), key=lambda x: x["name"].lower())
-
-
 # --------------------------------------------------------------------------- Screenshot / Sensoren
 def grab_screenshot(opts: dict) -> bytes | None:
-    try:
-        img = ImageGrab.grab(all_screens=bool(opts.get("all_monitors", True)))
-    except Exception:
-        log.exception("Screenshot fehlgeschlagen")
+    img = osb.capture_image(bool(opts.get("all_monitors", True)))
+    if img is None:
         return None
     max_w = int(opts.get("max_width", 1280))
     if max_w and img.width > max_w:
@@ -339,7 +103,7 @@ def read_sensors() -> dict:
     data = {
         "cpu": round(psutil.cpu_percent(interval=None), 1),
         "ram": round(psutil.virtual_memory().percent, 1),
-        "active_window": active_window_title() or "—",
+        "active_window": osb.active_window_title() or "—",
         "uptime": round((time.time() - psutil.boot_time()) / 3600, 1),
     }
     try:
@@ -371,6 +135,8 @@ class Agent:
         self.screenshots_paused = False
         self.status = "getrennt"
         self._stop = threading.Event()
+        self._media_keys = cfg.get("media_controls", True) and osb.media_controls_available()
+        self._audio = cfg.get("media_controls", True) and osb.AUDIO_AVAILABLE
 
         m = cfg.get("mqtt", {})
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=self.node_id)
@@ -385,7 +151,7 @@ class Agent:
 
     def _device_block(self) -> dict:
         return {"identifiers": [self.node_id], "name": self.device_name,
-                "manufacturer": "HA PC Agent", "model": "Windows PC", "sw_version": "1.1.0"}
+                "manufacturer": "HA PC Agent", "model": osb.os_model(), "sw_version": "1.2.0"}
 
     def _publish_discovery(self):
         dev = self._device_block()
@@ -436,7 +202,7 @@ class Agent:
                 b["icon"] = icon
                 entities.append(("button", obj, b))
 
-        if self.cfg.get("media_controls", True):
+        if self._media_keys:
             for obj, name, icon in [("media_play_pause", "Wiedergabe/Pause", "mdi:play-pause"),
                                     ("media_next", "Nächster Titel", "mdi:skip-next"),
                                     ("media_prev", "Vorheriger Titel", "mdi:skip-previous")]:
@@ -444,20 +210,20 @@ class Agent:
                 b["command_topic"] = f"{self.base}/button/{obj}"
                 b["icon"] = icon
                 entities.append(("button", obj, b))
-            if AUDIO_AVAILABLE:
-                n = base_entity("volume", "Lautstärke")
-                n["state_topic"] = f"{self.base}/number/volume/state"
-                n["command_topic"] = f"{self.base}/number/volume/set"
-                n.update({"min": 0, "max": 100, "step": 1, "mode": "slider",
-                          "unit_of_measurement": "%", "icon": "mdi:volume-high"})
-                entities.append(("number", "volume", n))
-                for obj, name, icon in [("mute", "Ton stumm", "mdi:volume-mute"),
-                                        ("mic_mute", "Mikrofon stumm", "mdi:microphone-off")]:
-                    s = base_entity(obj, name)
-                    s["state_topic"] = f"{self.base}/switch/{obj}/state"
-                    s["command_topic"] = f"{self.base}/switch/{obj}/set"
-                    s["icon"] = icon
-                    entities.append(("switch", obj, s))
+        if self._audio:
+            n = base_entity("volume", "Lautstärke")
+            n["state_topic"] = f"{self.base}/number/volume/state"
+            n["command_topic"] = f"{self.base}/number/volume/set"
+            n.update({"min": 0, "max": 100, "step": 1, "mode": "slider",
+                      "unit_of_measurement": "%", "icon": "mdi:volume-high"})
+            entities.append(("number", "volume", n))
+            for obj, name, icon in [("mute", "Ton stumm", "mdi:volume-mute"),
+                                    ("mic_mute", "Mikrofon stumm", "mdi:microphone-off")]:
+                s = base_entity(obj, name)
+                s["state_topic"] = f"{self.base}/switch/{obj}/state"
+                s["command_topic"] = f"{self.base}/switch/{obj}/set"
+                s["icon"] = icon
+                entities.append(("switch", obj, s))
 
         # Programme / Spiele – entfernte zuerst löschen, dann aktuelle anlegen
         launchers = (self.cfg.get("launchers") or [])[:MAX_LAUNCHERS]
@@ -491,24 +257,24 @@ class Agent:
         client.subscribe(f"{self.base}/switch/screenshots/set")
         client.publish(f"{self.base}/switch/screenshots/state",
                        "OFF" if self.screenshots_paused else "ON", retain=True)
-        if self.cfg.get("media_controls", True):
+        if self._media_keys:
             for obj in ("media_play_pause", "media_next", "media_prev"):
                 client.subscribe(f"{self.base}/button/{obj}")
-            if AUDIO_AVAILABLE:
-                client.subscribe(f"{self.base}/number/volume/set")
-                client.subscribe(f"{self.base}/switch/mute/set")
-                client.subscribe(f"{self.base}/switch/mic_mute/set")
-                self._publish_audio_state()
+        if self._audio:
+            client.subscribe(f"{self.base}/number/volume/set")
+            client.subscribe(f"{self.base}/switch/mute/set")
+            client.subscribe(f"{self.base}/switch/mic_mute/set")
+            self._publish_audio_state()
         for i in range(len(self.cfg.get("launchers") or [])):
             client.subscribe(f"{self.base}/button/launch_{i}")
 
     def _publish_audio_state(self):
-        if not (AUDIO_AVAILABLE and self.cfg.get("media_controls", True)):
+        if not self._audio:
             return
         try:
-            self.client.publish(f"{self.base}/number/volume/state", str(get_volume()))
-            self.client.publish(f"{self.base}/switch/mute/state", "ON" if get_mute() else "OFF")
-            self.client.publish(f"{self.base}/switch/mic_mute/state", "ON" if get_mic_mute() else "OFF")
+            self.client.publish(f"{self.base}/number/volume/state", str(osb.get_volume()))
+            self.client.publish(f"{self.base}/switch/mute/state", "ON" if osb.get_mute() else "OFF")
+            self.client.publish(f"{self.base}/switch/mic_mute/state", "ON" if osb.get_mic_mute() else "OFF")
         except Exception:
             log.exception("Audio-Status")
 
@@ -528,21 +294,21 @@ class Agent:
         # Medien / Lautstärke
         if topic.endswith("/number/volume/set"):
             try:
-                set_volume(int(float(payload)))
+                osb.set_volume(int(float(payload)))
             except Exception:
                 log.exception("Lautstärke")
             self._publish_audio_state()
             return
         if topic.endswith("/switch/mute/set"):
-            set_mute(payload.upper() == "ON")
+            osb.set_mute(payload.upper() == "ON")
             self._publish_audio_state()
             return
         if topic.endswith("/switch/mic_mute/set"):
-            set_mic_mute(payload.upper() == "ON")
+            osb.set_mic_mute(payload.upper() == "ON")
             self._publish_audio_state()
             return
         if "/button/media_" in topic:
-            media_key(topic.rsplit("/button/media_", 1)[-1])
+            osb.media_key(topic.rsplit("/button/media_", 1)[-1])
             return
         if "/button/launch_" in topic:
             try:
@@ -551,13 +317,13 @@ class Agent:
                 return
             ls = self.cfg.get("launchers") or []
             if 0 <= idx < len(ls):
-                run_launcher(ls[idx].get("target"))
+                osb.run_launcher(ls[idx].get("target"))
             return
         if not self.cfg.get("allow_power_commands", True):
             return
         action = topic.rsplit("/", 1)[-1]
-        {"shutdown": do_shutdown, "restart": do_restart, "lock": do_lock,
-         "sleep": do_sleep, "cancel_shutdown": do_cancel_shutdown}.get(action, lambda: None)()
+        {"shutdown": osb.do_shutdown, "restart": osb.do_restart, "lock": osb.do_lock,
+         "sleep": osb.do_sleep, "cancel_shutdown": osb.do_cancel_shutdown}.get(action, lambda: None)()
 
     def _sensor_loop(self):
         interval = int(self.cfg.get("sensors_interval_seconds", 15))
@@ -711,7 +477,7 @@ def run_gui(manager: Manager):
         "sens": tk.StringVar(value=str(cfg.get("sensors_interval_seconds", 15))),
         "power": tk.BooleanVar(value=cfg.get("allow_power_commands", True)),
         "media": tk.BooleanVar(value=cfg.get("media_controls", True)),
-        "autostart": tk.BooleanVar(value=autostart_enabled()),
+        "autostart": tk.BooleanVar(value=osb.autostart_enabled()),
     }
 
     pad = {"padx": 10, "pady": 4}
@@ -755,6 +521,11 @@ def run_gui(manager: Manager):
     field("Takt (Sekunden)", V["interval"], width=8)
     field("Max. Breite (px)", V["width"], width=8)
     field("JPEG-Qualität (1–95)", V["quality"], width=8)
+    if not osb.screenshot_available():
+        ttk.Label(frm, text="Hinweis: kein Screenshot-Werkzeug gefunden "
+                            "(z. B. spectacle/grim installieren).", foreground="#c96442"
+                  ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        row += 1
 
     section("Weiteres")
     field("Sensoren-Takt (Sekunden)", V["sens"], width=8)
@@ -762,12 +533,19 @@ def run_gui(manager: Manager):
                     ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
     row += 1
     media_text = "Medientasten & Lautstärke steuern"
-    if not AUDIO_AVAILABLE:
-        media_text += "  (Lautstärke/Mikrofon nicht verfügbar)"
+    missing = []
+    if not osb.AUDIO_AVAILABLE:
+        missing.append("Lautstärke/Mikrofon")
+    if not osb.media_controls_available():
+        missing.append("Medientasten")
+    if missing:
+        media_text += f"  ({' & '.join(missing)} nicht verfügbar)"
     ttk.Checkbutton(frm, text=media_text, variable=V["media"]
                     ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
     row += 1
-    ttk.Checkbutton(frm, text="Automatisch mit Windows starten", variable=V["autostart"]
+    autostart_text = ("Automatisch mit Windows starten" if osb.IS_WINDOWS
+                      else "Automatisch beim Anmelden starten")
+    ttk.Checkbutton(frm, text=autostart_text, variable=V["autostart"]
                     ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
     row += 1
 
@@ -786,16 +564,18 @@ def run_gui(manager: Manager):
 
     def add_file():
         from tkinter import filedialog
-        p = filedialog.askopenfilename(
-            title="Programm oder Datei wählen",
-            filetypes=[("Programme", "*.exe *.lnk *.bat *.cmd"), ("Alle Dateien", "*.*")])
+        if osb.IS_WINDOWS:
+            ftypes = [("Programme", "*.exe *.lnk *.bat *.cmd"), ("Alle Dateien", "*.*")]
+        else:
+            ftypes = [("Programme/Dateien", "*.desktop *.sh *.AppImage"), ("Alle Dateien", "*.*")]
+        p = filedialog.askopenfilename(title="Programm oder Datei wählen", filetypes=ftypes)
         if p:
             launchers.append({"name": Path(p).stem, "target": p})
             refresh_lb()
 
     def open_steam_dialog():
         from tkinter import simpledialog
-        games = steam_games()
+        games = osb.steam_games()
         if not games:
             appid = simpledialog.askstring(
                 APP_NAME, "Keine installierten Steam-Spiele gefunden.\nSteam-AppID von Hand eingeben:",
@@ -912,7 +692,7 @@ def run_gui(manager: Manager):
             return
         save_config(new)
         try:
-            set_autostart(V["autostart"].get())
+            osb.set_autostart(V["autostart"].get())
         except Exception:
             log.exception("Autostart setzen fehlgeschlagen")
         manager.restart()
@@ -934,69 +714,88 @@ def run_gui(manager: Manager):
         root.after(2000, refresh_status)
     refresh_status()
 
-    # --- Tray ---
-    import pystray
-    hinted = {"done": False}
+    # --- Tray (optional; auf manchen Linux-Desktops nicht verfügbar) ---
+    tray = None
+    try:
+        import pystray
+        hinted = {"done": False}
 
-    def show_window(icon=None, item=None):
-        root.after(0, lambda: (root.deiconify(), root.lift(), root.focus_force()))
+        def show_window(icon=None, item=None):
+            root.after(0, lambda: (root.deiconify(), root.lift(), root.focus_force()))
 
-    def toggle_pause(icon, item):
-        manager.set_paused(not manager.paused)
+        def toggle_pause(icon, item):
+            manager.set_paused(not manager.paused)
 
-    def quit_app(icon=None, item=None):
-        manager.stop()
-        try:
-            tray.stop()
-        except Exception:
-            pass
-        root.after(0, root.destroy)
-
-    tray = pystray.Icon(APP_NAME, tray_image(), APP_NAME, menu=pystray.Menu(
-        pystray.MenuItem("Einstellungen öffnen", show_window, default=True),
-        pystray.MenuItem(lambda i: "Screenshots: pausiert" if manager.paused else "Screenshots: aktiv",
-                         toggle_pause),
-        pystray.MenuItem("Beenden", quit_app),
-    ))
-    threading.Thread(target=tray.run, daemon=True).start()
-
-    def on_close():
-        root.withdraw()
-        if not hinted["done"]:
-            hinted["done"] = True
+        def quit_app(icon=None, item=None):
+            manager.stop()
             try:
-                tray.notify("Läuft weiter im Infobereich. Zum Beenden dort das Menü nutzen.", APP_NAME)
+                tray.stop()
             except Exception:
                 pass
+            root.after(0, root.destroy)
+
+        tray = pystray.Icon(APP_NAME, tray_image(), APP_NAME, menu=pystray.Menu(
+            pystray.MenuItem("Einstellungen öffnen", show_window, default=True),
+            pystray.MenuItem(lambda i: "Screenshots: pausiert" if manager.paused else "Screenshots: aktiv",
+                             toggle_pause),
+            pystray.MenuItem("Beenden", quit_app),
+        ))
+        threading.Thread(target=tray.run, daemon=True).start()
+    except Exception:
+        log.warning("Kein Infobereich-Symbol verfügbar – Fenster schließen beendet das Programm.")
+
+    def on_close():
+        if tray is not None:
+            root.withdraw()
+            if not hinted["done"]:
+                hinted["done"] = True
+                try:
+                    tray.notify("Läuft weiter im Infobereich. Zum Beenden dort das Menü nutzen.", APP_NAME)
+                except Exception:
+                    pass
+        else:
+            manager.stop()
+            root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_close)
 
-    # Beim ersten Start ohne gültige Konfiguration Fenster zeigen, sonst in den Tray
-    if config_is_valid(cfg):
+    # Beim ersten Start ohne gültige Konfiguration Fenster zeigen; sonst (mit Tray) verstecken
+    if config_is_valid(cfg) and tray is not None:
         root.after(200, root.withdraw)
 
     root.mainloop()
 
 
+# --------------------------------------------------------------------------- Headless (Dienst / ohne Anzeige)
+def run_headless(manager: Manager):
+    log.info("Starte ohne Fenster (headless).")
+    manager.restart()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        manager.stop()
+
+
 # --------------------------------------------------------------------------- main
 def main():
     handlers = [logging.handlers.RotatingFileHandler(
-        data_dir() / "agent.log", maxBytes=512_000, backupCount=2, encoding="utf-8")]
+        osb.data_dir() / "agent.log", maxBytes=512_000, backupCount=2, encoding="utf-8")]
     if sys.stderr:
         handlers.append(logging.StreamHandler())
     logging.basicConfig(level=logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     manager = Manager()
+
+    no_gui = "--no-gui" in sys.argv or "--service" in sys.argv
+    if no_gui or not osb.has_display():
+        run_headless(manager)
+        return
     try:
         run_gui(manager)
     except Exception:
         log.exception("GUI konnte nicht starten – laufe ohne Fenster weiter")
-        manager.restart()
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            manager.stop()
+        run_headless(manager)
 
 
 if __name__ == "__main__":
