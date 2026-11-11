@@ -43,6 +43,18 @@ Einmalig, danach brauchst du kein Python mehr auf dem Ziel-PC.
 1. `powershell -ExecutionPolicy Bypass -File install.ps1`
 2. Starten: `& ".\venv\Scripts\pythonw.exe" ".\agent.py"`
 
+## Raspberry Pi / Debian – ein Befehl (direkt aus GitHub)
+Auf dem Pi ein Terminal öffnen und einfügen:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Devilwitha/HAaddons/main/pc_agent/install_pi.sh | bash
+```
+Das installiert alles Nötige, fragt die Home-Assistant-Zugangsdaten ab (MQTT
+Host/Benutzer/Passwort, Gerätename) und richtet den Agent als Autostart-Dienst
+ein (`systemctl --user … ha-pc-agent`, läuft auch headless beim Booten).
+Denselben Befehl erneut ausführen = aktualisieren. Auf einem Pi ohne Bildschirm
+funktionieren Sensoren und Energie-Befehle; Screenshots brauchen eine laufende
+Desktop-Sitzung.
+
 ## Linux (Steam Deck / SteamOS, Bazzite, …)
 Am besten im **Desktop-Modus** einrichten (dort gibt es Fenster und Tray).
 1. Ordner `pc_agent` auf das Gerät kopieren, Terminal im Ordner öffnen.
