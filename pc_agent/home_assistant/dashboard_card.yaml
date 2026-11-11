@@ -13,6 +13,7 @@ cards:
     entities:
       - entity: sensor.mein_pc_cpu_auslastung
       - entity: sensor.mein_pc_ram_auslastung
+      - entity: sensor.mein_pc_temperatur
       - entity: sensor.mein_pc_aktives_fenster
       - entity: sensor.mein_pc_betriebszeit
       - entity: switch.mein_pc_screenshots_senden

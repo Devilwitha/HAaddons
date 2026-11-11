@@ -113,6 +113,9 @@ def read_sensors() -> dict:
     if bat is not None:
         data["battery"] = round(bat.percent, 0)
         data["battery_charging"] = "Ja" if bat.power_plugged else "Nein"
+    temp = osb.read_temperature()
+    if temp is not None:
+        data["temperature"] = temp
     return data
 
 
@@ -137,6 +140,7 @@ class Agent:
         self._stop = threading.Event()
         self._media_keys = cfg.get("media_controls", True) and osb.media_controls_available()
         self._audio = cfg.get("media_controls", True) and osb.AUDIO_AVAILABLE
+        self._has_temp = osb.read_temperature() is not None
 
         m = cfg.get("mqtt", {})
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=self.node_id)
@@ -167,6 +171,8 @@ class Agent:
                    ("ram", "RAM-Auslastung", "%", "mdi:memory", None),
                    ("active_window", "Aktives Fenster", None, "mdi:window-restore", None),
                    ("uptime", "Betriebszeit", "h", "mdi:clock-outline", None)]
+        if self._has_temp:
+            sensors += [("temperature", "Temperatur", "°C", "mdi:thermometer", "temperature")]
         if has_battery():
             sensors += [("battery", "Akku", "%", None, "battery"),
                         ("battery_charging", "Lädt", None, "mdi:power-plug", None)]

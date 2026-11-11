@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 log = logging.getLogger("pc-agent")
@@ -32,7 +33,8 @@ def _flags() -> int:
 
 
 def _run(cmd: list[str], timeout: float = 8) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=timeout,
                           creationflags=_flags(), check=False)
 
 
@@ -572,6 +574,87 @@ def run_launcher(target: str):
         log.info("Gestartet: %s", t)
     except Exception:
         log.exception("Start fehlgeschlagen: %s", t)
+
+
+# --------------------------------------------------------------------------- Temperatur (CPU/SoC)
+_temp_cache = {"t": 0.0, "val": None}
+
+
+def _linux_temp() -> "float | None":
+    try:
+        import psutil
+        temps = psutil.sensors_temperatures()
+    except Exception:
+        temps = {}
+    # bevorzugte CPU-/SoC-Sensoren (coretemp=Intel, k10temp/zenpower=AMD,
+    # cpu_thermal/soc_thermal=Raspberry Pi/ARM, acpitz=generisch)
+    for key in ("coretemp", "k10temp", "zenpower", "cpu_thermal",
+                "soc_thermal", "acpitz", "cpu-thermal"):
+        for name, entries in temps.items():
+            if name.lower() == key and entries:
+                cur = [t.current for t in entries if t.current]
+                if cur:
+                    return round(max(cur), 1)
+    for entries in temps.values():  # sonst irgendein vorhandener Sensor
+        cur = [t.current for t in entries if t.current]
+        if cur:
+            return round(max(cur), 1)
+    try:  # Raspberry Pi / generisch über sysfs
+        import glob
+        vals = []
+        for p in glob.glob("/sys/class/thermal/thermal_zone*/temp"):
+            try:
+                vals.append(int(Path(p).read_text().strip()) / 1000.0)
+            except Exception:
+                pass
+        if vals:
+            return round(max(vals), 1)
+    except Exception:
+        pass
+    return None
+
+
+_WIN_TEMP_PS = r"""
+$ErrorActionPreference='SilentlyContinue'
+$v = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature |
+     Select-Object -ExpandProperty CurrentTemperature
+if ($v) { '{0:N1}' -f ((($v | Measure-Object -Maximum).Maximum)/10 - 273.15); exit }
+foreach ($ns in 'root/LibreHardwareMonitor','root/OpenHardwareMonitor') {
+  $s = Get-CimInstance -Namespace $ns -ClassName Sensor |
+       Where-Object { $_.SensorType -eq 'Temperature' -and $_.Name -match 'CPU' }
+  if ($s) { '{0:N1}' -f (($s | Measure-Object -Property Value -Maximum).Maximum); exit }
+}
+"""
+
+
+def _win_temp() -> "float | None":
+    """Windows: MSAcpi (meist Laptops) oder Libre/OpenHardwareMonitor, falls aktiv."""
+    try:
+        r = _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _WIN_TEMP_PS], timeout=8)
+        for tok in r.stdout.replace(",", ".").split():
+            try:
+                val = float(tok)
+                if -20 < val < 150:  # plausible CPU-Temperatur
+                    return round(val, 1)
+            except ValueError:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def read_temperature() -> "float | None":
+    """CPU-/SoC-Temperatur in °C (oder None, wenn nicht ermittelbar)."""
+    if IS_LINUX:
+        return _linux_temp()
+    if IS_WINDOWS:
+        now = time.monotonic()
+        if now - _temp_cache["t"] < 60 and _temp_cache["t"] > 0:
+            return _temp_cache["val"]
+        _temp_cache["val"] = _win_temp()
+        _temp_cache["t"] = now
+        return _temp_cache["val"]
+    return None
 
 
 _STEAM_SKIP = {"228980"}  # Steamworks Common Redistributables u. ä.

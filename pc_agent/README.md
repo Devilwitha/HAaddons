@@ -8,7 +8,9 @@ in den Einstellungen eingetragene Home Assistant gesendet, sonst nirgendwohin.
 
 ## Was in Home Assistant erscheint
 - **Kamera „Bildschirm“** – Screenshot des Desktops im eingestellten Takt
-- **Sensoren** – CPU, RAM, aktives Fenster, Betriebszeit (Akku nur bei Laptops)
+- **Sensoren** – CPU, RAM, Temperatur, aktives Fenster, Betriebszeit (Akku nur bei
+  Laptops; Temperatur unter Linux immer, unter Windows nur mit Sensorquelle wie
+  LibreHardwareMonitor)
 - **Knöpfe** – Herunterfahren, Neustart, Sperren, Energie sparen, Herunterfahren abbrechen
 - **Medien & Ton** – Lautstärke-Regler, Ton stumm, Mikrofon stumm, Wiedergabe/Pause,
   nächster/vorheriger Titel
