@@ -41,6 +41,23 @@ Einmalig, danach brauchst du kein Python mehr auf dem Ziel-PC.
 3. Ergebnis: `dist\HA PC Agent.exe`. Diese Datei irgendwohin kopieren und
    doppelklicken. Beim ersten Start öffnet sich das Einstellungsfenster.
 
+### Automatische Updates (Windows-.exe)
+Die .exe prüft beim Start und dann alle paar Stunden, ob auf GitHub ein neueres
+**Release** liegt, lädt es und tauscht sich beim Neustart selbst aus. Abschaltbar
+im Fenster („Automatisch über GitHub aktualisieren"); dort auch „Update suchen".
+
+Damit das funktioniert, muss die neue Version als Release veröffentlicht sein:
+```powershell
+powershell -ExecutionPolicy Bypass -File build.ps1 -Release
+```
+Das baut die .exe und lädt sie als Release `pcagent-v<Version>` hoch (einmalig
+`gh auth login` nötig; Version steht in `version.py`). Für jede neue Fassung die
+Nummer in `version.py` erhöhen und erneut `build.ps1 -Release` ausführen – alle
+installierten .exe ziehen dann von allein nach.
+
+> Hinweis: Eine bereits laufende alte .exe (ohne Update-Funktion) muss **einmalig**
+> von Hand durch die neue ersetzt werden; ab dann aktualisiert sie sich selbst.
+
 ## Variante B – aus dem Quelltext starten (Windows)
 1. `powershell -ExecutionPolicy Bypass -File install.ps1`
 2. Starten: `& ".\venv\Scripts\pythonw.exe" ".\agent.py"`

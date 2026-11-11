@@ -31,6 +31,8 @@ import psutil
 from PIL import Image, ImageDraw
 
 import osbackend as osb
+import updater
+from version import __version__ as APP_VERSION
 
 APP_NAME = "HA PC Agent"
 DISCOVERY_PREFIX = "homeassistant"
@@ -45,6 +47,7 @@ DEFAULT_CONFIG = {
     "sensors_interval_seconds": 15,
     "allow_power_commands": True,
     "media_controls": True,
+    "auto_update": True,
     "launchers": [],
 }
 
@@ -155,7 +158,7 @@ class Agent:
 
     def _device_block(self) -> dict:
         return {"identifiers": [self.node_id], "name": self.device_name,
-                "manufacturer": "HA PC Agent", "model": osb.os_model(), "sw_version": "1.2.0"}
+                "manufacturer": "HA PC Agent", "model": osb.os_model(), "sw_version": APP_VERSION}
 
     def _publish_discovery(self):
         dev = self._device_block()
@@ -484,6 +487,7 @@ def run_gui(manager: Manager):
         "power": tk.BooleanVar(value=cfg.get("allow_power_commands", True)),
         "media": tk.BooleanVar(value=cfg.get("media_controls", True)),
         "autostart": tk.BooleanVar(value=osb.autostart_enabled()),
+        "auto_update": tk.BooleanVar(value=cfg.get("auto_update", True)),
     }
 
     pad = {"padx": 10, "pady": 4}
@@ -553,6 +557,37 @@ def run_gui(manager: Manager):
                       else "Automatisch beim Anmelden starten")
     ttk.Checkbutton(frm, text=autostart_text, variable=V["autostart"]
                     ).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+    row += 1
+    upd_text = "Automatisch über GitHub aktualisieren"
+    if not osb.is_frozen():
+        upd_text += "  (nur in der .exe)"
+    ttk.Checkbutton(frm, text=upd_text, variable=V["auto_update"]
+                    ).grid(row=row, column=0, columnspan=2, sticky="w", **pad)
+
+    def on_check_update():
+        status_var.set("Suche nach Update …")
+
+        def work():
+            try:
+                res = updater.maybe_update(APP_VERSION, apply=osb.is_frozen(),
+                                           on_apply=manager.stop)
+                if res == "applying":
+                    root.after(0, lambda: (status_var.set("Update wird installiert – Neustart …")))
+                    time.sleep(0.5)
+                    os._exit(0)
+                elif res:
+                    root.after(0, lambda: messagebox.showinfo(
+                        APP_NAME, f"Update verfügbar: {res}\n(wird in der .exe automatisch installiert)"))
+                    root.after(0, lambda: status_var.set(f"Update verfügbar: {res}"))
+                else:
+                    root.after(0, lambda: (status_var.set(f"Aktuell ({APP_VERSION})."),
+                                           messagebox.showinfo(APP_NAME, f"Du hast die neueste Version ({APP_VERSION}).")))
+            except Exception as e:
+                root.after(0, lambda: status_var.set(f"Update-Prüfung fehlgeschlagen: {e}"))
+        threading.Thread(target=work, daemon=True).start()
+
+    ttk.Button(frm, text="Update suchen", command=on_check_update).grid(
+        row=row, column=2, sticky="e", **pad)
     row += 1
 
     # --- Programme & Spiele -----------------------------------------------
@@ -678,6 +713,7 @@ def run_gui(manager: Manager):
             "sensors_interval_seconds": num(V["sens"].get(), 15),
             "allow_power_commands": V["power"].get(),
             "media_controls": V["media"].get(),
+            "auto_update": V["auto_update"].get(),
             "launchers": launchers,
         }
 
@@ -772,6 +808,22 @@ def run_gui(manager: Manager):
     root.mainloop()
 
 
+# --------------------------------------------------------------------------- Auto-Update
+def _update_loop(manager: Manager):
+    """Prüft kurz nach dem Start und dann alle 6 h auf ein neues GitHub-Release."""
+    time.sleep(15)
+    while True:
+        try:
+            if load_config().get("auto_update", True):
+                res = updater.maybe_update(APP_VERSION, apply=True, on_apply=manager.stop)
+                if res == "applying":
+                    log.info("Beende zum Update-Austausch.")
+                    os._exit(0)
+        except Exception:
+            log.exception("Auto-Update")
+        time.sleep(6 * 3600)
+
+
 # --------------------------------------------------------------------------- Headless (Dienst / ohne Anzeige)
 def run_headless(manager: Manager):
     log.info("Starte ohne Fenster (headless).")
@@ -792,6 +844,7 @@ def main():
     logging.basicConfig(level=logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     manager = Manager()
+    threading.Thread(target=_update_loop, args=(manager,), daemon=True).start()
 
     no_gui = "--no-gui" in sys.argv or "--service" in sys.argv
     if no_gui or not osb.has_display():
