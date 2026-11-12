@@ -19,7 +19,7 @@ panel_title: Claude
 # Zugriff auf die HA Core REST-API und Supervisor (Config-Check, Restart, Logs)
 homeassistant_api: true
 hassio_api: true
-hassio_role: homeassistant
+hassio_role: manager
 
 map:
   - type: homeassistant_config
