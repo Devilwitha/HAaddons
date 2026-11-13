@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.1
+
+- Seitenleiste: Balken sind leer, solange noch keine Daten da sind (vorher voll)
+
 ## 1.1.0
 
 - Webseite: Benutzer online und gesamt, Forenbeiträge und -themen (gesamt und letzte 7 Tage), die drei letzten Forenbeiträge mit Link, Platzbedarf der Webseite auf der Festplatte nach Ordnern

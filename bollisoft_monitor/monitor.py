@@ -27,7 +27,7 @@ try:
 except ImportError:  # pragma: no cover - im Add-on immer installiert
     mqtt = None
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 OPTIONS_PATH = Path(os.environ.get("MONITOR_OPTIONS", "/data/options.json"))
 WEB_DIR = Path(__file__).resolve().parent / "web"
 AGENT_PORT = int(os.environ.get("MONITOR_AGENT_PORT", "8765"))

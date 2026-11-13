@@ -30,7 +30,7 @@
   .wide { grid-column: 1 / -1; }
   .big { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; margin: 6px 0; }
-  .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s; }
+  .bar > span { display: block; width: 0; height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s; }
   .bar.hot > span { background: var(--warn); } .bar.full > span { background: var(--bad); }
   .cores { display: grid; grid-template-columns: repeat(auto-fill, minmax(14px, 1fr)); gap: 3px; height: 34px; margin-top: 8px; }
   .cores span { background: var(--track); border-radius: 2px; position: relative; overflow: hidden; }
