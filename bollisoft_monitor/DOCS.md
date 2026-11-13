@@ -1,5 +1,7 @@
 # Bollisoft Server Monitor
 
+*Ein Add-on von BolliSoft.*
+
 Zeigt den Zustand des Bollisoft-Servers (Windows) in Home Assistant und kann ihn neu starten.
 Die Daten schickt der Agent `bollisoft-agent.exe` vom Server alle 10 Sekunden an dieses Add-on.
 

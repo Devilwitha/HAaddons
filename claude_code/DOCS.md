@@ -1,5 +1,7 @@
 # Claude für Home Assistant
 
+*Ein Add-on von BolliSoft.*
+
 Chatte direkt in Home Assistant mit Claude – so wie auf claude.ai. Claude kann
 Automationen anlegen, deine Konfiguration ändern, prüfen und neu laden. Jede
 Änderung musst du vorher mit **Erlauben** bestätigen.

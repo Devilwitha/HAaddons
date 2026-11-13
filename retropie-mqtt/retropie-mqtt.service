@@ -1,0 +1,13 @@
+[Unit]
+Description=RetroPie MQTT-Bridge für Home Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/retropie-mqtt daemon
+ExecStopPost=/usr/local/bin/retropie-mqtt offline
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

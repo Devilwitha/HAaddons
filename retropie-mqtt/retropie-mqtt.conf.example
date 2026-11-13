@@ -1,0 +1,19 @@
+# retropie-mqtt Konfiguration – wird nach /etc/retropie-mqtt.conf kopiert
+# (wird von bash eingelesen: Werte mit Leerzeichen in Anführungszeichen setzen)
+
+# MQTT-Broker, z. B. das Mosquitto-Add-on in Home Assistant
+MQTT_HOST=192.168.1.10
+MQTT_PORT=1883
+MQTT_USER=retropie
+MQTT_PASS=geheim
+
+# Name und ID des Geräts in Home Assistant (ID: nur a-z, 0-9, _ und -)
+DEVICE_NAME="RetroPie"
+DEVICE_ID=retropie
+
+# Neustart/Herunterfahren aus Home Assistant erlauben (yes/no)
+ALLOW_POWER=yes
+
+# Nur ändern, wenn abweichend vom Standard
+DISCOVERY_PREFIX=homeassistant
+RETROARCH_PORT=55355
