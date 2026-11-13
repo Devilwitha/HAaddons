@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bollisoft Server</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1c1f24; --muted: #5f6672; --line: #e2e5ea;
+    --accent: #1f6feb; --ok: #1a7f37; --warn: #b26b00; --bad: #cf222e; --track: #e8ebef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --card: #1b1f24; --text: #e6e8eb; --muted: #9aa3ad; --line: #2c3239;
+            --accent: #4c8dff; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --track: #2a3038; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 10px;
+           border-radius: 999px; background: var(--track); }
+  .badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .wide { grid-column: 1 / -1; }
+  .big { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; margin: 6px 0; }
+  .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s; }
+  .bar.hot > span { background: var(--warn); } .bar.full > span { background: var(--bad); }
+  .cores { display: grid; grid-template-columns: repeat(auto-fill, minmax(14px, 1fr)); gap: 3px; height: 34px; margin-top: 8px; }
+  .cores span { background: var(--track); border-radius: 2px; position: relative; overflow: hidden; }
+  .cores span i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td { padding: 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td:last-child { text-align: right; padding-left: 8px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
+           border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  .banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap;
+            align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--warn); }
+  .hidden { display: none !important; }
+  .model { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .model:last-child { border-bottom: 0; }
+  .break { overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="name">Bollisoft Server</h1>
+    <span id="conn" class="badge">…</span>
+    <span id="seen" class="muted"></span>
+  </header>
+  <div id="restart" class="banner hidden">
+    <span id="restart-text"></span>
+    <button data-action="cancel_restart">Neustart abbrechen</button>
+  </div>
+  <div id="notice" class="banner hidden"></div>
+  <div class="grid">
+    <section class="card">
+      <h2>CPU</h2>
+      <div class="big" id="cpu">–</div>
+      <div class="bar" id="cpu-bar"><span></span></div>
+      <div class="muted" id="cpu-info"></div>
+      <div class="cores" id="cores"></div>
+    </section>
+    <section class="card">
+      <h2>Arbeitsspeicher</h2>
+      <div class="big" id="ram">–</div>
+      <div class="bar" id="ram-bar"><span></span></div>
+      <div class="muted" id="ram-info"></div>
+    </section>
+    <section class="card">
+      <h2>Laufzeit</h2>
+      <div class="big" id="uptime">–</div>
+      <div class="muted" id="boot"></div>
+      <div class="muted" id="pending"></div>
+    </section>
+    <section class="card">
+      <h2>Netzwerk</h2>
+      <div class="row"><span>↓ empfangen</span><b id="down">–</b></div>
+      <div class="row"><span>↑ gesendet</span><b id="up">–</b></div>
+      <div class="muted" id="net-total"></div>
+    </section>
+    <section class="card">
+      <h2>Laufwerke</h2>
+      <div id="disks"></div>
+    </section>
+    <section class="card">
+      <h2>Ollama</h2>
+      <div class="row"><span id="ollama-state" class="badge">…</span><span class="muted" id="ollama-version"></span></div>
+      <div id="models" style="margin-top:8px"></div>
+      <div class="muted" id="ollama-info"></div>
+    </section>
+    <section class="card">
+      <h2>Dienste</h2>
+      <table id="checks"></table>
+    </section>
+    <section class="card">
+      <h2>Größte Prozesse</h2>
+      <table id="procs"></table>
+    </section>
+    <section class="card">
+      <h2>System</h2>
+      <table id="sys"></table>
+    </section>
+    <section class="card wide">
+      <h2>Aktionen</h2>
+      <div class="actions" id="actions"></div>
+      <table id="history" style="margin-top:10px"></table>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const GIB = 1024 ** 3;
+const gb = (b) => `${(b / GIB).toFixed(1)} GiB`;
+const pct = (v) => (v === null || v === undefined ? "–" : `${Math.round(v)} %`);
+const rate = (bps) => bps >= 1e6 ? `${(bps / 1e6).toFixed(1)} MB/s` : `${(bps / 1e3).toFixed(0)} kB/s`;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const time = (t) => new Date(t * 1000).toLocaleString("de-CH", { dateStyle: "short", timeStyle: "medium" });
+const CONFIRM = {
+  restart_server: "Server jetzt neu starten? Webseite, Spiele und Assistenten sind dann ein paar Minuten weg.",
+  restart_task: "Bollisoft-Server (Webseite, Spieleserver, Ollama) neu starten?",
+  ollama_unload: "Geladene Ollama-Modelle aus dem Speicher entladen?",
+};
+const STATE = { offen: "wartet", abgeholt: "läuft", ok: "erledigt", fehler: "Fehler" };
+
+function duration(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d} T ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+function bar(el, value) {
+  el.querySelector("span").style.width = `${Math.min(100, value || 0)}%`;
+  el.classList.toggle("hot", value >= 75 && value < 90);
+  el.classList.toggle("full", value >= 90);
+}
+function badge(el, ok, yes, no) {
+  el.textContent = ok ? yes : no;
+  el.className = `badge ${ok ? "ok" : "bad"}`;
+}
+
+function render(s) {
+  const r = s.report;
+  badge($("conn"), s.connected, "verbunden", r ? "keine Meldung" : "wartet auf den Agenten");
+  $("seen").textContent = s.last_seen ? `letzte Meldung ${time(s.last_seen)}` : "";
+  const notice = $("notice");
+  notice.classList.toggle("hidden", !s.token_missing);
+  notice.textContent = "In den Einstellungen des Add-ons ist noch kein Token gesetzt – der Agent wird abgelehnt.";
+  const restart = s.restart_at && s.restart_at > s.now - 600;
+  $("restart").classList.toggle("hidden", !restart);
+  if (restart) {
+    const left = Math.round(s.restart_at - s.now);
+    $("restart-text").textContent = left > 0 ? `Neustart in ${left} s geplant` : "Server startet neu …";
+  }
+  renderActions(s);
+  if (!r) return;
+  const sys = r.system, cpu = sys.cpu, mem = sys.memory;
+  $("name").textContent = r.agent.name || "Bollisoft Server";
+  $("cpu").textContent = pct(cpu.percent);
+  bar($("cpu-bar"), cpu.percent);
+  $("cpu-info").textContent = `${sys.cores} Kerne / ${sys.threads} Threads${cpu.freq_mhz ? ` · ${cpu.freq_mhz} MHz` : ""}${sys.temperature != null ? ` · ${sys.temperature} °C` : ""}`;
+  $("cores").innerHTML = (cpu.per_core || []).map((v) => `<span title="${Math.round(v)} %"><i style="height:${v}%"></i></span>`).join("");
+  $("ram").textContent = pct(mem.percent);
+  bar($("ram-bar"), mem.percent);
+  $("ram-info").textContent = `${gb(mem.used)} von ${gb(mem.total)} · Auslagerung ${pct(mem.swap_percent)}`;
+  $("uptime").textContent = duration(sys.uptime_s);
+  $("boot").textContent = `gestartet ${time(sys.boot_time)}`;
+  $("pending").innerHTML = sys.reboot_pending ? '<span class="warn">Neustart ausstehend (Updates)</span>' : "";
+  $("down").textContent = rate(r.network.recv_bps);
+  $("up").textContent = rate(r.network.sent_bps);
+  $("net-total").textContent = `seit Start: ↓ ${gb(r.network.recv_total)} · ↑ ${gb(r.network.sent_total)}`;
+  $("disks").innerHTML = r.disks.map((d) => `
+    <div class="row"><b>${esc(d.mount)}</b><span class="muted">${gb(d.free)} frei von ${gb(d.total)}</span></div>
+    <div class="bar ${d.percent >= 90 ? "full" : d.percent >= 75 ? "hot" : ""}"><span style="width:${d.percent}%"></span></div>`).join("");
+  const o = r.ollama;
+  badge($("ollama-state"), o.online, "online", "offline");
+  $("ollama-version").textContent = o.version ? `Version ${o.version}` : "";
+  $("models").innerHTML = (o.loaded || []).map((m) => {
+    const gpu = m.size ? Math.round(m.size_vram / m.size * 100) : 0;
+    const until = m.expires_at ? new Date(m.expires_at).toLocaleTimeString("de-CH", { timeStyle: "short" }) : "";
+    return `<div class="model"><div class="row"><b class="break">${esc(m.name)}</b><span>${gb(m.size)}</span></div>
+      <div class="muted">${esc(m.parameters)} ${esc(m.quantization)} · Kontext ${m.context} · ${gpu ? `${gpu} % GPU` : "nur CPU"}${until ? ` · bis ${until}` : ""}</div></div>`;
+  }).join("") || (o.online ? '<div class="muted">Kein Modell geladen</div>' : "");
+  $("ollama-info").textContent = o.online ? `${(o.installed || []).length} Modelle installiert · CPU ${o.cpu} % · ${Math.round((o.mem_mb || 0) / 1024)} GiB Prozesse` : "";
+  $("checks").innerHTML = r.checks.map((c) => `<tr><td><span class="${c.ok ? "ok" : "bad"}">●</span> ${esc(c.name)}</td>
+    <td>${c.ok ? `${c.ms} ms` : `<span class="bad">${c.status || "keine Antwort"}</span>`}</td></tr>`).join("") || '<tr><td class="muted">Keine Checks eingerichtet</td></tr>';
+  $("procs").innerHTML = r.top_processes.map((p) => `<tr><td class="break">${esc(p.name)}</td><td>${p.cpu} % · ${p.mem_mb} MB</td></tr>`).join("");
+  const gpu = r.gpu || {};
+  $("sys").innerHTML = [
+    ["Betriebssystem", sys.os], ["Prozessor", sys.cpu_model], ["Grafik", gpu.Name ? `${gpu.Name}${gpu.Status && gpu.Status !== "OK" ? ` (${gpu.Status})` : ""}` : "–"],
+    ["Rechner", sys.hostname], ["Prozesse", sys.processes], ["Agent", r.agent.version],
+  ].map(([k, v]) => `<tr><td class="muted">${k}</td><td class="break">${esc(v)}</td></tr>`).join("");
+}
+
+function renderActions(s) {
+  const box = $("actions");
+  const keys = Object.keys(s.actions).filter((k) => k !== "cancel_restart" || !s.restart_at);
+  const busy = new Set(s.commands.filter((c) => c.state === "offen" || c.state === "abgeholt").map((c) => c.action));
+  box.innerHTML = keys.map((k) => `<button data-action="${k}" class="${k === "restart_server" ? "danger" : ""}"
+    ${busy.has(k) || !s.connected ? "disabled" : ""}>${esc(s.actions[k])}</button>`).join("")
+    || '<span class="muted">Keine Aktionen freigegeben</span>';
+  $("history").innerHTML = s.commands.slice().reverse().map((c) => `<tr><td>${time(c.created)} · ${esc(c.label)}
+    <span class="muted">(${esc(c.source)})</span></td><td><span class="${c.state === "fehler" ? "bad" : c.state === "ok" ? "ok" : "warn"}">${STATE[c.state] || c.state}</span>
+    ${c.message ? `<div class="muted">${esc(c.message)}</div>` : ""}</td></tr>`).join("");
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const action = button.dataset.action;
+  if (CONFIRM[action] && !confirm(CONFIRM[action])) return;
+  button.disabled = true;
+  try {
+    const response = await fetch("api/command", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify({ action }) });
+    if (!response.ok) alert((await response.json()).error || "Fehler");
+  } catch (e) { alert("Add-on nicht erreichbar"); }
+  refresh();
+});
+
+async function refresh() {
+  try {
+    const response = await fetch("api/state", { cache: "no-store" });
+    if (response.ok) render(await response.json());
+  } catch (e) { badge($("conn"), false, "", "Add-on nicht erreichbar"); }
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

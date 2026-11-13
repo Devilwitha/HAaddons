@@ -11,6 +11,12 @@ Chatte mit Claude direkt in der HA-Seitenleiste, im Stil von claude.ai. Claude l
 Automationen an und ändert die Konfiguration, jede Änderung bestätigst du per Klick.
 Mit Remote Control geht das auch von unterwegs in der Claude App. Details: [DOCS.md](claude_code/DOCS.md)
 
+### [Bollisoft Server Monitor](bollisoft_monitor/)
+CPU, RAM, Laufwerke, Laufzeit, Netzwerk, Ollama und die Dienste eines Windows-Servers in der
+HA-Seitenleiste und als Sensoren – mit Knöpfen für Neustart (mit Vorlauf, abbrechbar), Neustart
+der Bollisoft-Dienste und Entladen der Ollama-Modelle. Kein Herunterfahren, kein Sleep. Die Daten
+schickt `bollisoft-agent.exe` vom Server. Details: [DOCS.md](bollisoft_monitor/DOCS.md)
+
 ## Installation
 Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories →
 `https://github.com/Devilwitha/HAaddons` hinzufügen.

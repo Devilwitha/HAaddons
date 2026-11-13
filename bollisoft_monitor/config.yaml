@@ -1,0 +1,31 @@
+name: Bollisoft Server Monitor
+version: "1.0.0"
+slug: bollisoft_monitor
+description: CPU, RAM, Laufwerke, Laufzeit, Dienste und Ollama des Bollisoft-Servers – mit Neustart-Knöpfen
+url: https://github.com/Devilwitha/HAaddons
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:server
+panel_title: Server
+homeassistant_api: true
+stdin: true
+services:
+  - mqtt:want
+ports:
+  8765/tcp: 8765
+ports_description:
+  8765/tcp: Meldungen vom Server-Agenten (bollisoft-agent.exe)
+options:
+  token: ""
+  offline_after: 60
+  use_mqtt: true
+schema:
+  token: password
+  offline_after: int(20,3600)
+  use_mqtt: bool

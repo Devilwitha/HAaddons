@@ -1,0 +1,12 @@
+configuration:
+  token:
+    name: Token
+    description: Shared secret with the agent (token in bollisoft-agent.ini). Use a long random value.
+  offline_after:
+    name: Offline after (seconds)
+    description: Without a report for this long the server counts as disconnected.
+  use_mqtt:
+    name: Use MQTT
+    description: With an MQTT broker, create a device with sensors and buttons; otherwise sensors only via the REST API.
+network:
+  8765/tcp: Reports from the server agent
