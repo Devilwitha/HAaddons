@@ -27,7 +27,7 @@ try:
 except ImportError:  # pragma: no cover - im Add-on immer installiert
     mqtt = None
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 OPTIONS_PATH = Path(os.environ.get("MONITOR_OPTIONS", "/data/options.json"))
 WEB_DIR = Path(__file__).resolve().parent / "web"
 AGENT_PORT = int(os.environ.get("MONITOR_AGENT_PORT", "8765"))
@@ -141,6 +141,39 @@ def entities(report, last_command):
         rows.append(((f"check_{slug(check['name'])}", "binary_sensor", f"{check['name']} erreichbar", None,
                       "connectivity", None, "mdi:web", None), bool(check.get("ok")),
                      {"HTTP": check.get("status"), "Antwort_ms": check.get("ms"), "Adresse": check.get("url")}))
+    rows += website_entities(report.get("website") or {})
+    return rows
+
+
+def website_entities(site):
+    """Benutzer, Forum und Platzbedarf der Webseite (nur, was der Agent liefert)."""
+    rows = []
+    if "users_total" in site:
+        posts = site.get("latest_posts") or []
+        rows += [
+            (("web_users_online", "sensor", "Benutzer online", None, None, "measurement", "mdi:account-clock", None),
+             site.get("users_online"), {"Benutzer": site.get("online_names"),
+                                        "Zeitfenster_min": site.get("online_minutes")}),
+            (("web_users_total", "sensor", "Benutzer gesamt", None, None, "total", "mdi:account-group", None),
+             site.get("users_total"), {"neu_7_Tage": site.get("users_new_7d")}),
+            (("web_forum_posts", "sensor", "Forenbeiträge gesamt", None, None, "total", "mdi:forum", None),
+             site.get("forum_posts"), {"Themen": site.get("forum_threads"), "neu_7_Tage": site.get("forum_posts_7d")}),
+            (("web_forum_threads", "sensor", "Forenthemen gesamt", None, None, "total", "mdi:forum-outline", None),
+             site.get("forum_threads"), None),
+            (("web_latest_post", "sensor", "Letzter Forenbeitrag", None, None, None, "mdi:message-text", None),
+             f"{posts[0]['author']}: {posts[0]['title']}"[:250] if posts else None,
+             {"Beitraege": [{"Zeit": p["created_at"], "von": p["author"], "Thema": p["title"], "Text": p["text"],
+                             "Link": p["url"]} for p in posts]}),
+        ]
+    if site.get("error"):
+        rows.append((("web_error", "sensor", "Webseiten-Datenbank", None, None, None, "mdi:database-alert", "diagnostic"),
+                     site["error"][:250], None))
+    storage = site.get("storage")
+    if storage:
+        rows.append((("web_storage", "sensor", "Webseite Speicher", "GiB", "data_size", "measurement",
+                      "mdi:folder-information", None), round(storage["total"] / GIB, 2),
+                     {"Datenbank_MB": round(site.get("db_size", 0) / 1024 ** 2, 1), "gemessen": iso(storage["measured"]),
+                      **{f"{name}_GiB": round(size / GIB, 2) for name, size in list(storage["folders"].items())[:12]}}))
     return rows
 
 

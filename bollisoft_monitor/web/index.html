@@ -52,6 +52,15 @@
   .model { padding: 6px 0; border-bottom: 1px solid var(--line); }
   .model:last-child { border-bottom: 0; }
   .break { overflow-wrap: anywhere; }
+  h3 { font-size: 14px; margin: 14px 0 6px; }
+  .stats { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .stat { background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .web-cols { display: grid; gap: 0 24px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .post { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .post:last-child { border-bottom: 0; }
+  .post a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .post p { margin: 2px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -101,6 +110,15 @@
       <div class="row"><span id="ollama-state" class="badge">…</span><span class="muted" id="ollama-version"></span></div>
       <div id="models" style="margin-top:8px"></div>
       <div class="muted" id="ollama-info"></div>
+    </section>
+    <section class="card wide hidden" id="web">
+      <h2 id="web-title">Webseite</h2>
+      <div class="stats" id="web-stats"></div>
+      <div class="web-cols">
+        <div><h3>Letzte Forenbeiträge</h3><div id="web-posts"></div></div>
+        <div><h3>Speicher auf der Festplatte</h3><div id="web-storage"></div></div>
+      </div>
+      <div class="muted bad" id="web-error"></div>
     </section>
     <section class="card">
       <h2>Dienste</h2>
@@ -196,11 +214,38 @@ function render(s) {
   $("checks").innerHTML = r.checks.map((c) => `<tr><td><span class="${c.ok ? "ok" : "bad"}">●</span> ${esc(c.name)}</td>
     <td>${c.ok ? `${c.ms} ms` : `<span class="bad">${c.status || "keine Antwort"}</span>`}</td></tr>`).join("") || '<tr><td class="muted">Keine Checks eingerichtet</td></tr>';
   $("procs").innerHTML = r.top_processes.map((p) => `<tr><td class="break">${esc(p.name)}</td><td>${p.cpu} % · ${p.mem_mb} MB</td></tr>`).join("");
+  renderWebsite(r.website || {});
   const gpu = r.gpu || {};
   $("sys").innerHTML = [
     ["Betriebssystem", sys.os], ["Prozessor", sys.cpu_model], ["Grafik", gpu.Name ? `${gpu.Name}${gpu.Status && gpu.Status !== "OK" ? ` (${gpu.Status})` : ""}` : "–"],
     ["Rechner", sys.hostname], ["Prozesse", sys.processes], ["Agent", r.agent.version],
   ].map(([k, v]) => `<tr><td class="muted">${k}</td><td class="break">${esc(v)}</td></tr>`).join("");
+}
+
+function renderWebsite(w) {
+  const has = "users_total" in w || w.storage || w.error;
+  $("web").classList.toggle("hidden", !has);
+  if (!has) return;
+  $("web-title").textContent = `Webseite ${w.name || ""}`.trim();
+  const stat = (label, value, hint, title) =>
+    `<div class="stat" title="${esc(title || "")}"><span class="muted">${label}</span><b>${value ?? "–"}</b><span class="muted">${hint || ""}</span></div>`;
+  $("web-stats").innerHTML = "users_total" in w ? [
+    stat("Benutzer online", w.users_online, `letzte ${w.online_minutes} min`, (w.online_names || []).join(", ")),
+    stat("Benutzer gesamt", w.users_total, `+${w.users_new_7d} in 7 Tagen`),
+    stat("Forenbeiträge", w.forum_posts, `+${w.forum_posts_7d} in 7 Tagen`),
+    stat("Forenthemen", w.forum_threads),
+    w.storage ? stat("Speicher", gb(w.storage.total), `Datenbank ${(w.db_size / 1048576).toFixed(1)} MB`) : "",
+  ].join("") : "";
+  $("web-posts").innerHTML = (w.latest_posts || []).map((p) => {
+    const when = new Date(p.created_at).toLocaleString("de-CH", { dateStyle: "short", timeStyle: "short" });
+    const title = p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : `<b>${esc(p.title)}</b>`;
+    return `<div class="post">${title}<div class="muted">${esc(p.author)} · ${when}</div><p>${esc(p.text)}</p></div>`;
+  }).join("") || '<div class="muted">Keine Beiträge</div>';
+  const st = w.storage;
+  $("web-storage").innerHTML = st ? `<table>${Object.entries(st.folders).slice(0, 8).map(([name, size]) =>
+    `<tr><td class="break">${esc(name)}</td><td>${gb(size)}</td></tr>`).join("")}</table>
+    <div class="muted">gemessen ${time(st.measured)} · alle 30 min</div>` : '<div class="muted">Wird gemessen …</div>';
+  $("web-error").textContent = w.error ? `Datenbank: ${w.error}` : "";
 }
 
 function renderActions(s) {

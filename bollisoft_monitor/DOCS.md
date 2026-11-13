@@ -13,6 +13,9 @@ Die Daten schickt der Agent `bollisoft-agent.exe` vom Server alle 10 Sekunden an
   Anteil auf der GPU, CPU und Speicher der Ollama-Prozesse
 - Erreichbarkeit der Dienste (Webshop, Blackbox-Viewer, Sim-Live …) mit Antwortzeit
 - Die fünf Prozesse mit der meisten CPU, Betriebssystem, Prozessor, Grafik
+- Webseite: Benutzer online (aktiv in den letzten 5 Minuten) und gesamt, Forenbeiträge und -themen,
+  die drei letzten Forenbeiträge mit Link, Platzbedarf auf der Festplatte nach Ordnern (alle 30 Minuten
+  gemessen). Der Agent liest dafür die Datenbank der Webseite nur lesend (`[website]` in der INI).
 
 ## Knöpfe
 
