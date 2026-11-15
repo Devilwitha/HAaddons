@@ -35,6 +35,8 @@ Oben rechts auf **🎮 Touch** tippen:
   sofort zu sehen. Ist der Bildschirm zu klein, verkleinert sich die Steuerung von selbst so weit,
   dass sich nichts überdeckt (im Feld steht dann „mehr passt hier nicht“).
 
+Bedienen lässt sich das Gamepad mit Finger, Stift oder Maus.
+
 Die Einstellungen gelten pro Gerät und Browser, so kann das Handy andere Werte haben als das Tablet.
 
 **Tipp:** In der HA-Seitenleiste läuft der Emulator in einem eingebetteten Fenster. Manche Browser

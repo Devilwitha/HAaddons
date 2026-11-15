@@ -19,7 +19,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 OPTIONS_PATH = Path(os.environ.get("GBA_OPTIONS", "/data/options.json"))
 WEB_DIR = Path(os.environ.get("GBA_WEB", Path(__file__).resolve().parent / "web"))
 EJS_DIR = Path(os.environ.get("GBA_EJS", "/opt/emulatorjs/data"))

@@ -10,6 +10,7 @@
   const KEY = "gba-touch-v1";
   const DEFAULTS = { mode: "auto", scale: 100, bottom: 50, side: 10, opacity: 100 };
   const $ = (id) => document.getElementById(id);
+  const game = $("game");
   const panel = $("touchpanel");
   const btn = $("touchbtn");
 
@@ -75,11 +76,9 @@
   }
 
   function hint() {
-    const e = window.EJS_emulator;
-    const touchDevice = !!(e && (e.touch || e.hasTouchScreen)) || navigator.maxTouchPoints > 0;
     const texts = {
       auto: "Erscheint, wenn du das Spiel mit dem Finger startest.",
-      on: touchDevice ? "Wird immer angezeigt." : "Wird immer angezeigt. Bedienen lässt es sich nur per Touch, die Maus geht hier nicht.",
+      on: "Wird immer angezeigt – bedienbar mit Finger, Stift oder Maus.",
       off: "Ausgeblendet, z. B. für einen Controller oder die Tastatur.",
     };
     $("tmodehint").textContent = texts[settings.mode] || "";
@@ -143,6 +142,54 @@
   btn.addEventListener("click", () => openPanel(panel.hidden));
   $("touchclose").addEventListener("click", () => openPanel(false));
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !panel.hidden) openPanel(false); });
+
+  // ------------------------------------------------------------------ Maus & Stift
+  // Das Gamepad von EmulatorJS hört nur auf Touch-Ereignisse. Maus- und Stifteingaben darauf
+  // werden deshalb als Touch-Ereignisse nachgereicht (EmulatorJS liest nur targetTouches/
+  // changedTouches mit clientX/clientY). Echte Finger-Eingaben laufen unverändert direkt.
+  function fakeTouch(type, target, x, y) {
+    const ev = new Event(type, { bubbles: true, cancelable: true });
+    const point = { identifier: 9001, target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y };
+    const active = type === "touchend" || type === "touchcancel" ? [] : [point];
+    Object.defineProperty(ev, "touches", { value: active });
+    Object.defineProperty(ev, "targetTouches", { value: active });
+    Object.defineProperty(ev, "changedTouches", { value: [point] });
+    target.dispatchEvent(ev);
+  }
+
+  let pressed = null;   // { el, dpad, id }
+
+  game.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch" || e.button !== 0) return;
+    if (!e.target.closest || !e.target.closest(".ejs_virtualGamepad_parent")) return;
+    const dpad = e.target.closest(".ejs_dpad_main");
+    const el = dpad || e.target.closest(".ejs_virtualGamepad_button");
+    if (!el) return;
+    e.preventDefault();           // kein Menü-Einblenden/Markieren durch den Klick
+    e.stopPropagation();
+    pressed = { el, dpad: !!dpad, id: e.pointerId };
+    fakeTouch("touchstart", el, e.clientX, e.clientY);
+  }, true);
+
+  window.addEventListener("pointermove", (e) => {
+    if (pressed && pressed.dpad && e.pointerId === pressed.id) {
+      fakeTouch("touchmove", pressed.el, e.clientX, e.clientY);
+    }
+  });
+
+  function release(e) {
+    if (!pressed || e.pointerId !== pressed.id) return;
+    fakeTouch(e.type === "pointercancel" ? "touchcancel" : "touchend", pressed.el, e.clientX, e.clientY);
+    pressed = null;
+  }
+  window.addEventListener("pointerup", release);
+  window.addEventListener("pointercancel", release);
+  window.addEventListener("blur", () => {
+    if (pressed) {
+      fakeTouch("touchcancel", pressed.el, 0, 0);
+      pressed = null;
+    }
+  });
 
   // ------------------------------------------------------------------ Start
   applyLayout();
