@@ -20,6 +20,7 @@ import json
 import logging
 import logging.handlers
 import os
+import re
 import socket
 import sys
 import threading
@@ -50,6 +51,51 @@ DEFAULT_CONFIG = {
     "auto_update": True,
     "launchers": [],
 }
+
+
+# --------------------------------------------------------------------------- Programme / Spiele / Links
+# Link-Schemata von Spiele-Launchern (bekommen in HA ein Gamepad-Symbol)
+GAME_SCHEMES = {"com.epicgames.launcher", "uplay", "origin", "origin2", "eadesktop",
+                "battlenet", "goggalaxy", "heroic", "itch", "rockstar", "amazon-games",
+                "xbox", "ms-xbl-38616e6e", "lutris", "minecraft"}
+_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.\-]+):")  # mind. 2 Zeichen, sonst wäre "C:" ein Schema
+
+
+def link_scheme(target: str) -> str:
+    """Schema eines Links in Kleinbuchstaben ("steam", "https" …) oder "" für Pfade."""
+    m = _SCHEME_RE.match(str(target or "").strip())
+    return m.group(1).lower() if m else ""
+
+
+def launcher_kind(target: str) -> str:
+    """steam | game | web | link | program"""
+    sch = link_scheme(target)
+    if not sch:
+        return "program"
+    if sch == "steam":
+        return "steam"
+    if sch in GAME_SCHEMES:
+        return "game"
+    if sch in ("http", "https"):
+        return "web"
+    return "link"
+
+
+LAUNCHER_ICONS = {"steam": "mdi:steam", "game": "mdi:gamepad-variant", "web": "mdi:web",
+                  "link": "mdi:link-variant", "program": "mdi:rocket-launch"}
+LAUNCHER_MARKS = {"steam": "🎮 ", "game": "🎮 ", "web": "🌐 ", "link": "🔗 ", "program": "▶ "}
+
+
+def read_url_shortcut(path: str) -> str:
+    """Ziel-Link aus einer Windows-Internetverknüpfung (.url), sonst ""."""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        if line.strip().lower().startswith("url="):
+            return line.split("=", 1)[1].strip()
+    return ""
 
 
 # --------------------------------------------------------------------------- Pfade
@@ -244,7 +290,7 @@ class Agent:
                 continue
             b = base_entity(f"launch_{i}", item.get("name") or f"Programm {i + 1}")
             b["command_topic"] = f"{self.base}/button/launch_{i}"
-            b["icon"] = "mdi:steam" if str(item.get("target", "")).lower().startswith("steam://") else "mdi:rocket-launch"
+            b["icon"] = LAUNCHER_ICONS[launcher_kind(item.get("target", ""))]
             entities.append(("button", f"launch_{i}", b))
 
         for component, obj, payload in entities:
@@ -591,7 +637,7 @@ def run_gui(manager: Manager):
     row += 1
 
     # --- Programme & Spiele -----------------------------------------------
-    section("Programme & Spiele (je ein Button in HA)")
+    section("Programme, Spiele & Links (je ein Button in HA)")
     launchers = [dict(x) for x in (cfg.get("launchers") or [])]
     lb = tk.Listbox(frm, height=5, activestyle="none")
     lb.grid(row=row, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 4))
@@ -600,19 +646,67 @@ def run_gui(manager: Manager):
     def refresh_lb():
         lb.delete(0, "end")
         for it in launchers:
-            steam = str(it.get("target", "")).lower().startswith("steam://")
-            lb.insert("end", ("🎮 " if steam else "▶ ") + (it.get("name") or it.get("target", "")))
+            mark = LAUNCHER_MARKS[launcher_kind(it.get("target", ""))]
+            lb.insert("end", mark + (it.get("name") or it.get("target", "")))
 
     def add_file():
         from tkinter import filedialog
         if osb.IS_WINDOWS:
-            ftypes = [("Programme", "*.exe *.lnk *.bat *.cmd"), ("Alle Dateien", "*.*")]
+            ftypes = [("Programme & Verknüpfungen", "*.exe *.lnk *.url *.bat *.cmd"),
+                      ("Alle Dateien", "*.*")]
         else:
             ftypes = [("Programme/Dateien", "*.desktop *.sh *.AppImage"), ("Alle Dateien", "*.*")]
         p = filedialog.askopenfilename(title="Programm oder Datei wählen", filetypes=ftypes)
         if p:
-            launchers.append({"name": Path(p).stem, "target": p})
+            # .url-Verknüpfung (z. B. Epic/Ubisoft-Spiel auf dem Desktop): den Link selbst
+            # speichern – so passt das Symbol in HA und es klappt auch ohne die Datei.
+            target = read_url_shortcut(p) if p.lower().endswith(".url") else ""
+            launchers.append({"name": Path(p).stem, "target": target or p})
             refresh_lb()
+
+    def add_link():
+        dlg = tk.Toplevel(root)
+        dlg.title("Link hinzufügen")
+        dlg.transient(root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        name_v, url_v, err_v = tk.StringVar(), tk.StringVar(), tk.StringVar()
+        ttk.Label(dlg, text="Name (so heißt der Button in HA):").grid(
+            row=0, column=0, sticky="w", padx=10, pady=(10, 2))
+        ent_name = ttk.Entry(dlg, textvariable=name_v, width=46)
+        ent_name.grid(row=1, column=0, sticky="ew", padx=10)
+        ttk.Label(dlg, text="Link:").grid(row=2, column=0, sticky="w", padx=10, pady=(8, 2))
+        ttk.Entry(dlg, textvariable=url_v, width=46).grid(row=3, column=0, sticky="ew", padx=10)
+        ttk.Label(dlg, foreground="#666", justify="left", text=(
+            "Beispiele:\n"
+            "  steam://rungameid/730\n"
+            "  com.epicgames.launcher://apps/<ID>?action=launch&silent=true\n"
+            "  uplay://launch/<ID>/0      https://www.youtube.com\n"
+            "Tipp: Epic/Ubisoft-Verknüpfung (.url) vom Desktop geht auch\n"
+            "über „Programm/Datei …“.")).grid(row=4, column=0, sticky="w", padx=10, pady=(6, 0))
+        ttk.Label(dlg, textvariable=err_v, foreground="#c0392b").grid(
+            row=5, column=0, sticky="w", padx=10)
+
+        def ok(*_):
+            url = url_v.get().strip()
+            if not link_scheme(url):
+                err_v.set("Bitte einen vollständigen Link eingeben, z. B. steam://… oder https://…")
+                return
+            name = name_v.get().strip()
+            if not name:
+                m = re.search(r"://([^/?#]+)", url)
+                name = m.group(1) if m else url
+            launchers.append({"name": name, "target": url})
+            refresh_lb()
+            dlg.destroy()
+
+        bf = ttk.Frame(dlg)
+        bf.grid(row=6, column=0, sticky="e", padx=10, pady=10)
+        ttk.Button(bf, text="Abbrechen", command=dlg.destroy).pack(side="right")
+        ttk.Button(bf, text="Hinzufügen", command=ok).pack(side="right", padx=6)
+        dlg.bind("<Return>", ok)
+        dlg.bind("<Escape>", lambda *_: dlg.destroy())
+        ent_name.focus_set()
 
     def open_steam_dialog():
         from tkinter import simpledialog
@@ -689,6 +783,7 @@ def run_gui(manager: Manager):
     row += 1
     ttk.Button(lbtn, text="Programm/Datei …", command=add_file).pack(side="left")
     ttk.Button(lbtn, text="Steam-Spiel …", command=open_steam_dialog).pack(side="left", padx=6)
+    ttk.Button(lbtn, text="Link …", command=add_link).pack(side="left", padx=(0, 6))
     ttk.Button(lbtn, text="Umbenennen", command=rename_sel).pack(side="left")
     ttk.Button(lbtn, text="Entfernen", command=remove_sel).pack(side="right")
 
@@ -809,8 +904,11 @@ def run_gui(manager: Manager):
 
 
 # --------------------------------------------------------------------------- Auto-Update
+UPDATE_CHECK_SECONDS = 3600  # 1 h
+
+
 def _update_loop(manager: Manager):
-    """Prüft kurz nach dem Start und dann alle 6 h auf ein neues GitHub-Release."""
+    """Prüft kurz nach dem Start und dann stündlich auf ein neues GitHub-Release."""
     time.sleep(15)
     while True:
         try:
@@ -821,7 +919,7 @@ def _update_loop(manager: Manager):
                     os._exit(0)
         except Exception:
             log.exception("Auto-Update")
-        time.sleep(6 * 3600)
+        time.sleep(UPDATE_CHECK_SECONDS)
 
 
 # --------------------------------------------------------------------------- Headless (Dienst / ohne Anzeige)

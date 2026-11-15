@@ -14,8 +14,9 @@ in den Einstellungen eingetragene Home Assistant gesendet, sonst nirgendwohin.
 - **Knöpfe** – Herunterfahren, Neustart, Sperren, Energie sparen, Herunterfahren abbrechen
 - **Medien & Ton** – Lautstärke-Regler, Ton stumm, Mikrofon stumm, Wiedergabe/Pause,
   nächster/vorheriger Titel
-- **Programme & Spiele** – eigene Knöpfe, die ein Programm, eine Datei/einen Ordner
-  oder ein **Steam-Spiel** auf dem PC starten
+- **Programme, Spiele & Links** – eigene Knöpfe, die ein Programm, eine Datei/einen
+  Ordner, ein **Steam-Spiel** oder einen **Link** (z. B. Epic-, Ubisoft-, GOG-Spiel,
+  Webseite) auf dem PC öffnen
 - **Schalter** – Screenshots senden an/aus
 
 ## Bedienung
@@ -26,10 +27,15 @@ in den Einstellungen eingetragene Home Assistant gesendet, sonst nirgendwohin.
 - Im Fenster: MQTT-Zugang, Gerätename, Screenshot-Takt/Größe, Sensoren-Takt,
   Abschaltbefehle erlauben, **„Automatisch mit Windows starten“**, sowie
   **„Verbindung testen“** und **„Speichern & Anwenden“**.
-- **Programme & Spiele:** Unter „Programm/Datei …“ eine `.exe` oder Datei wählen,
-  oder „Steam-Spiel …“ für eine Liste deiner installierten Steam-Spiele. Jeder
-  Eintrag wird nach „Speichern & Anwenden“ zu einem Knopf in HA, der ihn startet.
-  (Steam-Spiele brauchen ein installiertes, angemeldetes Steam.)
+- **Programme, Spiele & Links:** Unter „Programm/Datei …“ eine `.exe`, `.lnk` oder
+  `.url` wählen, „Steam-Spiel …“ für eine Liste deiner installierten Steam-Spiele, oder
+  „Link …“ für einen beliebigen Link mit eigenem Namen, z. B.
+  `com.epicgames.launcher://apps/<ID>?action=launch&silent=true`, `uplay://launch/<ID>/0`
+  oder `https://…`. Jeder Eintrag wird nach „Speichern & Anwenden“ zu einem Knopf in HA,
+  der ihn öffnet. Spiele-Links bekommen ein Gamepad-Symbol, Webseiten ein Globus-Symbol.
+  - **Tipp für Epic/Ubisoft/GOG:** Im Launcher eine Desktop-Verknüpfung zum Spiel anlegen
+    und diese `.url`-Datei über „Programm/Datei …“ wählen – der Link wird daraus übernommen.
+  - Der jeweilige Launcher (Steam, Epic …) muss installiert und angemeldet sein.
 
 ## Variante A – fertige .exe bauen (empfohlen)
 Einmalig, danach brauchst du kein Python mehr auf dem Ziel-PC.
@@ -42,18 +48,20 @@ Einmalig, danach brauchst du kein Python mehr auf dem Ziel-PC.
    doppelklicken. Beim ersten Start öffnet sich das Einstellungsfenster.
 
 ### Automatische Updates (Windows-.exe)
-Die .exe prüft beim Start und dann alle paar Stunden, ob auf GitHub ein neueres
-**Release** liegt, lädt es und tauscht sich beim Neustart selbst aus. Abschaltbar
-im Fenster („Automatisch über GitHub aktualisieren"); dort auch „Update suchen".
+Die .exe prüft kurz nach dem Start und dann **jede Stunde**, ob auf GitHub ein neueres
+**Release** liegt, lädt es und tauscht sich selbst aus (Programm startet kurz neu).
+Abschaltbar im Fenster („Automatisch über GitHub aktualisieren"); dort auch „Update suchen".
 
-Damit das funktioniert, muss die neue Version als Release veröffentlicht sein:
+**Neue Version veröffentlichen:** Nummer in `version.py` erhöhen und nach `main` pushen.
+Der GitHub-Workflow `.github/workflows/pc-agent-release.yml` baut dann die .exe und
+legt das Release `pcagent-v<Version>` an. Spätestens eine Stunde später haben sich alle
+installierten .exe aktualisiert. Unter *Actions → PC Agent Release → Run workflow*
+lässt sich der Build auch von Hand starten.
+
+Alternativ lokal bauen und hochladen (GitHub CLI nötig, einmalig `gh auth login`):
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1 -Release
 ```
-Das baut die .exe und lädt sie als Release `pcagent-v<Version>` hoch (einmalig
-`gh auth login` nötig; Version steht in `version.py`). Für jede neue Fassung die
-Nummer in `version.py` erhöhen und erneut `build.ps1 -Release` ausführen – alle
-installierten .exe ziehen dann von allein nach.
 
 > Hinweis: Eine bereits laufende alte .exe (ohne Update-Funktion) muss **einmalig**
 > von Hand durch die neue ersetzt werden; ab dann aktualisiert sie sich selbst.
