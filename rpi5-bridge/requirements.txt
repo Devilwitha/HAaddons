@@ -1,0 +1,13 @@
+# Python-Pakete der Bridge (in /opt/switch2-bridge/venv, mit --system-site-packages).
+#
+# OpenCV (python3-opencv), NumPy und dbus-python (python3-dbus) kommen aus Raspberry Pi OS
+# per apt und werden über die System-Site-Packages genutzt.
+#
+# nxbt steht bewusst NICHT hier: Version 0.1.4 (letzte, 2021) verlangt fest veraltete Pakete
+# (u. a. cryptography 3.3.2, eventlet 0.31, Flask 1.1.2), die sich unter aktuellem Python nicht
+# bauen lassen. Für die Controller-Emulation braucht nxbt nur dbus-python; install.sh
+# installiert es deshalb mit "pip install --no-deps nxbt==0.1.4".
+aiohttp>=3.9
+aiortc>=1.9
+websockets>=13
+PyYAML>=6.0

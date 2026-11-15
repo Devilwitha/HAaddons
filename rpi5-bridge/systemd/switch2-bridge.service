@@ -1,0 +1,19 @@
+[Unit]
+Description=Game Remote - Raspberry Pi 5 Bridge (Pro-Controller-Emulation und Video)
+Documentation=https://github.com/Devilwitha/HAaddons/tree/main/rpi5-bridge
+After=network-online.target bluetooth.service
+Wants=network-online.target bluetooth.service
+
+[Service]
+Type=simple
+# nxbt braucht Root-Rechte für BlueZ und hciconfig
+User=root
+WorkingDirectory=/opt/switch2-remote-play/rpi5-bridge
+ExecStart=/opt/switch2-bridge/venv/bin/python /opt/switch2-remote-play/rpi5-bridge/main.py --config /etc/switch2-bridge/config.yaml
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+StateDirectory=switch2-bridge
+
+[Install]
+WantedBy=multi-user.target

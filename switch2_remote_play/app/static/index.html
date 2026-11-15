@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <title>Game Remote</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+  <main id="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="mjpeg" alt="" hidden>
+    <div id="novideo" class="novideo">
+      <div class="novideo-icon">&#128250;</div>
+      <p id="novideo-text">Verbinde mit der Raspberry Pi 5 Bridge …</p>
+    </div>
+  </main>
+
+  <header id="topbar" class="topbar">
+    <div class="bar-content">
+      <div class="status">
+        <span class="pill" id="st-bridge" data-state="off" title="WebSocket-Verbindung zur Bridge"><i></i>Bridge</span>
+        <span class="pill" id="st-switch" data-state="off" title="Bluetooth-Verbindung zur Switch 2"><i></i>Switch 2</span>
+        <span class="pill" id="st-capture" data-state="off" title="Videosignal der Capture-Card"><i></i>Capture <small id="st-mode"></small></span>
+        <span class="pill" id="st-ping" data-state="off" title="Antwortzeit der Bridge"><i></i>Ping <b id="ping-value">–</b></span>
+      </div>
+      <div class="actions">
+        <label class="toggle" title="Virtuelles Gamepad ein- oder ausblenden">
+          <input type="checkbox" id="touch-toggle">
+          <span class="track"><span class="thumb"></span></span>
+          <span>Touch-Steuerung</span>
+        </label>
+        <button class="btn" id="pad-btn" type="button" aria-expanded="false" aria-controls="pad-panel">&#127918; Controller</button>
+        <button class="btn" id="pair-btn" type="button">Switch koppeln</button>
+        <button class="btn" id="fs-btn" type="button">Vollbild</button>
+      </div>
+    </div>
+    <button class="bar-toggle" id="bar-toggle" type="button" aria-expanded="true" title="Leiste ein-/ausklappen">&#9650;</button>
+  </header>
+
+  <section class="panel" id="pad-panel" hidden aria-label="Controller-Belegung">
+    <div class="panel-head">
+      <h2>Controller</h2>
+      <button class="icon-btn" id="pad-close" type="button" aria-label="Schließen">&#10005;</button>
+    </div>
+    <p class="hint" id="pad-detected">Kein Controller erkannt. Verbinde einen Controller per USB oder Bluetooth und drücke eine Taste.</p>
+    <label class="field">Vorlage
+      <select id="pad-preset"></select>
+    </label>
+    <label class="field">Tasten-Beschriftung
+      <select id="pad-labels">
+        <option value="xbox">Xbox (A B X Y, LB RB LT RT)</option>
+        <option value="ps">PlayStation (&#10005; &#9675; &#9633; &#9651;, L1 R1 L2 R2)</option>
+      </select>
+    </label>
+    <table class="map" id="pad-map">
+      <thead><tr><th>Switch</th><th>Controller-Taste</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="hint" id="pad-listen" hidden></p>
+    <div class="panel-foot">
+      <span class="hint">Gilt nur für dieses Gerät.</span>
+      <button class="btn" id="pad-reset" type="button">Vorlage zurücksetzen</button>
+    </div>
+  </section>
+
+  <div id="gamepad" hidden></div>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="static/virtual-gamepad.js"></script>
+  <script src="static/app.js"></script>
+</body>
+</html>

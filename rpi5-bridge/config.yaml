@@ -1,0 +1,30 @@
+# Raspberry Pi 5 Bridge für Game Remote
+#
+# Die installierte, aktive Konfiguration liegt in /etc/switch2-bridge/config.yaml
+# (wird beim ersten Installieren aus dieser Datei angelegt und bei Updates nicht überschrieben).
+# Nach einer Änderung: sudo systemctl restart switch2-bridge
+
+websocket:
+  host: "0.0.0.0"
+  port: 8765                  # in Home Assistant: pi_ws_port
+
+video:
+  host: "0.0.0.0"
+  port: 8766                  # in Home Assistant: pi_video_port
+  device: "/dev/video0"       # "test" = Testbild ohne Capture-Card
+  width: 1280
+  height: 720
+  fps: 60                     # Aufnahme von der Capture-Card
+  fourcc: "MJPG"              # MJPEG von der Karte = geringste USB-Latenz
+  jpeg_quality: 80            # Qualität des MJPEG-Streams (1-100)
+  mjpeg_fps: 30               # Bilder pro Sekunde im MJPEG-Stream
+  webrtc_fps: 30              # Bilder pro Sekunde über WebRTC (Encoder läuft auf der CPU)
+  webrtc_max_bitrate: 6000000 # höchste WebRTC-Bitrate in Bit/s
+
+controller:
+  enabled: true               # false = Testmodus ohne Bluetooth
+  watchdog_seconds: 2.0       # ohne Heartbeat so lange -> alle Tasten loslassen
+  input_rate_hz: 120          # Pro Controller erwartet ca. 120 Pakete pro Sekunde
+  reconnect_file: "/var/lib/switch2-bridge/switch_addresses.json"
+
+log_level: "INFO"             # DEBUG für mehr Details
