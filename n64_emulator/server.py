@@ -77,6 +77,8 @@ ROM_MAX = SYSTEM["rom_max"]
 SAVE_MAX = SYSTEM["save_max"]
 STATE_MAX = SYSTEM["state_max"]
 SHOT_MAX = 2 * MB
+CHUNK_MAX = 8 * MB               # Home-Assistant-Ingress nimmt höchstens 16 MB pro Anfrage an
+UPLOAD_TTL = 30 * 60             # unvollständige Uploads werden danach verworfen
 SLOTS = range(0, 10)             # 0 = Auto-Speicherstand (Inaktivität, Gerätewechsel)
 EXT_TEXT = ", ".join(sorted(ROM_EXT, key=lambda e: (e in (".zip", ".7z"), e)))
 STATS_PATH = Path(os.environ.get("EMU_STATS", "/data/stats.json"))
@@ -478,6 +480,105 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
             raise web.HTTPNotFound(text="Slot ist leer")
         return no_cache(web.FileResponse(path, headers={"Content-Type": "application/octet-stream"}))
 
+    # -------------------------------------------------- Upload in Stücken (ROMs und Speicherstände)
+    # Ingress begrenzt jede Anfrage auf 16 MB. Größere Dateien kommen deshalb in Teilen zu höchstens
+    # CHUNK_MAX: start -> chunk (mehrfach, in Reihenfolge) -> finish.
+    uploads = {}
+
+    def drop_upload(uid):
+        entry = uploads.pop(uid, None)
+        if entry:
+            entry["tmp"].unlink(missing_ok=True)
+
+    def expire_uploads():
+        now = time.time()
+        for uid in [u for u, e in uploads.items() if now - e["time"] > UPLOAD_TTL]:
+            drop_upload(uid)
+
+    async def blob_start(request):
+        data = await read_json(request)
+        kind = data.get("kind")
+        name = Path(str(data.get("name", "")).replace("\\", "/")).name
+        try:
+            size = int(data.get("size"))
+        except (TypeError, ValueError):
+            raise web.HTTPBadRequest(text="Größe fehlt")
+        if size <= 0:
+            raise web.HTTPBadRequest(text="Leere Datei")
+        if kind == "rom":
+            if not valid_name(name):
+                raise web.HTTPBadRequest(text=f"{name}: erlaubt sind nur {EXT_TEXT}")
+            if size > ROM_MAX:
+                raise web.HTTPRequestEntityTooLarge(max_size=ROM_MAX, actual_size=size,
+                                                    text=f"{name} ist zu groß (höchstens {ROM_MAX // MB} MB)")
+            target = library.root / name
+            if target.exists():
+                raise web.HTTPConflict(text=f"{name} gibt es schon")
+            extra = {}
+        elif kind == "state":
+            library.rom(name)
+            try:
+                slot = int(data.get("slot"))
+            except (TypeError, ValueError):
+                slot = -1
+            if slot not in SLOTS:
+                raise web.HTTPBadRequest(text="Slot 0-9")
+            if size > STATE_MAX:
+                raise web.HTTPRequestEntityTooLarge(max_size=STATE_MAX, actual_size=size, text="Speicherstand zu groß")
+            target = library.state_path(name, slot)
+            extra = {"slot": slot}
+        else:
+            raise web.HTTPBadRequest(text="Unbekannte Art")
+        expire_uploads()
+        uid = secrets.token_hex(8)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.parent / f".upload-{uid}"
+        tmp.write_bytes(b"")
+        uploads[uid] = {"kind": kind, "name": name, "target": target, "tmp": tmp, "size": size,
+                        "received": 0, "time": time.time(), **extra}
+        return no_cache(web.json_response({"id": uid, "chunk": CHUNK_MAX}))
+
+    async def blob_chunk(request):
+        entry = uploads.get(request.match_info["uid"])
+        if entry is None:
+            raise web.HTTPNotFound(text="Upload unbekannt oder abgelaufen")
+        try:
+            offset = int(request.query.get("offset", "-1"))
+        except ValueError:
+            offset = -1
+        if offset != entry["received"]:
+            return no_cache(web.json_response({"received": entry["received"]}, status=409))
+        data = await read_body(request, CHUNK_MAX)
+        if not data or entry["received"] + len(data) > entry["size"]:
+            raise web.HTTPBadRequest(text="Teil passt nicht zur angekündigten Größe")
+        with entry["tmp"].open("ab") as handle:
+            handle.write(data)
+        entry["received"] += len(data)
+        entry["time"] = time.time()
+        return no_cache(web.json_response({"received": entry["received"]}))
+
+    async def blob_finish(request):
+        uid = request.match_info["uid"]
+        entry = uploads.get(uid)
+        if entry is None:
+            raise web.HTTPNotFound(text="Upload unbekannt oder abgelaufen")
+        if entry["received"] != entry["size"]:
+            raise web.HTTPBadRequest(text=f"Unvollständig: {entry['received']} von {entry['size']} Bytes")
+        if entry["kind"] == "rom" and entry["target"].exists():
+            drop_upload(uid)
+            raise web.HTTPConflict(text=f"{entry['name']} gibt es schon")
+        os.replace(entry["tmp"], entry["target"])
+        uploads.pop(uid, None)
+        if entry["kind"] == "state":
+            library.state_path(entry["name"], entry["slot"], "png").unlink(missing_ok=True)
+        else:
+            log.info("ROM hochgeladen: %s (%d KB)", entry["name"], entry["size"] // 1024)
+        return no_cache(web.json_response({"ok": True, "file": entry["name"]}))
+
+    async def blob_abort(request):
+        drop_upload(request.match_info["uid"])
+        return no_cache(web.json_response({"ok": True}))
+
     async def state_put(request):
         name = request.match_info["name"]
         library.rom(name)
@@ -566,6 +667,7 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
             while True:
                 await asyncio.sleep(TICK_SECONDS)
                 stats.tick()
+                expire_uploads()
                 stats.save()
                 try:
                     await publish()
@@ -590,6 +692,10 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
     app.router.add_get("/play", play)
     app.router.add_get("/api/roms", roms)
     app.router.add_post("/api/upload", upload)
+    app.router.add_post("/api/blob/start", blob_start)
+    app.router.add_put("/api/blob/{uid}", blob_chunk)
+    app.router.add_post("/api/blob/{uid}/finish", blob_finish)
+    app.router.add_delete("/api/blob/{uid}", blob_abort)
     app.router.add_get("/api/rom/{name}", rom_get)
     app.router.add_delete("/api/rom/{name}", rom_delete)
     app.router.add_get("/api/save/{name}", save_get)

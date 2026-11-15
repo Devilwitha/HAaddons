@@ -171,10 +171,8 @@
     const emu = window.EJS_emulator;
     const s = slot();
     try {
-      const r = await fetch("api/state/" + enc + "?slot=" + s, {
-        method: "PUT", body: e.state, headers: { "Content-Type": "application/octet-stream" },
-      });
-      if (!r.ok) throw new Error("HTTP " + r.status);
+      // in Teilen (upload.js): N64-Speicherstände sind größer als die 16-MB-Grenze von Ingress
+      await window.chunkedUpload({ kind: "state", name: rom, slot: s }, new Blob([e.state]));
       emuMessage("Gespeichert in Slot " + s);
     } catch (err) {
       emuMessage("Speichern fehlgeschlagen");
@@ -414,10 +412,7 @@
   async function saveAutoState() {
     const emu = window.EJS_emulator;
     const state = gm().getState();
-    const r = await fetch("api/state/" + enc + "?slot=0", {
-      method: "PUT", body: state, headers: { "Content-Type": "application/octet-stream" },
-    });
-    if (!r.ok) throw new Error("HTTP " + r.status);
+    await window.chunkedUpload({ kind: "state", name: rom, slot: 0 }, new Blob([state]));
     try {
       const shot = await emu.takeScreenshot(undefined, "png", 1);
       if (shot && shot.blob) {

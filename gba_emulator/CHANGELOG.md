@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.7
+
+- Fehler behoben: Uploads über 16 MB scheiterten mit „Maximum request body size 16777216 exceeded“ – das ist die Grenze von Home-Assistant-Ingress pro Anfrage. ROMs und Speicherstände gehen jetzt in Teilen zu 8 MB (betraf große N64-Spiele und alle N64-Speicherstände)
+
 ## 1.0.6
 
 - Automatisch speichern: nach `idle_minutes` (Standard 10) ohne Eingabe Spielstand und Auto-Speicherstand sichern, Spiel pausieren, Sitzung beenden; beim nächsten Start Auto-Speicherstand laden

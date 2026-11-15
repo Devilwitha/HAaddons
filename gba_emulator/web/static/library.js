@@ -113,31 +113,21 @@
   const lower = (n) => n.toLowerCase();
   const allowed = (f) => EMU.exts.some((e) => lower(f.name).endsWith(e));
 
-  function uploadOne(file) {
-    return new Promise((resolve) => {
-      const bar = $("progress");
-      const fd = new FormData();
-      fd.append("file", file, file.name);
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "api/upload");
-      bar.hidden = false;
-      bar.querySelector("span").textContent = file.name;
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) bar.firstElementChild.style.width = (100 * e.loaded / e.total) + "%";
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve(true);
-        else {
-          toast(file.name + ": " + (xhr.responseText || "Fehler " + xhr.status), true);
-          resolve(false);
-        }
-      };
-      xhr.onerror = () => {
-        toast(file.name + ": Upload fehlgeschlagen", true);
-        resolve(false);
-      };
-      xhr.send(fd);
-    });
+  // In Teilen zu 8 MB (upload.js) – Home-Assistant-Ingress nimmt höchstens 16 MB pro Anfrage an
+  async function uploadOne(file) {
+    const bar = $("progress");
+    bar.hidden = false;
+    bar.querySelector("span").textContent = file.name;
+    try {
+      await window.chunkedUpload({ kind: "rom", name: file.name }, file, (sent, total) => {
+        bar.firstElementChild.style.width = (100 * sent / total) + "%";
+        bar.querySelector("span").textContent = file.name + " – " + Math.round(100 * sent / total) + " %";
+      });
+      return true;
+    } catch (err) {
+      toast(file.name + ": " + err.message, true);
+      return false;
+    }
   }
 
   async function uploadAll(files) {

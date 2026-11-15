@@ -27,6 +27,8 @@ im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retro
 - `server.py` und alles in `web/` sind in beiden Add-ons **identisch** – nur `web/static/system.js`
   (Name, Kern, Endungen, Touch-Layout, Controller-Vorlagen) und das `Dockerfile` (`EMU_SYSTEM`,
   Kerne) unterscheiden sich. Änderungen immer in beide Ordner übernehmen und mit `diff` prüfen.
+- HA-Ingress nimmt höchstens **16 MB pro Anfrage** an: Uploads (ROMs, Speicherstände) laufen deshalb über
+  `/api/blob/start|<id>|<id>/finish` in Teilen zu 8 MB (`web/static/upload.js`).
 - EmulatorJS wird im Dockerfile von npm geladen (SHA-256 gepinnt), zu `emulator.min.js` zusammengefügt
   und an zwei Stellen gepatcht (Steuerkreuz-Mitte, Analogstick bei 0°); die `grep`-Prüfungen müssen bleiben.
 
