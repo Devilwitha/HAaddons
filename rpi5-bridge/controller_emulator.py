@@ -1,9 +1,9 @@
-"""Emulation eines Nintendo Switch Pro Controllers über Bluetooth (nxbt / BlueZ).
+"""Emulation eines Pro Controllers für die Spielkonsole über Bluetooth (nxbt / BlueZ).
 
 - Verwaltet Tasten und Analogsticks (-100 bis 100) und schickt sie mit input_rate_hz an nxbt.
 - Safety-Watchdog: Kommen länger als watchdog_seconds keine Heartbeats/Eingaben vom Client,
   werden alle Tasten losgelassen und die Sticks auf (0, 0) gesetzt.
-- Merkt sich die Bluetooth-Adresse der gekoppelten Switch und verbindet sich nach einem
+- Merkt sich die Bluetooth-Adresse der gekoppelten Konsole und verbindet sich nach einem
   Neustart von selbst wieder, solange die Konsole an ist.
 
 nxbt braucht Root-Rechte (der systemd-Dienst läuft als root). Fehlt nxbt (z. B. beim Testen
@@ -26,6 +26,7 @@ BUTTON_KEYS = {
 }
 STICK_PRESS = {"LS": "L_STICK", "RS": "R_STICK"}
 VALID_BUTTONS = set(BUTTON_KEYS) | set(STICK_PRESS)
+# Bluetooth-Name, unter dem sich die Konsole bei BlueZ meldet (technisch nötig zum Wiederfinden)
 SWITCH_ALIAS_PREFIX = "NINTENDO SWITCH"
 
 
@@ -76,9 +77,9 @@ class ControllerEmulator:
         self.nx = nxbt.Nxbt()
         addresses = self._load_addresses()
         if addresses:
-            log.info("Verbinde erneut mit gekoppelter Switch: %s", ", ".join(addresses))
+            log.info("Verbinde erneut mit gekoppelter Konsole: %s", ", ".join(addresses))
         else:
-            log.info("Noch keine Switch gekoppelt - warte auf Kopplung (Griffweise/Reihenfolge ändern)")
+            log.info("Noch keine Konsole gekoppelt - warte auf Kopplung (Griffweise/Reihenfolge ändern)")
         self._create(addresses or None)
 
     def _create(self, reconnect_address):
@@ -94,7 +95,7 @@ class ControllerEmulator:
 
     async def pair(self):
         """Neue Kopplung: Controller ohne Wiederverbindungsadresse neu anlegen.
-        Auf der Switch 2 muss dazu "Controller -> Griffweise/Reihenfolge ändern" offen sein."""
+        Auf der Konsole muss dazu "Controller -> Griffweise/Reihenfolge ändern" offen sein."""
         if not self.enabled:
             return False, "Controller-Emulation ist aus (Testmodus)."
         if self.nx is None:
@@ -108,7 +109,7 @@ class ControllerEmulator:
                 log.error("Kopplung fehlgeschlagen: %s", self.error)
                 return False, "Kopplung fehlgeschlagen: " + self.error
         log.info("Kopplungsmodus aktiv")
-        return True, "Kopplung gestartet – auf der Switch 2 „Controller → Griffweise/Reihenfolge ändern“ öffnen."
+        return True, "Kopplung gestartet – auf der Konsole „Controller → Griffweise/Reihenfolge ändern“ öffnen."
 
     # ------------------------------------------------------------------ Adressen merken
     def _load_addresses(self):
@@ -127,15 +128,15 @@ class ControllerEmulator:
         try:
             addresses.update(self._find_switch_devices())
         except Exception as err:
-            log.debug("Switch-Geräte suchen: %s", err)
+            log.debug("Konsole suchen: %s", err)
         if not addresses:
             return
         self.reconnect_file.parent.mkdir(parents=True, exist_ok=True)
         self.reconnect_file.write_text(json.dumps({"addresses": sorted(addresses)}, indent=2), encoding="utf-8")
-        log.info("Switch-Adresse gespeichert: %s", ", ".join(sorted(addresses)))
+        log.info("Adresse der Konsole gespeichert: %s", ", ".join(sorted(addresses)))
 
     def _find_switch_devices(self):
-        """Alle BlueZ-Geräte, deren Name mit "Nintendo Switch" beginnt (auch "Nintendo Switch 2")."""
+        """Alle gekoppelten BlueZ-Geräte, deren Bluetooth-Name mit SWITCH_ALIAS_PREFIX beginnt."""
         import dbus
         bus = dbus.SystemBus()
         manager = dbus.Interface(bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
@@ -199,7 +200,7 @@ class ControllerEmulator:
             try:
                 self._save_addresses()
             except OSError as err:
-                log.warning("Switch-Adresse nicht gespeichert: %s", err)
+                log.warning("Adresse der Konsole nicht gespeichert: %s", err)
         return {"state": state, "detail": str(detail) if detail else ""}
 
     # ------------------------------------------------------------------ Sendeschleife

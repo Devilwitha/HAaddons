@@ -1,7 +1,7 @@
 # Game Remote – Raspberry Pi 5 Bridge
 
 Gegenstück zum Home-Assistant-Add-on [Game Remote](../switch2_remote_play/). Läuft auf einem
-Raspberry Pi 5 neben der Nintendo Switch 2: gibt sich per Bluetooth als Pro Controller aus (nxbt)
+Raspberry Pi 5 neben der Spielkonsole: gibt sich per Bluetooth als Pro Controller aus (nxbt)
 und streamt das Bild der USB-Capture-Card (WebRTC und MJPEG) an Home Assistant.
 
 ## Installieren / aktualisieren

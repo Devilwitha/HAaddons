@@ -1,4 +1,4 @@
-"""Video der Switch 2 von der USB-Capture-Card (/dev/video0) für Home Assistant.
+"""Video der Spielkonsole von der USB-Capture-Card (/dev/video0) für Home Assistant.
 
 HTTP-Server (Standard-Port 8766):
   POST /offer         WebRTC-Signaling (aiortc): {"sdp", "type"} -> Antwort {"sdp", "type"}
@@ -7,7 +7,7 @@ HTTP-Server (Standard-Port 8766):
   GET  /status        Zustand der Capture-Card als JSON
 
 Die Capture-Card wird im MJPEG-Format geöffnet (geringste USB-Latenz). Ist sie nicht da oder
-liefert sie kein Bild (Switch im Standby), wird ein "Kein Signal"-Bild gezeigt und alle
+liefert sie kein Bild (Konsole im Standby), wird ein "Kein Signal"-Bild gezeigt und alle
 2 Sekunden neu verbunden. device: "test" erzeugt ein Testbild ohne Capture-Card.
 """
 import asyncio
@@ -138,7 +138,7 @@ class FrameSource:
                 failures += 1
                 if time.monotonic() - self.frame_time > NO_SIGNAL_AFTER:
                     self.state = "no_signal"
-                    self.detail = "kein Bild (Switch 2 im Standby?)"
+                    self.detail = "kein Bild (Konsole im Standby?)"
                 if failures > max(30, self.fps):
                     log.warning("Capture-Card liefert keine Bilder mehr - verbinde neu")
                     break

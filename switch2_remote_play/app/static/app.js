@@ -88,11 +88,11 @@
   }
 
   const SWITCH_TEXT = {
-    connected: ["ok", "Mit der Switch 2 verbunden"],
-    connecting: ["busy", "Warte auf die Switch 2 – auf der Konsole „Griffweise/Reihenfolge ändern“ öffnen"],
-    reconnecting: ["busy", "Verbinde erneut mit der zuletzt gekoppelten Switch 2 …"],
+    connected: ["ok", "Mit der Konsole verbunden"],
+    connecting: ["busy", "Warte auf die Konsole – dort „Controller → Griffweise/Reihenfolge ändern“ öffnen"],
+    reconnecting: ["busy", "Verbinde erneut mit der zuletzt gekoppelten Konsole …"],
     initializing: ["busy", "Controller wird gestartet …"],
-    disconnected: ["off", "Nicht gekoppelt – auf „Switch koppeln“ tippen"],
+    disconnected: ["off", "Nicht gekoppelt – auf „Konsole koppeln“ tippen"],
     crashed: ["err", "Controller-Emulation abgestürzt"],
     unavailable: ["err", "Controller-Emulation nicht verfügbar"],
   };
@@ -113,7 +113,7 @@
       if (cap.state === "ok") {
         setPill("st-capture", "ok", "Videosignal " + (cap.width || "") + "×" + (cap.height || "") + " @ " + (cap.fps || "?") + " fps");
       } else if (cap.state === "no_signal") {
-        setPill("st-capture", "busy", "Capture-Card gefunden, aber kein Bild – Switch 2 an? " + (cap.detail || ""));
+        setPill("st-capture", "busy", "Capture-Card gefunden, aber kein Bild – Konsole an? " + (cap.detail || ""));
       } else {
         setPill("st-capture", "err", "Capture-Card nicht verfügbar: " + (cap.detail || ""));
       }
@@ -305,14 +305,14 @@
   const BASE_MAP = { L: 4, R: 5, ZL: 6, ZR: 7, MINUS: 8, PLUS: 9, LS: 10, RS: 11,
     DPAD_UP: 12, DPAD_DOWN: 13, DPAD_LEFT: 14, DPAD_RIGHT: 15, HOME: 16, CAPTURE: 17 };
   const PRESETS = {
-    // Rechte Taste = A wie bei Nintendo (Xbox B / PlayStation ○ drückt Switch A)
+    // Rechte Taste = A wie an der Konsole (Xbox B / PlayStation ○ drückt A)
     position: Object.assign({ A: 1, B: 0, X: 3, Y: 2 }, BASE_MAP),
-    // Beschriftung (Xbox A = Switch A) bzw. untere Taste ✕ = A bei PlayStation
+    // Beschriftung (Xbox A = A) bzw. untere Taste ✕ = A bei PlayStation
     label: Object.assign({ A: 0, B: 1, X: 2, Y: 3 }, BASE_MAP),
   };
   const PRESET_TEXT = {
-    xbox: { position: "Wie Switch-Anordnung (Xbox B = Switch A)", label: "Nach Beschriftung (Xbox A = Switch A)" },
-    ps: { position: "Wie Switch-Anordnung (○ = A, ✕ = B)", label: "Bestätigen unten (✕ = A, ○ = B)" },
+    xbox: { position: "Wie Konsolen-Anordnung (Xbox B = A)", label: "Nach Beschriftung (Xbox A = A)" },
+    ps: { position: "Wie Konsolen-Anordnung (○ = A, ✕ = B)", label: "Bestätigen unten (✕ = A, ○ = B)" },
   };
   const LABELS = {
     xbox: ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "LS", "RS", "↑", "↓", "←", "→", "Xbox", "Share"],
@@ -529,7 +529,7 @@
       return;
     }
     send({ type: "system", action: "pair" });
-    toast("Kopplung gestartet – auf der Switch 2 „Controller → Griffweise/Reihenfolge ändern“ öffnen.");
+    toast("Kopplung gestartet – auf der Konsole „Controller → Griffweise/Reihenfolge ändern“ öffnen.");
   });
 
   $("fs-btn").addEventListener("click", async () => {

@@ -1,14 +1,14 @@
 # Game Remote für Home Assistant
 
-*Von BolliSoft.* Remote Play für die Nintendo Switch 2.
+*Von BolliSoft.* Fernsteuerung für deine Spielkonsole.
 
-Spiele deine Nintendo Switch 2 aus der Home-Assistant-Seitenleiste – am Handy, Tablet oder PC.
+Spiele deine Spielkonsole aus der Home-Assistant-Seitenleiste – am Handy, Tablet oder PC.
 Ein Raspberry Pi 5 neben der Konsole nimmt das Bild über eine USB-Capture-Card auf und gibt sich
 per Bluetooth als Pro Controller aus. Home Assistant zeigt das Video und ein Touch-Gamepad an;
 echte Controller (Xbox, PlayStation u. a.) am Handy oder PC funktionieren ebenfalls.
 
 ```
-Switch 2 ──HDMI──▶ Capture-Card ──USB──▶ Raspberry Pi 5 ◀──Bluetooth── (Pro Controller)
+Konsole  ──HDMI──▶ Capture-Card ──USB──▶ Raspberry Pi 5 ◀──Bluetooth── (Pro Controller)
                                               │
                          WebSocket 8765 / Video 8766 (Heimnetz)
                                               │
@@ -18,7 +18,7 @@ Switch 2 ──HDMI──▶ Capture-Card ──USB──▶ Raspberry Pi 5 ◀�
 ```
 
 ## Was du brauchst
-- Nintendo Switch 2 im Dock (HDMI-Ausgang)
+- Spielkonsole mit HDMI-Ausgang (z. B. im Dock), die einen Bluetooth-Pro-Controller annimmt
 - Raspberry Pi 5 mit Raspberry Pi OS (Bookworm oder neuer), im selben Netz wie Home Assistant
 - USB-Capture-Card (UVC, z. B. 1080p-HDMI-Stick), angeschlossen an einen USB-3-Port des Pi
 - Home Assistant mit Add-on-Unterstützung (Home Assistant OS oder Supervised)
@@ -44,7 +44,7 @@ stehen in `/etc/switch2-bridge/config.yaml`, danach `sudo systemctl restart swit
 2. Im Add-on Store **⋮ → Nach Updates suchen**, dann die App **Game Remote** installieren.
 3. Unter **Konfiguration** die IP des Pi bei `pi_host` eintragen (Ports nur ändern, wenn du sie auf
    dem Pi geändert hast) und die App starten.
-4. **Switch 2** in der Seitenleiste öffnen.
+4. **Game Remote** in der Seitenleiste öffnen.
 
 | Option | Bedeutung |
 |---|---|
@@ -56,21 +56,21 @@ stehen in `/etc/switch2-bridge/config.yaml`, danach `sudo systemctl restart swit
 | `haptic_feedback` | kurzes Vibrieren bei Tastendruck (Android) |
 
 ## Schritt 3: Erstes Koppeln
-1. Auf der Switch 2 **Controller → Griffweise/Reihenfolge ändern** öffnen.
-2. In Home Assistant oben auf **Switch koppeln** tippen.
-3. Nach einigen Sekunden erscheint der Controller auf der Konsole, die Anzeige **Switch 2** wird grün.
+1. Auf der Konsole **Controller → Griffweise/Reihenfolge ändern** öffnen.
+2. In Home Assistant oben auf **Konsole koppeln** tippen.
+3. Nach einigen Sekunden erscheint der Controller auf der Konsole, die Anzeige **Konsole** wird grün.
 
 Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die Konsole an ist.
 
 ## Bedienung
-- **Obere Leiste** (mit dem Pfeil einklappbar): Status von Bridge, Switch 2, Capture und Ping,
-  Schalter **Touch-Steuerung**, **Controller**, **Switch koppeln**, **Vollbild**.
+- **Obere Leiste** (mit dem Pfeil einklappbar): Status von Bridge, Konsole, Capture und Ping,
+  Schalter **Touch-Steuerung**, **Controller**, **Konsole koppeln**, **Vollbild**.
 - **Touch-Gamepad:** zwei Analogsticks, A/B/X/Y, Steuerkreuz, L/ZL/R/ZR, −/+/HOME/Aufnahme.
   Mehrere Finger gleichzeitig (z. B. Stick und A) funktionieren.
 - **Echte Controller:** per USB oder Bluetooth am Handy, Tablet oder PC verbinden und eine Taste
   drücken. Unter **Controller** stellst du die Belegung ein:
-  - *Wie Switch-Anordnung:* die rechte Taste ist A (Xbox B bzw. PlayStation ○)
-  - *Nach Beschriftung:* Xbox A = Switch A bzw. PlayStation ✕ = A
+  - *Wie Konsolen-Anordnung:* die rechte Taste ist A (Xbox B bzw. PlayStation ○)
+  - *Nach Beschriftung:* Xbox A = A bzw. PlayStation ✕ = A
   - *Eigene Belegung:* bei einer Funktion auf **Ändern** tippen und die gewünschte Taste drücken
   - Beschriftung Xbox oder PlayStation (wird erkannt, lässt sich umstellen)
   Die Belegung gilt pro Gerät und Browser.
@@ -87,8 +87,7 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
   lässt der Pi alle Tasten los und stellt die Sticks auf Mitte.
 - **nxbt:** Die Pro-Controller-Emulation nutzt [nxbt](https://github.com/Brikwerk/nxbt) 0.1.4. Es
   wird ohne seine veralteten Abhängigkeiten installiert, weil nur der Bluetooth-Teil gebraucht wird.
-  nxbt wurde für die erste Switch entwickelt; ob jede Firmware der Switch 2 den emulierten Controller
-  annimmt, hängt von Nintendo ab.
+  Ob die Konsole den emulierten Controller annimmt, hängt von ihrer Firmware ab.
 - **Testbild:** In `/etc/switch2-bridge/config.yaml` `device: "test"` setzen, um Video ohne
   Capture-Card zu prüfen.
 
@@ -96,9 +95,9 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
 | Anzeige | Ursache / Lösung |
 |---|---|
 | **Bridge** rot | Pi nicht erreichbar: IP in der App-Konfiguration prüfen, `sudo systemctl status switch2-bridge` |
-| **Switch 2** gelb | Warte auf Kopplung: auf der Konsole *Griffweise/Reihenfolge ändern* öffnen |
-| **Switch 2** rot | nxbt läuft nicht: `journalctl -u switch2-bridge -n 50` |
-| **Capture** gelb | Karte gefunden, aber kein Bild: Switch 2 im Standby oder HDMI-Kabel prüfen |
+| **Konsole** gelb | Warte auf Kopplung: auf der Konsole *Griffweise/Reihenfolge ändern* öffnen |
+| **Konsole** rot | nxbt läuft nicht: `journalctl -u switch2-bridge -n 50` |
+| **Capture** gelb | Karte gefunden, aber kein Bild: Konsole im Standby oder HDMI-Kabel prüfen |
 | **Capture** rot | Keine Capture-Card: `v4l2-ctl --list-devices`, ggf. `device` in der config.yaml anpassen |
 | Ruckelt | `webrtc_fps`/`mjpeg_fps` oder Auflösung in der config.yaml senken |
 
@@ -108,7 +107,6 @@ sudo bash /opt/switch2-remote-play/rpi5-bridge/uninstall.sh          # Dienst un
 sudo bash /opt/switch2-remote-play/rpi5-bridge/uninstall.sh --purge  # zusätzlich Einstellungen
 ```
 
-## Lizenzen und Marken
-Nintendo Switch ist eine Marke von Nintendo. Dieses Projekt ist nicht mit Nintendo verbunden.
-Verwendet werden nxbt (MIT), aiortc (BSD), aiohttp (Apache 2.0), websockets (BSD) und OpenCV
+## Lizenzen
+Dieses Projekt ist mit keinem Konsolenhersteller verbunden. Verwendet werden nxbt (MIT), aiortc (BSD), aiohttp (Apache 2.0), websockets (BSD) und OpenCV
 (Apache 2.0).

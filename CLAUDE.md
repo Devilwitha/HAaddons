@@ -21,6 +21,7 @@ im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retro
 ## Game Remote (`switch2_remote_play/` + `rpi5-bridge/`)
 Sichtbarer Name **Game Remote**; technische Namen (Ordner `switch2_remote_play`, Slug, Dienst
 `switch2-bridge`, Pfade `/opt/switch2-*`, `/etc/switch2-bridge`) bleiben bewusst so.
+In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – nur „Spielkonsole“/„Konsole“.
 
 - `switch2_remote_play/` – Add-on: Ingress-Server (aiohttp) + Oberfläche (Video, Touch-Gamepad,
   Gamepad API). Leitet `/ws` und `/video/*` an den Pi weiter, damit der Browser nur mit HA spricht.
@@ -50,10 +51,10 @@ Sichtbarer Name **Game Remote**; technische Namen (Ordner `switch2_remote_play`,
 - **Konfiguration der Bridge** liegt nach der Installation in `/etc/switch2-bridge/config.yaml`
   (bei Updates nicht überschrieben); `rpi5-bridge/config.yaml` ist nur die Vorlage.
 - Eingaben mehrerer Clients: Tasten ODER-verknüpft, Sticks nach größtem Ausschlag.
-- Controller-Belegung im Browser: Vorlagen „wie Switch-Anordnung“ / „nach Beschriftung“, eigene
+- Controller-Belegung im Browser: Vorlagen „wie Konsolen-Anordnung“ / „nach Beschriftung“, eigene
   Belegung tauscht bei Doppelbelegung; Xbox-Erkennung vor PlayStation prüfen („Xbox Wireless Controller“).
 
-### Lokal testen (ohne Pi und ohne Switch)
+### Lokal testen (ohne Pi und ohne Konsole)
 ```bash
 # Bridge mit Testbild und ohne Bluetooth (config mit video.device: "test")
 python rpi5-bridge/main.py --config /pfad/test.yaml --dry-run

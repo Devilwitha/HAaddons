@@ -3,7 +3,7 @@
 #
 #   sudo bash /opt/switch2-remote-play/rpi5-bridge/uninstall.sh            Dienst und Programm entfernen
 #   sudo bash /opt/switch2-remote-play/rpi5-bridge/uninstall.sh --purge    zusätzlich Konfiguration und
-#                                                                          gespeicherte Switch-Adresse löschen
+#                                                                          gespeicherte Konsolen-Adresse löschen
 # Systempakete (bluez, ffmpeg, OpenCV ...) bleiben installiert.
 
 set -euo pipefail
@@ -46,7 +46,7 @@ main() {
   rm -rf "${APP_DIR}" "${REPO_DIR}"
 
   if [ "${purge}" -eq 1 ]; then
-    info "Entferne Konfiguration und gespeicherte Switch-Adresse ..."
+    info "Entferne Konfiguration und gespeicherte Konsolen-Adresse ..."
     rm -rf "${CONF_DIR}" "${STATE_DIR}"
   else
     info "Konfiguration bleibt in ${CONF_DIR} (mit --purge ebenfalls löschen)."
