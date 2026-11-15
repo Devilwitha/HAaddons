@@ -73,10 +73,34 @@ Alles liegt im Spiele-Ordner:
 Einen Spielstand von einem anderen Emulator übernimmst du so: die `.sav` mit demselben Namen wie
 die ROM nach `saves` kopieren. Beim Löschen eines Spiels bleiben seine Spielstände erhalten.
 
+## Sensoren in Home Assistant
+Das Add-on legt ein Gerät **GBA Emulator** mit diesen Sensoren an (mit eingerichtetem MQTT-Broker,
+z. B. Mosquitto, als Gerät unter *Einstellungen → Geräte & Dienste → MQTT*; sonst als einzelne
+Entitäten):
+
+| Sensor | Inhalt |
+|---|---|
+| Wird gespielt | Titel des laufenden Spiels oder „Ruhend“ |
+| Spieler | Home-Assistant-Benutzer, der gerade spielt |
+| Sitzung | Dauer der laufenden Sitzung |
+| Gesamtzeit | gesamte Spielzeit in Stunden |
+| Sitzungen | Anzahl gestarteter Spiele; Attribut `starts_pro_spiel` zählt jedes Spiel einzeln |
+| Zuletzt gespielt | Zeitpunkt des letzten Starts (Attribute: Spiel, Spieler) |
+| Letztes Spiel | Titel des zuletzt gestarteten Spiels |
+| Meistgespielt | Spiel mit der meisten Spielzeit; Attribut `rangliste` mit den Top 10 |
+| Spiele | Anzahl Spiele in der Bibliothek |
+| Aktiv | an, solange jemand spielt – praktisch für Automationen |
+
+Eine Sitzung endet beim Verlassen des Spiels oder spätestens 3 Minuten nach dem letzten
+Lebenszeichen (Tab geschlossen, Gerät aus). Die Statistik liegt in `/data/stats.json` und ist im
+Backup des Add-ons enthalten. Mit der Option `use_mqtt: false` gehen die Sensoren immer über die
+REST-API.
+
 ## Konfiguration
 | Option | Bedeutung |
 |---|---|
 | `rom_folder` | Spiele-Ordner, muss unter `/share` oder `/media` liegen. Standard: `/share/gba` |
+| `use_mqtt` | Sensoren per MQTT als Gerät anlegen (Standard: an), sonst über die REST-API |
 
 ## Datenschutz
 Die Seite ist nur über Home Assistant erreichbar (Ingress), es wird kein Port geöffnet. Emulator

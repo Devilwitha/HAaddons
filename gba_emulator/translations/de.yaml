@@ -2,3 +2,6 @@ configuration:
   rom_folder:
     name: Spiele-Ordner
     description: Ordner mit den ROMs, unter /share oder /media. Spielstände landen in den Unterordnern saves und states.
+  use_mqtt:
+    name: MQTT verwenden
+    description: Sensoren (Wird gespielt, Spielzeit, Sitzungen …) per MQTT als Gerät anlegen, wenn ein MQTT-Broker eingerichtet ist. Sonst über die REST-API.

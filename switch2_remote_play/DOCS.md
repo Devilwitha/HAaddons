@@ -54,6 +54,7 @@ stehen in `/etc/switch2-bridge/config.yaml`, danach `sudo systemctl restart swit
 | `stream_mode` | `webrtc` (geringste Latenz) oder `mjpeg` (funktioniert überall) |
 | `default_touch_overlay` | Touch-Gamepad beim ersten Öffnen anzeigen |
 | `haptic_feedback` | kurzes Vibrieren bei Tastendruck (Android) |
+| `use_mqtt` | Sensoren per MQTT als Gerät anlegen (Standard: an), sonst über die REST-API |
 
 ## Schritt 3: Erstes Koppeln
 1. Auf der Konsole **Controller → Griffweise/Reihenfolge ändern** öffnen.
@@ -76,6 +77,25 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
   Die Belegung gilt pro Gerät und Browser.
 - **Vollbild:** Im eingebetteten HA-Fenster erlauben manche Browser kein Vollbild – dann die Seite
   in einem eigenen Browser-Tab öffnen.
+
+## Sensoren in Home Assistant
+Das Add-on legt ein Gerät **Game Remote** an (mit eingerichtetem MQTT-Broker, z. B. Mosquitto,
+unter *Einstellungen → Geräte & Dienste → MQTT*; sonst als einzelne Entitäten):
+
+| Sensor | Inhalt |
+|---|---|
+| Status | „Aktiv“, solange eine Steuerungsseite mit der Bridge verbunden ist, sonst „Ruhend“ |
+| Spieler | Home-Assistant-Benutzer, der gerade spielt |
+| Sitzung | Dauer der laufenden Sitzung |
+| Gesamtzeit | gesamte Spielzeit in Stunden |
+| Sitzungen | Anzahl der Sitzungen |
+| Zuletzt gespielt | Zeitpunkt der letzten Sitzung (Attribut: Spieler) |
+| Aktiv | an, solange jemand spielt – praktisch für Automationen |
+| Konsole | Verbunden, Wartet auf Kopplung, Nicht gekoppelt … |
+| Capture-Card | Bild, Kein Signal oder Nicht verfügbar (Attribute: Auflösung, fps) |
+| Bridge | erreichbar ja/nein (Diagnose) |
+
+Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalten.
 
 ## Gut zu wissen
 - **WebRTC und unterwegs:** Über Home Assistant läuft bei WebRTC nur der Verbindungsaufbau; das

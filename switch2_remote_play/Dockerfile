@@ -12,8 +12,11 @@ ENV AIOHTTP_NO_EXTENSIONS=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apk add --no-cache --virtual .build-deps gcc musl-dev \
-    && pip install "aiohttp==3.12.15" \
+    && pip install "aiohttp==3.12.15" "paho-mqtt==2.1.0" \
     && apk del .build-deps
+
+ARG BUILD_VERSION
+ENV SWITCH2_VERSION=${BUILD_VERSION}
 
 COPY run.sh /run.sh
 COPY app /app

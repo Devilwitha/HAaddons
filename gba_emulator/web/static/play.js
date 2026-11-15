@@ -209,9 +209,54 @@
     }
   };
 
+  // ------------------------------------------------------------------ Statistik (Sensoren in HA)
+  // Sitzung beim Server anmelden, alle 30 s ein Lebenszeichen, beim Verlassen abmelden.
+  let sid = null;
+  let pingTimer = null;
+
+  async function startSession() {
+    try {
+      const r = await fetch("api/session/start", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rom }),
+      });
+      if (!r.ok) return;
+      sid = (await r.json()).sid;
+      clearInterval(pingTimer);
+      pingTimer = setInterval(pingSession, 30000);
+    } catch (e) { /* Statistik ist Beiwerk */ }
+  }
+
+  async function pingSession() {
+    if (!sid) return;
+    try {
+      const r = await fetch("api/session/ping", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sid }),
+      });
+      if (r.status === 404) {              // Server neu gestartet oder Sitzung abgelaufen
+        sid = null;
+        startSession();
+      }
+    } catch (e) { /* nächster Versuch in 30 s */ }
+  }
+
+  function endSession() {
+    if (!sid) return;
+    const body = JSON.stringify({ sid });
+    sid = null;
+    clearInterval(pingTimer);
+    if (navigator.sendBeacon && navigator.sendBeacon("api/session/end", new Blob([body], { type: "text/plain" }))) return;
+    fetch("api/session/end", { method: "POST", body, keepalive: true }).catch(() => {});
+  }
+
+  window.addEventListener("pagehide", endSession);
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted && window.EJS_emulator && window.EJS_emulator.started) startSession();
+  });
+
   window.EJS_onGameStart = function () {
     window.EJS_emulator.on("saveSaveFiles", (data) => onSaveFiles(data));
     loadServerSave();
+    startSession();
   };
 
   // ------------------------------------------------------------------ Verlassen
@@ -225,6 +270,7 @@
     ev.preventDefault();
     setSync("busy", "Spielstand wird gesichert …");
     await Promise.race([flush(false), new Promise((r) => setTimeout(r, 4000))]);
+    endSession();
     location.href = "./";
   });
 

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.2
+
+- Sensoren für Home Assistant: Status, Spieler, Sitzung, Gesamtzeit, Sitzungen, Zuletzt gespielt, Aktiv, Konsole, Capture-Card, Bridge – per MQTT als Gerät oder über die REST-API
+- Neue Option `use_mqtt`
+
 ## 1.0.1
 
 - Neutrale Bezeichnungen: „Spielkonsole“ bzw. „Konsole“ statt Konsolen- und Markennamen in Name, Beschreibung, Oberfläche und Anleitung

@@ -1,7 +1,7 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache python3 py3-aiohttp
+RUN apk add --no-cache python3 py3-aiohttp py3-paho-mqtt
 
 # EmulatorJS (GPL-3.0) mit mGBA-Kern, fest auf eine Version gepinnt und per SHA-256 geprüft.
 # Das npm-Paket enthält nur die einzelnen Skripte; loader.js erwartet emulator.min.js/.css,
@@ -45,7 +45,7 @@ ENV EMU_SYSTEM=gba \
     EMU_VERSION=${BUILD_VERSION}
 
 WORKDIR /app
-COPY server.py /app/
+COPY server.py ha_sensors.py /app/
 COPY web /app/web
 
 CMD ["python3", "-u", "/app/server.py"]

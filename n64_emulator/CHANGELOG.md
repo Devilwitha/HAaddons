@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.2
+
+- Sensoren für Home Assistant: Wird gespielt, Spieler, Sitzung, Gesamtzeit, Sitzungen (mit Starts pro Spiel), Zuletzt gespielt, Letztes Spiel, Meistgespielt (Rangliste), Spiele, Aktiv – per MQTT als Gerät oder über die REST-API
+- Neue Option `use_mqtt`
+
 ## 1.0.1
 
 - Controller-Belegung: Vorlagen Standard (LT = Z) und Alternative (RT = Z), Xbox- oder PlayStation-Beschriftung, Knopf für einzelne Tasten

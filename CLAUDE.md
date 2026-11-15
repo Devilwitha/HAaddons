@@ -11,6 +11,16 @@ im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retro
 - Python 4 Leerzeichen; YAML/JSON/JS/HTML/CSS 2 Leerzeichen. Keine Platzhalter/TODOs.
 - Oberflächen laufen hinter Ingress: nur relative URLs, keine externen CDNs, Zugriff nur von 172.30.32.2.
 
+## Sensoren (`ha_sensors.py`)
+- Identische Datei in `gba_emulator/`, `n64_emulator/` und `switch2_remote_play/app/`: MQTT-Discovery
+  (Gerät „BolliSoft“, Topics `bollisoft/<node>/…`) oder REST-API über den Supervisor, Option `use_mqtt`.
+  Braucht `homeassistant_api: true` und `services: [mqtt:want]` in der `config.yaml`.
+- Statistik in `/data/stats.json`; Sitzungen: Emulatoren über `/api/session/start|ping|end` aus `play.js`
+  (Ablauf nach 180 s ohne Lebenszeichen), Game Remote über die offene WebSocket-Verbindung.
+- Spieler kommt aus den Ingress-Kopfzeilen `X-Remote-User-Display-Name`/`X-Remote-User-Name`.
+- Lokal testen: `SUPERVISOR_TOKEN=x BOLLISOFT_SUPERVISOR_URL=http://127.0.0.1:<port>` gegen einen
+  kleinen Ersatz-Supervisor (`/services/mqtt`, `/core/api/states/<id>`).
+
 ## GBA- und N64-Emulator (`gba_emulator/`, `n64_emulator/`)
 - `server.py` und alles in `web/` sind in beiden Add-ons **identisch** – nur `web/static/system.js`
   (Name, Kern, Endungen, Touch-Layout, Controller-Vorlagen) und das `Dockerfile` (`EMU_SYSTEM`,

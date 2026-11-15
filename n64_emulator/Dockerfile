@@ -1,7 +1,7 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache python3 py3-aiohttp
+RUN apk add --no-cache python3 py3-aiohttp py3-paho-mqtt
 
 # EmulatorJS (GPL-3.0) mit den N64-Kernen mupen64plus_next (Standard) und parallel_n64
 # (nimmt EmulatorJS auf iPhone/iPad), fest auf eine Version gepinnt und per SHA-256 geprüft.
@@ -50,7 +50,7 @@ ENV EMU_SYSTEM=n64 \
     EMU_VERSION=${BUILD_VERSION}
 
 WORKDIR /app
-COPY server.py /app/
+COPY server.py ha_sensors.py /app/
 COPY web /app/web
 
 CMD ["python3", "-u", "/app/server.py"]

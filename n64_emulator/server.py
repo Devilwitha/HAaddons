@@ -12,14 +12,20 @@ So spielt man auf PC, Tablet und Handy am selben Stand weiter.
 Dieselbe Datei steckt im GBA- und im N64-Add-on; welches System gilt, bestimmt EMU_SYSTEM
 (im Dockerfile gesetzt). Auch web/ ist identisch bis auf web/static/system.js.
 """
+import asyncio
 import json
 import logging
 import os
 import re
+import secrets
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
+import aiohttp
 from aiohttp import web
+
+from ha_sensors import Sensor, SensorHub
 
 MB = 1024 * 1024
 SYSTEMS = {
@@ -57,16 +63,23 @@ STATE_MAX = SYSTEM["state_max"]
 SHOT_MAX = 2 * MB
 SLOTS = range(1, 10)
 EXT_TEXT = ", ".join(sorted(ROM_EXT, key=lambda e: (e in (".zip", ".7z"), e)))
+STATS_PATH = Path(os.environ.get("EMU_STATS", "/data/stats.json"))
+SESSION_TIMEOUT = 180            # ohne Lebenszeichen so lange -> Sitzung beendet (Tab zu, Gerät aus)
+TICK_SECONDS = 15                # Spielzeit verbuchen und Sensoren aktualisieren
 
 log = logging.getLogger(SYSTEM_ID)
 
 
 # --------------------------------------------------------------------------- Optionen / Pfade
-def load_rom_dir():
+def load_options():
     try:
-        options = json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
+        return json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        options = {}
+        return {}
+
+
+def load_rom_dir():
+    options = load_options()
     default = SYSTEM["folder"]
     raw = str(options.get("rom_folder") or default).strip()
     path = Path(raw)
@@ -182,8 +195,142 @@ def no_cache(response):
     return response
 
 
+# --------------------------------------------------------------------------- Statistik
+def iso(ts):
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds") if ts else None
+
+
+def player_of(request):
+    """Name des HA-Benutzers - Ingress schickt ihn in den X-Remote-User-*-Kopfzeilen mit."""
+    return (request.headers.get("X-Remote-User-Display-Name") or request.headers.get("X-Remote-User-Name")
+            or "Unbekannt").strip()[:60]
+
+
+class Stats:
+    """Sitzungen, Spielzeit und Starts pro Spiel - gespeichert in /data/stats.json."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.data = {"games": {}, "sessions": 0, "seconds": 0.0, "last": None}
+        self.active = {}             # sid -> {"file", "title", "player", "start", "ping", "booked"}
+        self.dirty = False
+        try:
+            loaded = json.loads(self.path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                self.data.update(loaded)
+        except (OSError, ValueError):
+            pass
+
+    def save(self):
+        if not self.dirty:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic(self.path, json.dumps(self.data, ensure_ascii=False, indent=1).encode("utf-8"))
+            self.dirty = False
+        except OSError as err:
+            log.warning("Statistik nicht gespeichert: %s", err)
+
+    def _game(self, file, title):
+        game = self.data["games"].setdefault(file, {"title": title, "starts": 0, "seconds": 0.0, "last": None})
+        game["title"] = title
+        return game
+
+    def start(self, file, title, player):
+        now = time.time()
+        sid = secrets.token_hex(8)
+        self.active[sid] = {"file": file, "title": title, "player": player, "start": now, "ping": now, "booked": now}
+        game = self._game(file, title)
+        game["starts"] += 1
+        game["last"] = now
+        self.data["sessions"] += 1
+        self.data["last"] = {"file": file, "title": title, "player": player, "time": now}
+        self.dirty = True
+        log.info("Spiel gestartet: %s (%s)", title, player)
+        return sid
+
+    def ping(self, sid):
+        session = self.active.get(sid)
+        if session is None:
+            return False
+        session["ping"] = time.time()
+        return True
+
+    def _book(self, session, until):
+        delta = max(0.0, until - session["booked"])
+        if delta:
+            self._game(session["file"], session["title"])["seconds"] += delta
+            self.data["seconds"] += delta
+            session["booked"] = until
+            self.dirty = True
+
+    def end(self, sid, until=None):
+        session = self.active.pop(sid, None)
+        if session is None:
+            return False
+        self._book(session, until or time.time())
+        log.info("Spiel beendet: %s nach %d Min.", session["title"], (session["booked"] - session["start"]) // 60)
+        return True
+
+    def tick(self):
+        now = time.time()
+        for sid, session in list(self.active.items()):
+            if now - session["ping"] > SESSION_TIMEOUT:
+                self.end(sid, until=session["ping"])
+            else:
+                self._book(session, now)
+
+    def current(self):
+        """Zuletzt gestartete laufende Sitzung."""
+        return max(self.active.values(), key=lambda x: x["start"]) if self.active else None
+
+
+SENSORS = [
+    Sensor("playing", "sensor", "Wird gespielt", "mdi:gamepad-variant"),
+    Sensor("player", "sensor", "Spieler", "mdi:account"),
+    Sensor("session", "sensor", "Sitzung", "mdi:timer-outline", "s", "duration", "measurement"),
+    Sensor("total_time", "sensor", "Gesamtzeit", "mdi:timer-plus-outline", "h", "duration", "total_increasing"),
+    Sensor("sessions", "sensor", "Sitzungen", "mdi:counter", None, None, "total_increasing"),
+    Sensor("last_played", "sensor", "Zuletzt gespielt", "mdi:clock-end", None, "timestamp"),
+    Sensor("last_game", "sensor", "Letztes Spiel", "mdi:history"),
+    Sensor("most_played", "sensor", "Meistgespielt", "mdi:trophy-outline"),
+    Sensor("library", "sensor", "Spiele", "mdi:bookshelf", "Spiele", None, "measurement"),
+    Sensor("active", "binary_sensor", "Aktiv", "mdi:controller", None, "running"),
+]
+
+
+def update_sensors(hub, stats, library):
+    data = stats.data
+    games = data["games"]
+    current = stats.current()
+    players = sorted({s["player"] for s in stats.active.values()})
+    now = time.time()
+    hub.set("playing", current["title"] if current else "Ruhend",
+            {"datei": current["file"], "system": system_of(current["file"]),
+             "alle": [s["title"] for s in stats.active.values()]} if current else {})
+    hub.set("player", ", ".join(players) if players else "Niemand spielt")
+    hub.set("session", int(now - current["start"]) if current else 0,
+            {"spiel": current["title"], "seit": iso(current["start"])} if current else {})
+    hub.set("total_time", round(data["seconds"] / 3600, 2))
+    hub.set("sessions", data["sessions"],
+            {"starts_pro_spiel": {g["title"]: g["starts"] for g in sorted(games.values(), key=lambda g: -g["starts"])}})
+    last = data.get("last") or {}
+    hub.set("last_played", iso(last.get("time")), {"spiel": last.get("title"), "spieler": last.get("player")})
+    hub.set("last_game", last.get("title") or "–", {"datei": last.get("file")})
+    ranking = sorted(games.values(), key=lambda g: (-g["seconds"], -g["starts"]))
+    hub.set("most_played", ranking[0]["title"] if ranking else "–",
+            {"rangliste": [{"spiel": g["title"], "starts": g["starts"], "stunden": round(g["seconds"] / 3600, 2),
+                            "zuletzt": iso(g.get("last"))} for g in ranking[:10]]})
+    try:
+        count = len(library.listing())
+    except OSError:
+        count = None
+    hub.set("library", count)
+    hub.set("active", bool(stats.active))
+
+
 # --------------------------------------------------------------------------- Web-App
-def make_app(library, ingress_only=True):
+def make_app(library, ingress_only=True, stats=None, hub=None):
     @web.middleware
     async def guard(request, handler):
         if ingress_only and request.remote != INGRESS_PEER:
@@ -303,7 +450,73 @@ def make_app(library, ingress_only=True):
         write_atomic(library.state_path(name, slot, "png"), data)
         return web.json_response({"ok": True})
 
+    if stats is None:
+        stats = Stats(STATS_PATH)
+
+    async def publish():
+        if hub is not None:
+            update_sensors(hub, stats, library)
+            await hub.publish()
+
+    async def read_json(request):
+        try:
+            data = json.loads(await request.text() or "{}")   # sendBeacon schickt text/plain
+        except ValueError:
+            raise web.HTTPBadRequest(text="JSON erwartet")
+        if not isinstance(data, dict):
+            raise web.HTTPBadRequest(text="JSON-Objekt erwartet")
+        return data
+
+    async def session_start(request):
+        data = await read_json(request)
+        name = str(data.get("rom", ""))
+        library.rom(name)
+        sid = stats.start(name, title_of(name), player_of(request))
+        stats.save()
+        asyncio.create_task(publish())
+        return no_cache(web.json_response({"sid": sid}))
+
+    async def session_ping(request):
+        data = await read_json(request)
+        if not stats.ping(str(data.get("sid", ""))):
+            raise web.HTTPNotFound(text="Sitzung unbekannt")
+        return no_cache(web.json_response({"ok": True}))
+
+    async def session_end(request):
+        data = await read_json(request)
+        if stats.end(str(data.get("sid", ""))):
+            stats.save()
+            asyncio.create_task(publish())
+        return no_cache(web.json_response({"ok": True}))
+
+    async def stats_get(_request):
+        values = {key: hub.values.get(key, (None, {}))[0] for key in hub.sensors} if hub else {}
+        return no_cache(web.json_response({"stats": stats.data, "sensors": values, "active": len(stats.active)}))
+
+    async def ticker(_app):
+        async def loop():
+            while True:
+                await asyncio.sleep(TICK_SECONDS)
+                stats.tick()
+                stats.save()
+                try:
+                    await publish()
+                except Exception as err:          # Sensoren dürfen das Spielen nie stören
+                    log.warning("Sensoren aktualisieren: %s", err)
+        task = asyncio.create_task(loop())
+        yield
+        task.cancel()
+        for sid in list(stats.active):
+            stats.end(sid)
+        stats.save()
+
     app = web.Application(middlewares=[guard], client_max_size=ROM_MAX + 1024 * 1024)
+    app["stats"] = stats
+    app.cleanup_ctx.append(ticker)
+    app.router.add_post("/api/session/start", session_start)
+    app.router.add_post("/api/session/ping", session_ping)
+    app.router.add_post("/api/session/end", session_end)
+    app.router.add_get("/api/stats", stats_get)
     app.router.add_get("/", index)
     app.router.add_get("/play", play)
     app.router.add_get("/api/roms", roms)
@@ -328,7 +541,22 @@ def main():
     log.info("%s %s - Spiele in %s", SYSTEM["name"], VERSION, root)
     if not (EJS_DIR / "loader.js").is_file():
         log.error("EmulatorJS fehlt in %s", EJS_DIR)
-    app = make_app(Library(root), ingress_only=os.environ.get("EMU_NO_GUARD") != "1")
+    library = Library(root)
+    stats = Stats(STATS_PATH)
+    hub = SensorHub(f"{SYSTEM_ID}_emulator", SYSTEM["name"], "Emulator (BolliSoft)", VERSION, SENSORS)
+    use_mqtt = bool(load_options().get("use_mqtt", True))
+
+    async def start_sensors(_app):
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
+        await hub.start(session, use_mqtt)
+        update_sensors(hub, stats, library)
+        await hub.publish()
+        yield
+        await hub.stop()
+        await session.close()
+
+    app = make_app(library, ingress_only=os.environ.get("EMU_NO_GUARD") != "1", stats=stats, hub=hub)
+    app.cleanup_ctx.insert(0, start_sensors)
     web.run_app(app, host="0.0.0.0", port=PORT, access_log=None, print=None)
 
 

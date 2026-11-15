@@ -1,5 +1,5 @@
 name: "Game Remote"
-version: "1.0.1"
+version: "1.0.2"
 slug: "switch2_remote_play"
 description: "Spielkonsole aus der Seitenleiste fernsteuern – Low-Latency Video-Stream, Touch-Gamepad und Controller über Raspberry Pi 5 (von BolliSoft)"
 url: "https://github.com/Devilwitha/HAaddons"
@@ -14,6 +14,10 @@ ingress: true
 ingress_port: 8099
 panel_icon: "mdi:gamepad-variant-outline"
 panel_title: "Game Remote"
+# Sensoren: per MQTT-Discovery (Gerät) oder über die REST-API von Home Assistant
+homeassistant_api: true
+services:
+  - "mqtt:want"
 options:
   pi_host: "192.168.1.50"
   pi_ws_port: 8765
@@ -21,6 +25,7 @@ options:
   stream_mode: "webrtc"
   default_touch_overlay: true
   haptic_feedback: true
+  use_mqtt: true
 schema:
   pi_host: "str"
   pi_ws_port: "port"
@@ -28,3 +33,4 @@ schema:
   stream_mode: "list(webrtc|mjpeg)"
   default_touch_overlay: "bool"
   haptic_feedback: "bool"
+  use_mqtt: "bool"

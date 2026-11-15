@@ -19,10 +19,15 @@ import json
 import logging
 import os
 import re
+import secrets
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import aiohttp
 from aiohttp import web
+
+from ha_sensors import Sensor, SensorHub
 
 OPTIONS_PATH = Path(os.environ.get("SWITCH2_OPTIONS", "/data/options.json"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -35,7 +40,16 @@ DEFAULTS = {
     "stream_mode": "webrtc",
     "default_touch_overlay": True,
     "haptic_feedback": True,
+    "use_mqtt": True,
 }
+STATS_PATH = Path(os.environ.get("SWITCH2_STATS", "/data/stats.json"))
+VERSION = os.environ.get("SWITCH2_VERSION") or "dev"
+TICK_SECONDS = 15
+CONSOLE_TEXT = {
+    "connected": "Verbunden", "connecting": "Wartet auf Kopplung", "reconnecting": "Verbindet erneut",
+    "initializing": "Startet", "disconnected": "Nicht gekoppelt", "crashed": "Fehler", "unavailable": "Nicht verfügbar",
+}
+CAPTURE_TEXT = {"ok": "Bild", "no_signal": "Kein Signal", "unavailable": "Nicht verfügbar"}
 VIDEO_PATH = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 WS_MAX_MESSAGE = 256 * 1024
 OFFER_MAX_BODY = 256 * 1024
@@ -59,7 +73,115 @@ def load_options():
         options["stream_mode"] = "webrtc"
     options["default_touch_overlay"] = bool(options["default_touch_overlay"])
     options["haptic_feedback"] = bool(options["haptic_feedback"])
+    options["use_mqtt"] = bool(options["use_mqtt"])
     return options
+
+
+# --------------------------------------------------------------------------- Statistik und Sensoren
+def iso(ts):
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds") if ts else None
+
+
+def player_of(request):
+    """Name des HA-Benutzers - Ingress schickt ihn in den X-Remote-User-*-Kopfzeilen mit."""
+    return (request.headers.get("X-Remote-User-Display-Name") or request.headers.get("X-Remote-User-Name")
+            or "Unbekannt").strip()[:60]
+
+
+class Stats:
+    """Sitzungen (offene Steuerungsseiten) und Spielzeit - gespeichert in /data/stats.json."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.data = {"sessions": 0, "seconds": 0.0, "last": None}
+        self.active = {}             # sid -> {"player", "start", "booked"}
+        self.dirty = False
+        self.bridge = {"online": False, "switch": {}, "capture": {}}
+        try:
+            loaded = json.loads(self.path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                self.data.update(loaded)
+        except (OSError, ValueError):
+            pass
+
+    def save(self):
+        if not self.dirty:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(tmp, self.path)
+            self.dirty = False
+        except OSError as err:
+            log.warning("Statistik nicht gespeichert: %s", err)
+
+    def start(self, player):
+        now = time.time()
+        sid = secrets.token_hex(8)
+        self.active[sid] = {"player": player, "start": now, "booked": now}
+        self.data["sessions"] += 1
+        self.data["last"] = {"player": player, "time": now}
+        self.dirty = True
+        log.info("Sitzung gestartet (%s)", player)
+        return sid
+
+    def _book(self, session, until):
+        delta = max(0.0, until - session["booked"])
+        if delta:
+            self.data["seconds"] += delta
+            session["booked"] = until
+            self.dirty = True
+
+    def end(self, sid):
+        session = self.active.pop(sid, None)
+        if session is None:
+            return
+        self._book(session, time.time())
+        log.info("Sitzung beendet (%s) nach %d Min.", session["player"], (session["booked"] - session["start"]) // 60)
+
+    def tick(self):
+        now = time.time()
+        for session in self.active.values():
+            self._book(session, now)
+
+
+SENSORS = [
+    Sensor("status", "sensor", "Status", "mdi:gamepad-variant-outline"),
+    Sensor("player", "sensor", "Spieler", "mdi:account"),
+    Sensor("session", "sensor", "Sitzung", "mdi:timer-outline", "s", "duration", "measurement"),
+    Sensor("total_time", "sensor", "Gesamtzeit", "mdi:timer-plus-outline", "h", "duration", "total_increasing"),
+    Sensor("sessions", "sensor", "Sitzungen", "mdi:counter", None, None, "total_increasing"),
+    Sensor("last_played", "sensor", "Zuletzt gespielt", "mdi:clock-end", None, "timestamp"),
+    Sensor("active", "binary_sensor", "Aktiv", "mdi:controller", None, "running"),
+    Sensor("console", "sensor", "Konsole", "mdi:bluetooth-connect"),
+    Sensor("capture", "sensor", "Capture-Card", "mdi:video-input-hdmi"),
+    Sensor("bridge", "binary_sensor", "Bridge", "mdi:raspberry-pi", None, "connectivity", None, "diagnostic"),
+]
+
+
+def update_sensors(hub, stats):
+    now = time.time()
+    current = max(stats.active.values(), key=lambda x: x["start"]) if stats.active else None
+    players = sorted({x["player"] for x in stats.active.values()})
+    hub.set("status", "Aktiv" if current else "Ruhend", {"geräte": len(stats.active)})
+    hub.set("player", ", ".join(players) if players else "Niemand spielt")
+    hub.set("session", int(now - current["start"]) if current else 0,
+            {"seit": iso(current["start"])} if current else {})
+    hub.set("total_time", round(stats.data["seconds"] / 3600, 2))
+    hub.set("sessions", stats.data["sessions"])
+    last = stats.data.get("last") or {}
+    hub.set("last_played", iso(last.get("time")), {"spieler": last.get("player")})
+    hub.set("active", bool(stats.active))
+    bridge = stats.bridge
+    sw = bridge["switch"] if bridge["online"] else {}
+    cap = bridge["capture"] if bridge["online"] else {}
+    hub.set("console", CONSOLE_TEXT.get(sw.get("state"), "Unbekannt") if bridge["online"] else "Bridge offline",
+            {"zustand": sw.get("state"), "detail": sw.get("detail") or None})
+    hub.set("capture", CAPTURE_TEXT.get(cap.get("state"), "Unbekannt") if bridge["online"] else "Bridge offline",
+            {"zustand": cap.get("state"), "detail": cap.get("detail") or None, "gerät": cap.get("device"),
+             "auflösung": f"{cap.get('width')}x{cap.get('height')}" if cap.get("width") else None, "fps": cap.get("fps")})
+    hub.set("bridge", bridge["online"])
 
 
 def bridge_host(options):
@@ -93,11 +215,17 @@ async def ws_proxy(request):
     client = web.WebSocketResponse(heartbeat=20, max_msg_size=WS_MAX_MESSAGE)
     await client.prepare(request)
     target = f"ws://{bridge_host(options)}:{options['pi_ws_port']}"
+    stats = request.app["stats"]
+    sid = None
 
     try:
         async with session.ws_connect(target, heartbeat=20, max_msg_size=WS_MAX_MESSAGE,
                                       timeout=aiohttp.ClientWSTimeout(ws_close=5)) as upstream:
             await client.send_json({"type": "proxy", "status": "connected"})
+            # Jede offene Steuerungsseite mit erreichbarer Bridge zählt als Sitzung
+            sid = stats.start(player_of(request))
+            stats.save()
+            request.app["publish_soon"]()
 
             async def browser_to_bridge():
                 async for msg in client:
@@ -132,6 +260,10 @@ async def ws_proxy(request):
         if not client.closed:
             await client.send_json({"type": "proxy", "status": "unreachable", "error": str(err) or err.__class__.__name__})
     finally:
+        if sid is not None:
+            stats.end(sid)
+            stats.save()
+            request.app["publish_soon"]()
         if not client.closed:
             await client.close()
     return client
@@ -182,21 +314,92 @@ async def video_proxy(request):
 
 
 # --------------------------------------------------------------------------- App
-def make_app(options, ingress_only=True):
+async def bridge_watch(app):
+    """Eigene Verbindung zur Bridge, nur zum Mitlesen des Status (Konsole, Capture-Card)."""
+    options = app["options"]
+    stats = app["stats"]
+    target = f"ws://{bridge_host(options)}:{options['pi_ws_port']}"
+    while True:
+        try:
+            async with app["session"].ws_connect(target, heartbeat=30, max_msg_size=WS_MAX_MESSAGE,
+                                                 timeout=aiohttp.ClientWSTimeout(ws_close=5)) as ws:
+                if not stats.bridge["online"]:
+                    log.info("Bridge %s erreichbar", target)
+                stats.bridge["online"] = True
+                app["publish_soon"]()
+                async for msg in ws:
+                    if msg.type != aiohttp.WSMsgType.TEXT:
+                        break
+                    try:
+                        data = json.loads(msg.data)
+                    except ValueError:
+                        continue
+                    if data.get("type") == "status":
+                        changed = (data.get("switch", {}).get("state") != stats.bridge["switch"].get("state")
+                                   or data.get("capture", {}).get("state") != stats.bridge["capture"].get("state"))
+                        stats.bridge["switch"] = data.get("switch") or {}
+                        stats.bridge["capture"] = data.get("capture") or {}
+                        if changed:
+                            app["publish_soon"]()
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+            pass
+        if stats.bridge["online"]:
+            log.warning("Bridge %s nicht mehr erreichbar", target)
+            stats.bridge["online"] = False
+            app["publish_soon"]()
+        await asyncio.sleep(10)
+
+
+def make_app(options, ingress_only=True, stats=None, hub=None):
     @web.middleware
     async def guard(request, handler):
         if ingress_only and request.remote != INGRESS_PEER:
             raise web.HTTPForbidden(text="Nur über Home Assistant Ingress erreichbar")
         return await handler(request)
 
+    async def publish():
+        if hub is not None:
+            update_sensors(hub, app["stats"])
+            await hub.publish()
+
+    def publish_soon():
+        task = asyncio.ensure_future(publish())
+        app["tasks"].add(task)
+        task.add_done_callback(app["tasks"].discard)
+
+    async def ticker():
+        while True:
+            await asyncio.sleep(TICK_SECONDS)
+            app["stats"].tick()
+            app["stats"].save()
+            try:
+                await publish()
+            except Exception as err:          # Sensoren dürfen die Steuerung nie stören
+                log.warning("Sensoren aktualisieren: %s", err)
+
     async def on_startup(app):
         app["session"] = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, sock_connect=5))
+        if hub is not None:
+            await hub.start(app["session"], options["use_mqtt"])
+        app["background"] = [asyncio.create_task(ticker()), asyncio.create_task(bridge_watch(app))]
+        await publish()
 
     async def on_cleanup(app):
+        for task in app["background"]:
+            task.cancel()
+        await asyncio.gather(*app["background"], return_exceptions=True)
+        for sid in list(app["stats"].active):
+            app["stats"].end(sid)
+        app["stats"].save()
+        if hub is not None:
+            await hub.stop()
         await app["session"].close()
 
     app = web.Application(middlewares=[guard], client_max_size=OFFER_MAX_BODY)
     app["options"] = options
+    app["stats"] = stats if stats is not None else Stats(STATS_PATH)
+    app["tasks"] = set()
+    app["publish_soon"] = publish_soon
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     app.router.add_get("/", index)
@@ -212,7 +415,8 @@ def main():
     options = load_options()
     log.info("Ingress-Server auf Port %d, Bridge %s (WebSocket %d, Video %d), Stream %s",
              PORT, options["pi_host"], options["pi_ws_port"], options["pi_video_port"], options["stream_mode"])
-    app = make_app(options, ingress_only=os.environ.get("SWITCH2_NO_GUARD") != "1")
+    hub = SensorHub("game_remote", "Game Remote", "Game Remote (BolliSoft)", VERSION, SENSORS)
+    app = make_app(options, ingress_only=os.environ.get("SWITCH2_NO_GUARD") != "1", hub=hub)
     web.run_app(app, host="0.0.0.0", port=PORT, access_log=None, print=None)
 
 

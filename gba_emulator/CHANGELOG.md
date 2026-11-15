@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.4
+
+- Sensoren für Home Assistant: Wird gespielt, Spieler, Sitzung, Gesamtzeit, Sitzungen (mit Starts pro Spiel), Zuletzt gespielt, Letztes Spiel, Meistgespielt (Rangliste), Spiele, Aktiv – per MQTT als Gerät oder über die REST-API
+- Neue Option `use_mqtt`
+
 ## 1.0.3
 
 - Controller-Belegung: Vorlagen für Xbox und PlayStation (nach Beschriftung oder wie Nintendo), Anzeige mit passender Tastenbeschriftung, Knopf für einzelne Tasten

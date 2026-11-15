@@ -2,3 +2,6 @@ configuration:
   rom_folder:
     name: Games folder
     description: Folder with your ROMs, below /share or /media. Saves go to the subfolders saves and states.
+  use_mqtt:
+    name: Use MQTT
+    description: Create the sensors (now playing, play time, sessions …) as an MQTT device when a broker is set up. Otherwise via the REST API.
