@@ -9,6 +9,7 @@
   const EMU = window.EMU;
   const extText = EMU.exts.join(", ");
   let roms = [];
+  let romMax = 0;                    // größte erlaubte Datei in Bytes (vom Server)
   let toastTimer = null;
 
   document.title = EMU.name;
@@ -87,6 +88,7 @@
       if (!r.ok) throw new Error("HTTP " + r.status);
       const data = await r.json();
       roms = data.roms;
+      romMax = data.rom_max || 0;
       $("folder").textContent = data.folder;
       render();
     } catch (e) {
@@ -142,8 +144,10 @@
     const list = Array.from(files);
     const bad = list.filter((f) => !allowed(f));
     if (bad.length) toast("Übersprungen: " + bad.map((f) => f.name).join(", ") + " (erlaubt: " + extText + ")", true);
+    const big = romMax ? list.filter((f) => allowed(f) && f.size > romMax) : [];
+    if (big.length) toast("Zu groß: " + big.map((f) => f.name).join(", ") + " (höchstens " + Math.round(romMax / 1048576) + " MB)", true);
     let ok = 0;
-    for (const f of list.filter(allowed)) {
+    for (const f of list.filter((f) => allowed(f) && !big.includes(f))) {
       if (await uploadOne(f)) ok++;
     }
     $("progress").hidden = true;

@@ -5,6 +5,7 @@
 - Automatisch speichern: nach `idle_minutes` (Standard 10) ohne Eingabe Spielstand und Auto-Speicherstand sichern, Spiel pausieren, Sitzung beenden; beim nächsten Start Auto-Speicherstand laden
 - Pro Home-Assistant-Benutzer nur eine Sitzung: Start auf einem zweiten Gerät fragt nach, das erste Gerät speichert und meldet sich ab, dann geht es mit dem frischen Stand weiter
 - Lebenszeichen der Sitzung alle 10 statt 30 Sekunden
+- Uploads bis 512 MB (vorher 96 MB); zu große Dateien meldet die Bibliothek schon vor dem Hochladen
 
 ## 1.0.3
 

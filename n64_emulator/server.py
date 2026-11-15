@@ -41,7 +41,7 @@ SYSTEMS = {
         "name": "N64 Emulator",
         "folder": "/share/n64",
         "ext": {".z64": "N64", ".n64": "N64", ".v64": "N64", ".zip": "N64", ".7z": "N64"},
-        "rom_max": 96 * MB,       # größte N64-ROM: 64 MB
+        "rom_max": 512 * MB,      # größte N64-ROM: 64 MB; Luft für Archive und ROM-Hacks
         "save_max": 4 * MB,       # EEPROM/SRAM/Flash/Controller Pak zusammen < 0,5 MB
         "state_max": 64 * MB,     # Savestate mit Expansion Pak: ca. 16-20 MB
     },
@@ -440,7 +440,9 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
                     while chunk := await part.read_chunk(256 * 1024):
                         size += len(chunk)
                         if size > ROM_MAX:
-                            raise web.HTTPRequestEntityTooLarge(max_size=ROM_MAX, actual_size=size)
+                            raise web.HTTPRequestEntityTooLarge(
+                                max_size=ROM_MAX, actual_size=size,
+                                text=f"{name} ist zu groß (höchstens {ROM_MAX // MB} MB)")
                         handle.write(chunk)
                 os.replace(tmp, target)
             finally:

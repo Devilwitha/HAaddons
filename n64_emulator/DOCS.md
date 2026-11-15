@@ -11,7 +11,7 @@ speichert nur die Dateien. Deshalb spielst du auf jedem Gerät am selben Spielst
 - **Per Samba:** Dateien in den Ordner `n64` der Freigabe `share` kopieren (`/share/n64`).
   Die Bibliothek zeigt sie beim nächsten Öffnen an.
 
-Erlaubt sind `.z64`, `.n64`, `.v64` sowie `.zip` und `.7z` mit einer ROM darin, bis 96 MB.
+Erlaubt sind `.z64`, `.n64`, `.v64` sowie `.zip` und `.7z` mit einer ROM darin, bis 512 MB.
 Lade nur Spiele hoch, die du besitzt.
 
 ## Leistung
