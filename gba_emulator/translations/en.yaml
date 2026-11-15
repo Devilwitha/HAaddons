@@ -1,0 +1,4 @@
+configuration:
+  rom_folder:
+    name: Games folder
+    description: Folder with your ROMs, below /share or /media. Saves go to the subfolders saves and states.

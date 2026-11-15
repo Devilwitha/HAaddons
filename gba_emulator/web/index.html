@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>GBA Emulator</title>
+<link rel="stylesheet" href="static/app.css">
+<link rel="icon" href="static/icon.png">
+</head>
+<body class="library">
+<header class="bar">
+  <h1>GBA Emulator</h1>
+  <input type="search" id="search" placeholder="Spiel suchen …" aria-label="Spiel suchen" hidden>
+  <label class="btn" title="ROM-Dateien hochladen (.gba, .gbc, .gb, .zip, .7z)">
+    &#8679; Spiel hinzufügen
+    <input type="file" id="file" accept=".gba,.gbc,.gb,.zip,.7z" multiple hidden>
+  </label>
+</header>
+
+<main>
+  <div class="progress" id="progress" hidden><div></div><span></span></div>
+
+  <section class="empty" id="empty" hidden>
+    <div class="empty-icon">&#127918;</div>
+    <h2>Noch keine Spiele</h2>
+    <p>Lade eine ROM über <b>Spiel hinzufügen</b> hoch oder ziehe die Datei hierher.</p>
+    <p class="muted">Größere Sammlungen kopierst du am einfachsten per Samba in den Ordner
+      <code id="folder">/share/gba</code> (Freigabe <code>share</code>).</p>
+  </section>
+
+  <section class="grid" id="grid"></section>
+  <p class="muted footer" id="footer"></p>
+</main>
+
+<div class="drop" id="drop" hidden><div>ROM hier ablegen</div></div>
+<div class="toast" id="toast" hidden></div>
+
+<template id="card">
+  <article class="card">
+    <a class="cover" href="#">
+      <img alt="" loading="lazy" hidden>
+      <span class="badge"></span>
+      <span class="play-icon">&#9654;</span>
+    </a>
+    <div class="info">
+      <h3></h3>
+      <p class="meta"></p>
+    </div>
+    <button class="more" title="Spiel löschen" aria-label="Spiel löschen">&#128465;</button>
+  </article>
+</template>
+
+<script src="static/library.js"></script>
+</body>
+</html>

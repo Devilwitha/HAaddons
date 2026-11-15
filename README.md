@@ -17,6 +17,12 @@ HA-Seitenleiste und als Sensoren – mit Knöpfen für Neustart (mit Vorlauf, ab
 der Bollisoft-Dienste und Entladen der Ollama-Modelle. Kein Herunterfahren, kein Sleep. Die Daten
 schickt `bollisoft-agent.exe` vom Server. Details: [DOCS.md](bollisoft_monitor/DOCS.md)
 
+### [GBA Emulator](gba_emulator/)
+Game-Boy-Advance-, Game-Boy- und Game-Boy-Color-Spiele in der HA-Seitenleiste spielen, am PC,
+Tablet oder Handy (mit Touch-Gamepad). ROMs per Upload oder Samba nach `/share/gba`. Spielstände
+und Speicherstände liegen auf dem Server, so geht es auf jedem Gerät am selben Stand weiter.
+Details: [DOCS.md](gba_emulator/DOCS.md)
+
 ## Installation
 Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories →
 `https://github.com/Devilwitha/HAaddons` hinzufügen.

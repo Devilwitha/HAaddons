@@ -1,0 +1,29 @@
+name: GBA Emulator
+version: "1.0.0"
+slug: gba_emulator
+description: Game Boy Advance (auch GB/GBC) direkt in Home Assistant spielen – Spielstände liegen auf dem Server (von BolliSoft)
+url: https://github.com/Devilwitha/HAaddons
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+
+# Bibliothek und Emulator in der HA-Seitenleiste
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:gamepad-variant
+panel_title: GBA
+
+# ROMs, Spielstände und Speicherstände liegen unter /share (per Samba erreichbar) oder /media
+map:
+  - type: share
+    read_only: false
+  - type: media
+    read_only: false
+
+options:
+  rom_folder: /share/gba
+schema:
+  rom_folder: str
