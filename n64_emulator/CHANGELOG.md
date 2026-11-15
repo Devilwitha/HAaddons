@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.6
+
+- Fehler behoben: Große Spiele blieben beim Laden bei „Spieldaten herunterladen …MB“ stehen (große Antworten über Home-Assistant-Ingress). Die Spielseite lädt das Spiel jetzt selbst in Teilen zu 4 MB mit Fortschrittsanzeige und Wiederholung
+- Geladene Spiele bleiben im Browser-Cache (bei HTTPS, z. B. über Nabu Casa oder die App) – der nächste Start geht ohne Download
+
 ## 1.0.5
 
 - Fehler behoben: Uploads über 16 MB scheiterten mit „Maximum request body size 16777216 exceeded“ – das ist die Grenze von Home-Assistant-Ingress pro Anfrage. ROMs und Speicherstände gehen jetzt in Teilen zu 8 MB (betraf große N64-Spiele und alle N64-Speicherstände)

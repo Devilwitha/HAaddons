@@ -414,6 +414,30 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
         return web.FileResponse(library.rom(request.match_info["name"]),
                                 headers={"Cache-Control": "no-cache"})
 
+    # Spiel in Teilen herunterladen: Große Antworten über Ingress bleiben auf manchen Geräten hängen,
+    # darum holt die Spielseite das Spiel in Stücken zu höchstens CHUNK_MAX und setzt es zusammen.
+    async def rom_info(request):
+        stat = library.rom(request.match_info["name"]).stat()
+        return no_cache(web.json_response({"size": stat.st_size, "mtime": int(stat.st_mtime)}))
+
+    async def rom_part(request):
+        path = library.rom(request.match_info["name"])
+        try:
+            offset = int(request.query.get("offset", "0"))
+            length = int(request.query.get("length", str(CHUNK_MAX)))
+        except ValueError:
+            raise web.HTTPBadRequest(text="offset/length ungültig")
+        if offset < 0 or length <= 0 or length > CHUNK_MAX:
+            raise web.HTTPBadRequest(text=f"length 1..{CHUNK_MAX}")
+
+        def read():
+            with path.open("rb") as handle:
+                handle.seek(offset)
+                return handle.read(length)
+
+        data = await asyncio.get_running_loop().run_in_executor(None, read)
+        return no_cache(web.Response(body=data, content_type="application/octet-stream"))
+
     async def rom_delete(request):
         path = library.rom(request.match_info["name"])
         path.unlink()
@@ -697,6 +721,8 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
     app.router.add_post("/api/blob/{uid}/finish", blob_finish)
     app.router.add_delete("/api/blob/{uid}", blob_abort)
     app.router.add_get("/api/rom/{name}", rom_get)
+    app.router.add_get("/api/rom/{name}/info", rom_info)
+    app.router.add_get("/api/rom/{name}/part", rom_part)
     app.router.add_delete("/api/rom/{name}", rom_delete)
     app.router.add_get("/api/save/{name}", save_get)
     app.router.add_put("/api/save/{name}", save_put)

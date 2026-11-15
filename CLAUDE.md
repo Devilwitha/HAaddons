@@ -29,6 +29,9 @@ im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retro
   Kerne) unterscheiden sich. Änderungen immer in beide Ordner übernehmen und mit `diff` prüfen.
 - HA-Ingress nimmt höchstens **16 MB pro Anfrage** an: Uploads (ROMs, Speicherstände) laufen deshalb über
   `/api/blob/start|<id>|<id>/finish` in Teilen zu 8 MB (`web/static/upload.js`).
+- Große Antworten über Ingress bleiben auf manchen Geräten hängen: `play.js` lädt das Spiel über
+  `/api/rom/<name>/info` und `/part` in 4-MB-Teilen, cacht es (Cache API) und startet EmulatorJS erst
+  danach mit einer `blob:`-Adresse (`loader.js` wird dynamisch nachgeladen, `EJS_gameName` = Dateiname).
 - EmulatorJS wird im Dockerfile von npm geladen (SHA-256 gepinnt), zu `emulator.min.js` zusammengefügt
   und an zwei Stellen gepatcht (Steuerkreuz-Mitte, Analogstick bei 0°); die `grep`-Prüfungen müssen bleiben.
 

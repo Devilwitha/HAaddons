@@ -18,7 +18,14 @@
   <button class="btn ghost" id="padbtn" type="button" title="Controller-Belegung (Xbox, PlayStation …)" aria-expanded="false" aria-controls="padpanel">&#127918;<span class="label"> Controller</span></button>
   <a class="btn ghost" id="newtab" href="#" target="_blank" rel="noopener" hidden title="Vollbild und Controller funktionieren im eigenen Tab am zuverlässigsten">&#8599; Eigener Tab</a>
 </header>
-<main id="stage"><div id="game"></div></main>
+<main id="stage">
+  <div id="game"></div>
+  <div class="romload" id="romload" hidden>
+    <p id="romload-text">Spiel wird geladen …</p>
+    <div class="romload-bar"><div id="romload-fill"></div></div>
+    <button class="btn" id="romload-retry" type="button" hidden>Erneut versuchen</button>
+  </div>
+</main>
 
 <section class="panel" id="touchpanel" hidden aria-label="Touch-Steuerung">
   <div class="panel-head">
@@ -90,6 +97,5 @@
 <script src="static/play.js"></script>
 <script src="static/touch.js"></script>
 <script src="static/controller.js"></script>
-<script src="ejs/loader.js"></script>
 </body>
 </html>

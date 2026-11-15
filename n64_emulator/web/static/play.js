@@ -515,8 +515,7 @@
   window.EJS_player = "#game";
   window.EJS_core = window.EMU.core;
   window.EJS_pathtodata = "ejs/";
-  window.EJS_gameUrl = "api/rom/" + enc;
-  window.EJS_gameName = stem;
+  window.EJS_gameName = rom;              // mit Endung: Dateiname der Spieldaten im Emulator
   window.EJS_language = "de-GER";
   window.EJS_color = window.EMU.accent;
   window.EJS_backgroundColor = "#101014";
@@ -525,4 +524,82 @@
   window.EJS_defaultOptions = { "save-save-interval": "30" };
   window.EJS_Buttons = { netplay: false, exitEmulation: false };
   if (window.EMU.layout) window.EJS_VirtualGamepadSettings = window.EMU.layout;
+
+  // ------------------------------------------------------------------ Spiel laden
+  // Große Antworten über Home-Assistant-Ingress bleiben auf manchen Geräten hängen (z. B. bei 18 MB).
+  // Darum holt die Seite das Spiel selbst in Teilen zu 4 MB (mit Wiederholung), merkt es sich im
+  // Browser-Cache (wo verfügbar) und übergibt es erst dann als blob:-Adresse an EmulatorJS.
+  const PART = 4 * 1048576;
+
+  function loadProgress(text, fraction) {
+    document.getElementById("romload").hidden = false;
+    document.getElementById("romload-text").textContent = text;
+    if (fraction !== undefined) document.getElementById("romload-fill").style.width = Math.round(fraction * 100) + "%";
+  }
+
+  async function fetchPart(offset, length) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const r = await fetch("api/rom/" + enc + "/part?offset=" + offset + "&length=" + length, { cache: "no-store" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const buf = await r.arrayBuffer();
+        if (buf.byteLength !== length) throw new Error("unvollständig");
+        return buf;
+      } catch (e) {
+        if (attempt >= 4) throw e;
+        await sleep(1500 * attempt);
+      }
+    }
+  }
+
+  async function prepareRom() {
+    const info = await (await fetch("api/rom/" + enc + "/info", { cache: "no-store" })).json();
+    const key = new URL("api/rom/" + enc + "?v=" + info.mtime + "-" + info.size, location.href).toString();
+    let cache = null;
+    try {
+      cache = await caches.open("emu-roms-v1");
+      const hit = await cache.match(key);
+      if (hit) return URL.createObjectURL(await hit.blob());
+    } catch (e) {
+      cache = null;                        // kein Cache (z. B. ohne HTTPS)
+    }
+    const parts = [];
+    const mb = (n) => (n / 1048576).toFixed(1).replace(".", ",");
+    for (let offset = 0; offset < info.size; offset += PART) {
+      loadProgress("Spiel wird geladen … " + mb(offset) + " von " + mb(info.size) + " MB", offset / info.size);
+      parts.push(await fetchPart(offset, Math.min(PART, info.size - offset)));
+    }
+    loadProgress("Spiel wird gestartet …", 1);
+    const blob = new Blob(parts);
+    if (cache) {
+      try {
+        const prefix = new URL("api/rom/" + enc + "?v=", location.href).toString();
+        for (const req of await cache.keys()) {
+          if (req.url.startsWith(prefix) && req.url !== key) await cache.delete(req);   // alte Fassung
+        }
+        await cache.put(key, new Response(blob));
+      } catch (e) { /* Speicher voll: nächstes Mal wieder laden */ }
+    }
+    return URL.createObjectURL(blob);
+  }
+
+  function startEmulator(url) {
+    document.getElementById("romload").hidden = true;
+    window.EJS_gameUrl = url;
+    const script = document.createElement("script");
+    script.src = "ejs/loader.js";
+    document.body.appendChild(script);
+  }
+
+  function boot() {
+    document.getElementById("romload-retry").hidden = true;
+    prepareRom().then(startEmulator).catch((e) => {
+      loadProgress("Spiel konnte nicht geladen werden (" + e.message + ").");
+      const retry = document.getElementById("romload-retry");
+      retry.hidden = false;
+      retry.onclick = boot;
+    });
+  }
+
+  boot();
 })();
