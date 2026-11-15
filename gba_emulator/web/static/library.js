@@ -1,4 +1,4 @@
-/* GBA Emulator – Bibliothek: Spiele anzeigen, hochladen, löschen. */
+/* Emulator – Bibliothek: Spiele anzeigen, hochladen, löschen. */
 (function () {
   "use strict";
 
@@ -6,8 +6,16 @@
   const grid = $("grid");
   const tpl = $("card");
   const search = $("search");
+  const EMU = window.EMU;
+  const extText = EMU.exts.join(", ");
   let roms = [];
   let toastTimer = null;
+
+  document.title = EMU.name;
+  $("appname").textContent = EMU.name;
+  $("addbtn").title = "ROM-Dateien hochladen (" + extText + ")";
+  $("file").accept = EMU.exts.join(",");
+  $("folder").textContent = EMU.folder;
 
   function toast(text, isError) {
     const t = $("toast");
@@ -98,7 +106,8 @@
   }
 
   // ------------------------------------------------------------------ Upload
-  const ALLOWED = /\.(gba|gbc|gb|zip|7z)$/i;
+  const lower = (n) => n.toLowerCase();
+  const allowed = (f) => EMU.exts.some((e) => lower(f.name).endsWith(e));
 
   function uploadOne(file) {
     return new Promise((resolve) => {
@@ -129,10 +138,10 @@
 
   async function uploadAll(files) {
     const list = Array.from(files);
-    const bad = list.filter((f) => !ALLOWED.test(f.name));
-    if (bad.length) toast("Übersprungen: " + bad.map((f) => f.name).join(", ") + " (nur .gba, .gbc, .gb, .zip, .7z)", true);
+    const bad = list.filter((f) => !allowed(f));
+    if (bad.length) toast("Übersprungen: " + bad.map((f) => f.name).join(", ") + " (erlaubt: " + extText + ")", true);
     let ok = 0;
-    for (const f of list.filter((f) => ALLOWED.test(f.name))) {
+    for (const f of list.filter(allowed)) {
       if (await uploadOne(f)) ok++;
     }
     $("progress").hidden = true;

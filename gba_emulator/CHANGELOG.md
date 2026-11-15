@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.2
+
+- Gemeinsamer Code mit dem neuen N64 Emulator (keine sichtbare Änderung)
+- Versionsnummer in der Oberfläche kommt jetzt automatisch aus der Add-on-Version
+
 ## 1.0.1
 
 - Touch-Steuerung lässt sich jetzt auch mit Maus oder Stift bedienen (vorher nur mit dem Finger)

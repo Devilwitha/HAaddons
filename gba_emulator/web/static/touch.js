@@ -1,4 +1,4 @@
-/* GBA Emulator – Touch-Steuerung einstellen (anzeigen, Größe, Position, Deckkraft).
+/* Emulator – Touch-Steuerung einstellen (anzeigen, Größe, Position, Deckkraft).
  *
  * Die Werte gelten pro Gerät (localStorage), weil Handy und Tablet ganz andere Maße brauchen.
  * Größe und Abstände wirken über CSS-Variablen auf das virtuelle Gamepad von EmulatorJS
@@ -7,7 +7,7 @@
 (function () {
   "use strict";
 
-  const KEY = "gba-touch-v1";
+  const KEY = window.EMU.id + "-touch-v1";      // GBA: "gba-touch-v1" wie bisher
   const DEFAULTS = { mode: "auto", scale: 100, bottom: 50, side: 10, opacity: 100 };
   const $ = (id) => document.getElementById(id);
   const game = $("game");
@@ -50,9 +50,10 @@
 
   // Steuerkreuz-Block (125 px) und A/B-Block (130 px) sollen nebeneinander passen, sonst
   // verdeckt der eine den anderen. Größte Skalierung für die aktuelle Breite:
-  // In der Höhe: Block (125 px) plus L/R darüber (90 px) über dem festen Abstand von 50 px.
-  const PAD_WIDTH = 125 + 130;
-  const PAD_HEIGHT = 125 + 90;
+  // Natürliche Maße kommen aus system.js (GBA: Blöcke 125/130 px, L/R 90 px darüber);
+  // dazu der feste Abstand von 50 px unter den Blöcken.
+  const PAD_WIDTH = window.EMU.pad.width;
+  const PAD_HEIGHT = window.EMU.pad.height;
   const PAD_GAP = 12;
   let effectiveScale = 100;
 

@@ -1,0 +1,29 @@
+name: N64 Emulator
+version: "1.0.0"
+slug: n64_emulator
+description: Nintendo-64-Spiele direkt in Home Assistant spielen – Spielstände liegen auf dem Server (von BolliSoft)
+url: https://github.com/Devilwitha/HAaddons
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+
+# Bibliothek und Emulator in der HA-Seitenleiste
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:controller-classic
+panel_title: N64
+
+# ROMs, Spielstände und Speicherstände liegen unter /share (per Samba erreichbar) oder /media
+map:
+  - type: share
+    read_only: false
+  - type: media
+    read_only: false
+
+options:
+  rom_folder: /share/n64
+schema:
+  rom_folder: str

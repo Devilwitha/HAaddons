@@ -1,5 +1,5 @@
 name: GBA Emulator
-version: "1.0.1"
+version: "1.0.2"
 slug: gba_emulator
 description: Game Boy Advance (auch GB/GBC) direkt in Home Assistant spielen – Spielstände liegen auf dem Server (von BolliSoft)
 url: https://github.com/Devilwitha/HAaddons

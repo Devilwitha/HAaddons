@@ -1,0 +1,4 @@
+configuration:
+  rom_folder:
+    name: Spiele-Ordner
+    description: Ordner mit den N64-ROMs (.z64, .n64, .v64), unter /share oder /media. Spielstände landen in den Unterordnern saves und states.

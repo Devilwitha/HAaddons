@@ -1,14 +1,16 @@
-"""GBA Emulator - Home-Assistant-Add-on.
+"""Retro-Emulator (GBA / N64) - Home-Assistant-Add-on von BolliSoft.
 
-Liefert über Ingress (Seitenleiste "GBA") eine Spielebibliothek und den Emulator
-(EmulatorJS mit mGBA-Kern, läuft als WebAssembly im Browser). Auf dem Server liegen nur
-die Dateien:
+Liefert über Ingress (Seitenleiste) eine Spielebibliothek und den Emulator (EmulatorJS,
+läuft als WebAssembly im Browser). Auf dem Server liegen nur die Dateien:
 
-  <rom_folder>/            ROMs (.gba, .gbc, .gb, .zip, .7z) - per Upload oder Samba
-  <rom_folder>/saves/      Spielstände des Spiels selbst (SRAM, .sav - kompatibel mit mGBA)
+  <rom_folder>/            ROMs - per Upload oder Samba
+  <rom_folder>/saves/      Spielstände des Spiels selbst (SRAM/EEPROM, .sav)
   <rom_folder>/states/     Schnellspeicherstände (Slot 1-9) mit Vorschaubild
 
 So spielt man auf PC, Tablet und Handy am selben Stand weiter.
+
+Dieselbe Datei steckt im GBA- und im N64-Add-on; welches System gilt, bestimmt EMU_SYSTEM
+(im Dockerfile gesetzt). Auch web/ ist identisch bis auf web/static/system.js.
 """
 import json
 import logging
@@ -19,21 +21,44 @@ from pathlib import Path
 
 from aiohttp import web
 
-VERSION = "1.0.1"
-OPTIONS_PATH = Path(os.environ.get("GBA_OPTIONS", "/data/options.json"))
-WEB_DIR = Path(os.environ.get("GBA_WEB", Path(__file__).resolve().parent / "web"))
-EJS_DIR = Path(os.environ.get("GBA_EJS", "/opt/emulatorjs/data"))
-PORT = int(os.environ.get("GBA_PORT", "8099"))
-INGRESS_PEER = os.environ.get("GBA_INGRESS_PEER", "172.30.32.2")
-ALLOWED_ROOTS = (Path("/share"), Path("/media"))
-ROM_EXT = {".gba", ".gbc", ".gb", ".zip", ".7z"}
-ROM_MAX = 64 * 1024 * 1024        # größte GBA-ROM: 32 MB, Archive etwas Luft
-SAVE_MAX = 2 * 1024 * 1024        # SRAM/Flash: höchstens 128 KB, RTC-Daten dazu
-STATE_MAX = 8 * 1024 * 1024       # mGBA-Savestate: ca. 0,5 MB
-SHOT_MAX = 2 * 1024 * 1024
-SLOTS = range(1, 10)
+MB = 1024 * 1024
+SYSTEMS = {
+    "gba": {
+        "name": "GBA Emulator",
+        "folder": "/share/gba",
+        "ext": {".gba": "GBA", ".gbc": "GBC", ".gb": "GB", ".zip": "GBA", ".7z": "GBA"},
+        "rom_max": 64 * MB,       # größte GBA-ROM: 32 MB, Archive etwas Luft
+        "save_max": 2 * MB,       # SRAM/Flash: höchstens 128 KB, RTC-Daten dazu
+        "state_max": 8 * MB,      # mGBA-Savestate: ca. 0,5 MB
+    },
+    "n64": {
+        "name": "N64 Emulator",
+        "folder": "/share/n64",
+        "ext": {".z64": "N64", ".n64": "N64", ".v64": "N64", ".zip": "N64", ".7z": "N64"},
+        "rom_max": 96 * MB,       # größte N64-ROM: 64 MB
+        "save_max": 4 * MB,       # EEPROM/SRAM/Flash/Controller Pak zusammen < 0,5 MB
+        "state_max": 64 * MB,     # Savestate mit Expansion Pak: ca. 16-20 MB
+    },
+}
 
-log = logging.getLogger("gba")
+VERSION = os.environ.get("EMU_VERSION") or "dev"   # aus config.yaml (BUILD_VERSION beim Bauen)
+SYSTEM_ID = os.environ.get("EMU_SYSTEM", "gba")
+SYSTEM = SYSTEMS[SYSTEM_ID]
+OPTIONS_PATH = Path(os.environ.get("EMU_OPTIONS", "/data/options.json"))
+WEB_DIR = Path(os.environ.get("EMU_WEB", Path(__file__).resolve().parent / "web"))
+EJS_DIR = Path(os.environ.get("EMU_EJS", "/opt/emulatorjs/data"))
+PORT = int(os.environ.get("EMU_PORT", "8099"))
+INGRESS_PEER = os.environ.get("EMU_INGRESS_PEER", "172.30.32.2")
+ALLOWED_ROOTS = (Path("/share"), Path("/media"))
+ROM_EXT = set(SYSTEM["ext"])
+ROM_MAX = SYSTEM["rom_max"]
+SAVE_MAX = SYSTEM["save_max"]
+STATE_MAX = SYSTEM["state_max"]
+SHOT_MAX = 2 * MB
+SLOTS = range(1, 10)
+EXT_TEXT = ", ".join(sorted(ROM_EXT, key=lambda e: (e in (".zip", ".7z"), e)))
+
+log = logging.getLogger(SYSTEM_ID)
 
 
 # --------------------------------------------------------------------------- Optionen / Pfade
@@ -42,13 +67,14 @@ def load_rom_dir():
         options = json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         options = {}
-    raw = str(options.get("rom_folder") or "/share/gba").strip()
+    default = SYSTEM["folder"]
+    raw = str(options.get("rom_folder") or default).strip()
     path = Path(raw)
-    if os.environ.get("GBA_ALLOW_ANY_DIR") != "1":
+    if os.environ.get("EMU_ALLOW_ANY_DIR") != "1":
         resolved = Path(os.path.normpath(path))
         if not path.is_absolute() or not any(resolved == r or r in resolved.parents for r in ALLOWED_ROOTS):
-            log.warning("rom_folder %r liegt nicht unter /share oder /media - nehme /share/gba", raw)
-            resolved = Path("/share/gba")
+            log.warning("rom_folder %r liegt nicht unter /share oder /media - nehme %s", raw, default)
+            resolved = Path(default)
         path = resolved
     for sub in ("", "saves", "states"):
         (path / sub).mkdir(parents=True, exist_ok=True)
@@ -120,8 +146,7 @@ def title_of(name):
 
 
 def system_of(name):
-    ext = Path(name).suffix.lower()
-    return {".gb": "GB", ".gbc": "GBC"}.get(ext, "GBA")
+    return SYSTEM["ext"].get(Path(name).suffix.lower(), SYSTEM_ID.upper())
 
 
 def slot_of(request):
@@ -176,7 +201,8 @@ def make_app(library, ingress_only=True):
 
     async def roms(_request):
         return no_cache(web.json_response({"roms": library.listing(), "folder": str(library.root),
-                                           "version": VERSION}))
+                                           "version": VERSION, "system": SYSTEM_ID,
+                                           "rom_max": ROM_MAX}))
 
     async def rom_get(request):
         return web.FileResponse(library.rom(request.match_info["name"]),
@@ -199,7 +225,7 @@ def make_app(library, ingress_only=True):
                 continue
             name = Path(part.filename.replace("\\", "/")).name
             if not valid_name(name):
-                raise web.HTTPBadRequest(text=f"{name}: nur .gba, .gbc, .gb, .zip oder .7z")
+                raise web.HTTPBadRequest(text=f"{name}: erlaubt sind nur {EXT_TEXT}")
             target = library.root / name
             if target.exists():
                 raise web.HTTPConflict(text=f"{name} gibt es schon")
@@ -299,10 +325,10 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         datefmt="%H:%M:%S")
     root = load_rom_dir()
-    log.info("GBA Emulator %s - Spiele in %s", VERSION, root)
+    log.info("%s %s - Spiele in %s", SYSTEM["name"], VERSION, root)
     if not (EJS_DIR / "loader.js").is_file():
         log.error("EmulatorJS fehlt in %s", EJS_DIR)
-    app = make_app(Library(root), ingress_only=os.environ.get("GBA_NO_GUARD") != "1")
+    app = make_app(Library(root), ingress_only=os.environ.get("EMU_NO_GUARD") != "1")
     web.run_app(app, host="0.0.0.0", port=PORT, access_log=None, print=None)
 
 

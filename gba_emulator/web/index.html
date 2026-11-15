@@ -4,17 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>GBA Emulator</title>
+<title>Emulator</title>
+<script src="static/system.js"></script>
 <link rel="stylesheet" href="static/app.css">
 <link rel="icon" href="static/icon.png">
 </head>
 <body class="library">
 <header class="bar">
-  <h1>GBA Emulator</h1>
+  <h1 id="appname"></h1>
   <input type="search" id="search" placeholder="Spiel suchen …" aria-label="Spiel suchen" hidden>
-  <label class="btn" title="ROM-Dateien hochladen (.gba, .gbc, .gb, .zip, .7z)">
+  <label class="btn" id="addbtn">
     &#8679; Spiel hinzufügen
-    <input type="file" id="file" accept=".gba,.gbc,.gb,.zip,.7z" multiple hidden>
+    <input type="file" id="file" multiple hidden>
   </label>
 </header>
 
@@ -26,7 +27,7 @@
     <h2>Noch keine Spiele</h2>
     <p>Lade eine ROM über <b>Spiel hinzufügen</b> hoch oder ziehe die Datei hierher.</p>
     <p class="muted">Größere Sammlungen kopierst du am einfachsten per Samba in den Ordner
-      <code id="folder">/share/gba</code> (Freigabe <code>share</code>).</p>
+      <code id="folder"></code> (Freigabe <code>share</code>).</p>
   </section>
 
   <section class="grid" id="grid"></section>

@@ -1,6 +1,6 @@
-/* GBA Emulator – Spielseite.
+/* Emulator – Spielseite.
  *
- * Konfiguriert EmulatorJS (mGBA-Kern) und gleicht die Spielstände mit dem Server ab:
+ * Konfiguriert EmulatorJS (System aus system.js) und gleicht die Spielstände mit dem Server ab:
  *  - Spielstand des Spiels (SRAM): beim Start vom Server laden, danach alle 30 s und beim
  *    Verlassen der Seite hochladen, wenn er sich geändert hat.
  *  - Speicherstände (Slot 1–9 im Menü des Emulators): landen auf dem Server statt als Download.
@@ -19,7 +19,7 @@
   const title = stem.replace(/_/g, " ").replace(/^\d{3,4}\s*-\s*/, "");
 
   document.getElementById("title").textContent = title;
-  document.title = title + " – GBA";
+  document.title = title + " – " + window.EMU.short;
 
   // In der HA-Seitenleiste läuft die Seite in einem iframe – dort sperren manche Browser
   // Vollbild und Controller. Darum ein Knopf, der dieselbe Seite als eigenen Tab öffnet.
@@ -230,15 +230,16 @@
 
   // ------------------------------------------------------------------ EmulatorJS
   window.EJS_player = "#game";
-  window.EJS_core = "gba";                 // mGBA – spielt auch GB/GBC
+  window.EJS_core = window.EMU.core;
   window.EJS_pathtodata = "ejs/";
   window.EJS_gameUrl = "api/rom/" + enc;
   window.EJS_gameName = stem;
   window.EJS_language = "de-GER";
-  window.EJS_color = "#7c5cff";
+  window.EJS_color = window.EMU.accent;
   window.EJS_backgroundColor = "#101014";
   window.EJS_startOnLoaded = false;        // Klick auf „Start“ erlaubt dem Browser den Ton
   window.EJS_threads = false;
   window.EJS_defaultOptions = { "save-save-interval": "30" };
   window.EJS_Buttons = { netplay: false, exitEmulation: false };
+  if (window.EMU.layout) window.EJS_VirtualGamepadSettings = window.EMU.layout;
 })();

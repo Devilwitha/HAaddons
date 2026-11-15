@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Emulator</title>
+<script src="static/system.js"></script>
+<link rel="stylesheet" href="static/app.css">
+<link rel="icon" href="static/icon.png">
+</head>
+<body class="play">
+<header class="bar">
+  <a class="btn ghost" id="back" href="./" title="Zurück zur Bibliothek">&#8592; Bibliothek</a>
+  <h1 id="title">…</h1>
+  <span class="sync" id="sync" title="Spielstand auf dem Server">&#9679;</span>
+  <button class="btn ghost" id="touchbtn" type="button" title="Touch-Steuerung einstellen" aria-expanded="false" aria-controls="touchpanel">&#127918;<span class="label"> Touch</span></button>
+  <a class="btn ghost" id="newtab" href="#" target="_blank" rel="noopener" hidden title="Vollbild und Controller funktionieren im eigenen Tab am zuverlässigsten">&#8599; Eigener Tab</a>
+</header>
+<main id="stage"><div id="game"></div></main>
+
+<section class="panel" id="touchpanel" hidden aria-label="Touch-Steuerung">
+  <div class="panel-head">
+    <h2>Touch-Steuerung</h2>
+    <button class="icon-btn" id="touchclose" type="button" aria-label="Schließen">&#10005;</button>
+  </div>
+  <div class="seg" role="radiogroup" aria-label="Anzeigen">
+    <label><input type="radio" name="tmode" value="auto"><span>Automatisch</span></label>
+    <label><input type="radio" name="tmode" value="on"><span>Immer an</span></label>
+    <label><input type="radio" name="tmode" value="off"><span>Aus</span></label>
+  </div>
+  <p class="hint" id="tmodehint"></p>
+  <label class="range">Größe <output id="o-scale"></output>
+    <input type="range" id="t-scale" min="50" max="200" step="5"></label>
+  <label class="range">Abstand unten <output id="o-bottom"></output>
+    <input type="range" id="t-bottom" min="0" max="300" step="5"></label>
+  <label class="range">Abstand seitlich <output id="o-side"></output>
+    <input type="range" id="t-side" min="0" max="200" step="5"></label>
+  <label class="range">Deckkraft <output id="o-opacity"></output>
+    <input type="range" id="t-opacity" min="20" max="100" step="5"></label>
+  <div class="panel-foot">
+    <span class="hint">Gilt nur für dieses Gerät.</span>
+    <button class="btn ghost" id="treset" type="button">Zurücksetzen</button>
+  </div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+<script src="static/play.js"></script>
+<script src="static/touch.js"></script>
+<script src="ejs/loader.js"></script>
+</body>
+</html>

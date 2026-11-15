@@ -8,6 +8,7 @@ RUN apk add --no-cache python3 py3-aiohttp
 # darum werden sie hier in derselben Reihenfolge zusammengefügt, wie der Loader sie lädt.
 # Korrektur Steuerkreuz: Die Mitte wird aus der angezeigten Größe berechnet (rect statt
 # clientWidth), sonst trifft es daneben, sobald die Touch-Steuerung vergrößert ist.
+# Korrektur Analogstick: Bei genau 0° (waagerecht nach rechts) kam kein Ausschlag an.
 ARG EJS_VERSION=4.2.3
 ARG EJS_SHA256=8033a18a3398cae5efd7a4c12a633b10672435977290959633d671365b589639
 ARG MGBA_SHA256=9ea664b4f998f6304a49c31a427206e2c12a3c1aa3652765ec5aa6db42cad529
@@ -34,7 +35,14 @@ RUN set -eux; \
     grep -q 'touch.clientX - rect.left - rect.width / 2' "$D/emulator.min.js"; \
     grep -q 'touch.clientY - rect.top - rect.height / 2' "$D/emulator.min.js"; \
     if grep -q 'dpadMain.clientWidth / 2' "$D/emulator.min.js"; then echo "Steuerkreuz-Korrektur fehlgeschlagen"; exit 1; fi; \
+    sed -i 's|if (degree > 0 && degree <= 45) {|if (degree >= 0 \&\& degree <= 45) {|; s|if (degree > 315 && degree <= 359.9) {|if (degree > 315 \&\& degree <= 360) {|' "$D/emulator.min.js"; \
+    grep -q 'if (degree >= 0 && degree <= 45) {' "$D/emulator.min.js"; \
+    grep -q 'if (degree > 315 && degree <= 360) {' "$D/emulator.min.js"; \
     rm -rf /tmp/ejs /tmp/mgba /tmp/*.tgz
+
+ARG BUILD_VERSION
+ENV EMU_SYSTEM=gba \
+    EMU_VERSION=${BUILD_VERSION}
 
 WORKDIR /app
 COPY server.py /app/

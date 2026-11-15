@@ -1,0 +1,4 @@
+configuration:
+  rom_folder:
+    name: Games folder
+    description: Folder with your N64 ROMs (.z64, .n64, .v64), below /share or /media. Saves go to the subfolders saves and states.

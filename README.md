@@ -23,6 +23,11 @@ Tablet oder Handy (mit Touch-Gamepad). ROMs per Upload oder Samba nach `/share/g
 und Speicherstände liegen auf dem Server, so geht es auf jedem Gerät am selben Stand weiter.
 Details: [DOCS.md](gba_emulator/DOCS.md)
 
+### [N64 Emulator](n64_emulator/)
+Nintendo-64-Spiele in der HA-Seitenleiste spielen, am PC, Tablet oder Handy (Touch-Gamepad mit
+Analogstick und C-Tasten). ROMs per Upload oder Samba nach `/share/n64`. Spielstände und
+Speicherstände liegen auf dem Server. Details: [DOCS.md](n64_emulator/DOCS.md)
+
 ## Installation
 Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories →
 `https://github.com/Devilwitha/HAaddons` hinzufügen.
