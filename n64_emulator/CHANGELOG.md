@@ -1,5 +1,11 @@
 # Änderungen
 
+## 1.0.4
+
+- Automatisch speichern: nach `idle_minutes` (Standard 10) ohne Eingabe Spielstand und Auto-Speicherstand sichern, Spiel pausieren, Sitzung beenden; beim nächsten Start Auto-Speicherstand laden
+- Pro Home-Assistant-Benutzer nur eine Sitzung: Start auf einem zweiten Gerät fragt nach, das erste Gerät speichert und meldet sich ab, dann geht es mit dem frischen Stand weiter
+- Lebenszeichen der Sitzung alle 10 statt 30 Sekunden
+
 ## 1.0.3
 
 - Fehler behoben: Das Add-on bekam kein Supervisor-Token und keine eigenen Umgebungswerte (s6-overlay leerte die Umgebung). Darum fehlten die Sensoren, die Version stand auf „dev“ und der Server lief mit GBA-Einstellungen (N64-Uploads wurden abgelehnt)

@@ -209,54 +209,296 @@
     }
   };
 
-  // ------------------------------------------------------------------ Statistik (Sensoren in HA)
-  // Sitzung beim Server anmelden, alle 30 s ein Lebenszeichen, beim Verlassen abmelden.
+  // ------------------------------------------------------------------ Hinweisfenster
+  const ov = document.getElementById("overlay");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Zeigt ein Fenster; mit primary/secondary wartet es auf die Wahl (true = primary)
+  function askOverlay(opts) {
+    document.getElementById("ov-title").textContent = opts.title;
+    document.getElementById("ov-text").textContent = opts.text;
+    const a = document.getElementById("ov-primary");
+    const b = document.getElementById("ov-secondary");
+    a.hidden = !opts.primary;
+    b.hidden = !opts.secondary;
+    a.textContent = opts.primary || "";
+    b.textContent = opts.secondary || "";
+    ov.hidden = false;
+    if (!opts.primary && !opts.secondary) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const done = (value) => {
+        a.onclick = null;
+        b.onclick = null;
+        ov.hidden = true;
+        resolve(value);
+      };
+      a.onclick = () => done(true);
+      b.onclick = () => done(false);
+    });
+  }
+
+  function hideOverlay() {
+    ov.hidden = true;
+  }
+
+  function showBanner(text, label, action) {
+    const banner = document.getElementById("banner");
+    document.getElementById("banner-text").textContent = text;
+    const btn = document.getElementById("banner-btn");
+    btn.textContent = label;
+    btn.onclick = () => {
+      banner.hidden = true;
+      action();
+    };
+    document.getElementById("banner-close").onclick = () => { banner.hidden = true; };
+    banner.hidden = false;
+    setTimeout(() => { banner.hidden = true; }, 20000);
+  }
+
+  function clock(iso) {
+    try {
+      return new Date(iso).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    } catch (e) {
+      return "";
+    }
+  }
+
+  // ------------------------------------------------------------------ Sitzung (Statistik, eine pro Benutzer)
+  // Ein HA-Benutzer spielt immer nur auf einem Gerät. Startet er woanders, speichert das alte Gerät
+  // (Spielstand + Auto-Speicherstand), pausiert und meldet sich ab; das neue wartet darauf.
   let sid = null;
   let pingTimer = null;
+  let stopped = false;               // pausiert wegen Inaktivität oder Gerätewechsel
 
-  async function startSession() {
+  function post(url, data) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  }
+
+  function beginPings() {
+    clearInterval(pingTimer);
+    pingTimer = setInterval(pingSession, 10000);
+  }
+
+  function pauseEmu() {
+    try { window.EJS_emulator.pause(); } catch (e) { /* noch nicht gestartet */ }
+  }
+
+  function playEmu() {
+    try { window.EJS_emulator.play(); } catch (e) { /* noch nicht gestartet */ }
+  }
+
+  // "ok" = darf spielen, "took" = hat ein anderes Gerät abgelöst, false = abgebrochen
+  async function claimSession() {
+    let r;
     try {
-      const r = await fetch("api/session/start", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rom }),
-      });
-      if (!r.ok) return;
+      r = await post("api/session/start", { rom });
+    } catch (e) {
+      return "ok";                        // Server nicht erreichbar: trotzdem spielen
+    }
+    if (r.status === 200) {
       sid = (await r.json()).sid;
-      clearInterval(pingTimer);
-      pingTimer = setInterval(pingSession, 30000);
-    } catch (e) { /* Statistik ist Beiwerk */ }
+      beginPings();
+      return "ok";
+    }
+    if (r.status !== 409) return "ok";
+    const info = (await r.json()).conflict || {};
+    pauseEmu();
+    const take = await askOverlay({
+      title: "Du spielst schon auf einem anderen Gerät",
+      text: "„" + (info.title || "Ein Spiel") + "“ läuft dort seit " + clock(info.since) +
+        ". Dort speichern und beenden und hier weiterspielen?",
+      primary: "Hier spielen",
+      secondary: "Zurück zur Bibliothek",
+    });
+    if (!take) {
+      location.href = "./";
+      return false;
+    }
+    askOverlay({ title: "Übernehme …", text: "Das andere Gerät speichert und meldet sich ab. Einen Moment …" });
+    for (let i = 0; i < 30; i++) {
+      try {
+        r = await post("api/session/start", { rom, takeover: true });
+      } catch (e) {
+        r = null;
+      }
+      if (r && r.status === 200) {          // 202 = anderes Gerät speichert noch (zählt bei fetch als "ok")
+        sid = (await r.json()).sid;
+        beginPings();
+        hideOverlay();
+        playEmu();
+        return "took";
+      }
+      if (r && r.status !== 202) break;
+      await sleep(2000);
+    }
+    const retry = await askOverlay({
+      title: "Übernahme nicht möglich",
+      text: "Das andere Gerät hat nicht geantwortet.",
+      primary: "Erneut versuchen",
+      secondary: "Zurück zur Bibliothek",
+    });
+    if (!retry) {
+      location.href = "./";
+      return false;
+    }
+    return claimSession();
   }
 
   async function pingSession() {
     if (!sid) return;
     try {
-      const r = await fetch("api/session/ping", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sid }),
-      });
+      const r = await post("api/session/ping", { sid });
       if (r.status === 404) {              // Server neu gestartet oder Sitzung abgelaufen
         sid = null;
-        startSession();
+        const again = await post("api/session/start", { rom });
+        if (again.status === 200) {
+          sid = (await again.json()).sid;
+        } else if (again.status === 409) {
+          autoSave("takeover");
+        }
+      } else if (r.ok && (await r.json()).stop) {
+        autoSave("takeover");
       }
-    } catch (e) { /* nächster Versuch in 30 s */ }
+    } catch (e) { /* nächster Versuch in 10 s */ }
   }
 
   function endSession() {
+    clearInterval(pingTimer);
     if (!sid) return;
     const body = JSON.stringify({ sid });
     sid = null;
-    clearInterval(pingTimer);
     if (navigator.sendBeacon && navigator.sendBeacon("api/session/end", new Blob([body], { type: "text/plain" }))) return;
     fetch("api/session/end", { method: "POST", body, keepalive: true }).catch(() => {});
   }
 
   window.addEventListener("pagehide", endSession);
   window.addEventListener("pageshow", (e) => {
-    if (e.persisted && window.EJS_emulator && window.EJS_emulator.started) startSession();
+    if (e.persisted && window.EJS_emulator && window.EJS_emulator.started) location.reload();
   });
 
-  window.EJS_onGameStart = function () {
+  // ------------------------------------------------------------------ Automatisch speichern
+  // Nach idle_minutes ohne Eingabe (Tastatur, Touch, Maus, Controller): Spielstand sichern,
+  // Schnellspeicherstand in Slot 0 ("Auto"), pausieren, Sitzung beenden.
+  let idleMs = 10 * 60 * 1000;
+  let idleMinutes = 10;
+  let lastInput = Date.now();
+  let autoSaving = false;
+  const padSigs = {};
+
+  function markInput() {
+    lastInput = Date.now();
+  }
+
+  ["keydown", "pointerdown", "touchstart", "wheel"].forEach((type) => {
+    document.addEventListener(type, markInput, { capture: true, passive: true });
+  });
+
+  fetch("api/config", { cache: "no-store" }).then((r) => r.json()).then((cfg) => {
+    idleMinutes = Number(cfg.idle_minutes) || 0;
+    idleMs = idleMinutes * 60 * 1000;
+  }).catch(() => {});
+
+  setInterval(() => {
+    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+    pads.forEach((pad) => {
+      const sig = pad.buttons.map((b) => (b.pressed ? 1 : 0)).join("") + pad.axes.map((x) => Math.round(x * 5)).join(",");
+      if (sig !== padSigs[pad.index]) {
+        padSigs[pad.index] = sig;
+        markInput();
+      }
+    });
+    const emu = window.EJS_emulator;
+    if (idleMs && ready && !stopped && emu && emu.started && Date.now() - lastInput > idleMs) autoSave("idle");
+  }, 1000);
+
+  async function saveAutoState() {
+    const emu = window.EJS_emulator;
+    const state = gm().getState();
+    const r = await fetch("api/state/" + enc + "?slot=0", {
+      method: "PUT", body: state, headers: { "Content-Type": "application/octet-stream" },
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    try {
+      const shot = await emu.takeScreenshot(undefined, "png", 1);
+      if (shot && shot.blob) {
+        await fetch("api/shot/" + enc + "?slot=0", { method: "PUT", body: shot.blob, headers: { "Content-Type": "image/png" } });
+      }
+    } catch (e) { /* Bild ist nur Beiwerk */ }
+  }
+
+  async function autoSave(reason) {
+    const emu = window.EJS_emulator;
+    if (autoSaving || stopped || !emu || !emu.started) return;
+    autoSaving = true;
+    stopped = true;
+    pauseEmu();
+    setSync("busy", "Wird automatisch gespeichert …");
+    await Promise.race([flush(false), sleep(5000)]);
+    let ok = true;
+    try {
+      await saveAutoState();
+    } catch (e) {
+      ok = false;
+    }
+    endSession();
+    autoSaving = false;
+    setSync(ok ? "ok" : "error", ok ? "Automatisch gespeichert" : "Auto-Speicherstand fehlgeschlagen");
+    const why = reason === "idle"
+      ? (idleMinutes === 1 ? "1 Minute" : idleMinutes + " Minuten") + " keine Eingabe – das Spiel ist pausiert."
+      : "Du spielst jetzt auf einem anderen Gerät weiter.";
+    const resume = await askOverlay({
+      title: reason === "idle" ? "Pausiert" : "Auf anderem Gerät weitergespielt",
+      text: why + (ok ? " Spielstand und Auto-Speicherstand sind gesichert."
+        : " Der Auto-Speicherstand konnte nicht gesichert werden."),
+      primary: reason === "idle" ? "Weiterspielen" : "Hier weiterspielen",
+      secondary: "Zur Bibliothek",
+    });
+    if (!resume) {
+      location.href = "./";
+      return;
+    }
+    if (reason !== "idle") {
+      location.reload();                  // das andere Gerät hat den neueren Stand
+      return;
+    }
+    const claim = await claimSession();
+    if (claim === "took") {
+      location.reload();                  // anderes Gerät hat inzwischen gespielt -> frisch laden
+      return;
+    }
+    if (claim) {
+      stopped = false;
+      markInput();
+      playEmu();
+    }
+  }
+
+  async function offerAutoState() {
+    try {
+      const r = await fetch("api/roms", { cache: "no-store" });
+      const me = (await r.json()).roms.find((x) => x.file === rom);
+      const auto = me && me.slots.find((x) => x.slot === 0);
+      if (!auto) return;
+      showBanner("Auto-Speicherstand vom " + clock(auto.time * 1000), "Laden", async () => {
+        try {
+          const s = await fetch("api/state/" + enc + "?slot=0", { cache: "no-store" });
+          if (!s.ok) throw new Error("HTTP " + s.status);
+          gm().loadState(new Uint8Array(await s.arrayBuffer()));
+          emuMessage("Auto-Speicherstand geladen");
+        } catch (e) {
+          toast("Auto-Speicherstand nicht geladen (" + e.message + ")", true);
+        }
+      });
+    } catch (e) { /* ohne Angebot weiterspielen */ }
+  }
+
+  window.EJS_onGameStart = async function () {
     window.EJS_emulator.on("saveSaveFiles", (data) => onSaveFiles(data));
-    loadServerSave();
-    startSession();
+    const claim = await claimSession();
+    if (!claim) return;
+    await loadServerSave();
+    markInput();
+    offerAutoState();
   };
 
   // ------------------------------------------------------------------ Verlassen

@@ -68,6 +68,23 @@
   </div>
 </section>
 
+<div class="overlay" id="overlay" hidden>
+  <div class="overlay-box" role="dialog" aria-modal="true" aria-labelledby="ov-title">
+    <h2 id="ov-title"></h2>
+    <p id="ov-text"></p>
+    <div class="overlay-actions">
+      <button class="btn ghost" id="ov-secondary" type="button"></button>
+      <button class="btn" id="ov-primary" type="button"></button>
+    </div>
+  </div>
+</div>
+
+<div class="banner" id="banner" hidden>
+  <span id="banner-text"></span>
+  <button class="btn" id="banner-btn" type="button"></button>
+  <button class="icon-btn" id="banner-close" type="button" aria-label="Schließen">&#10005;</button>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 <script src="static/play.js"></script>
 <script src="static/touch.js"></script>

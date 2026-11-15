@@ -5,7 +5,7 @@ läuft als WebAssembly im Browser). Auf dem Server liegen nur die Dateien:
 
   <rom_folder>/            ROMs - per Upload oder Samba
   <rom_folder>/saves/      Spielstände des Spiels selbst (SRAM/EEPROM, .sav)
-  <rom_folder>/states/     Schnellspeicherstände (Slot 1-9) mit Vorschaubild
+  <rom_folder>/states/     Schnellspeicherstände (Slot 1-9, Slot 0 = Auto) mit Vorschaubild
 
 So spielt man auf PC, Tablet und Handy am selben Stand weiter.
 
@@ -77,10 +77,12 @@ ROM_MAX = SYSTEM["rom_max"]
 SAVE_MAX = SYSTEM["save_max"]
 STATE_MAX = SYSTEM["state_max"]
 SHOT_MAX = 2 * MB
-SLOTS = range(1, 10)
+SLOTS = range(0, 10)             # 0 = Auto-Speicherstand (Inaktivität, Gerätewechsel)
 EXT_TEXT = ", ".join(sorted(ROM_EXT, key=lambda e: (e in (".zip", ".7z"), e)))
 STATS_PATH = Path(os.environ.get("EMU_STATS", "/data/stats.json"))
 SESSION_TIMEOUT = 180            # ohne Lebenszeichen so lange -> Sitzung beendet (Tab zu, Gerät aus)
+TAKEOVER_DEAD = 15               # antwortet das andere Gerät so lange nicht, wird es abgemeldet
+TAKEOVER_MAX = 40                # spätestens dann wird das andere Gerät abgemeldet
 TICK_SECONDS = 15                # Spielzeit verbuchen und Sensoren aktualisieren
 
 log = logging.getLogger(SYSTEM_ID)
@@ -92,6 +94,14 @@ def load_options():
         return json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+
+
+def idle_minutes():
+    """Minuten ohne Eingabe bis zum automatischen Speichern und Pausieren (0 = aus)."""
+    try:
+        return max(0, min(240, int(load_options().get("idle_minutes", 10))))
+    except (TypeError, ValueError):
+        return 10
 
 
 def load_rom_dir():
@@ -184,7 +194,7 @@ def slot_of(request):
     except ValueError:
         slot = 0
     if slot not in SLOTS:
-        raise web.HTTPBadRequest(text="Slot 1-9")
+        raise web.HTTPBadRequest(text="Slot 0-9")
     return slot
 
 
@@ -222,13 +232,19 @@ def player_of(request):
             or "Unbekannt").strip()[:60]
 
 
+def user_of(request):
+    """Eindeutige Kennung des HA-Benutzers (für "eine Sitzung pro Benutzer")."""
+    return (request.headers.get("X-Remote-User-Id") or request.headers.get("X-Remote-User-Name")
+            or player_of(request)).strip()[:80]
+
+
 class Stats:
     """Sitzungen, Spielzeit und Starts pro Spiel - gespeichert in /data/stats.json."""
 
     def __init__(self, path):
         self.path = Path(path)
         self.data = {"games": {}, "sessions": 0, "seconds": 0.0, "last": None}
-        self.active = {}             # sid -> {"file", "title", "player", "start", "ping", "booked"}
+        self.active = {}             # sid -> {"file", "title", "player", "user", "start", "ping", "booked", "stop"}
         self.dirty = False
         try:
             loaded = json.loads(self.path.read_text(encoding="utf-8"))
@@ -252,10 +268,34 @@ class Stats:
         game["title"] = title
         return game
 
-    def start(self, file, title, player):
+    def claim(self, file, title, player, user, takeover=False):
+        """Pro Benutzer nur eine Sitzung.
+
+        Rückgabe ("ok", sid) | ("conflict", info) | ("wait", info):
+        - conflict: der Benutzer spielt schon auf einem anderen Gerät
+        - wait: Übernahme läuft - das andere Gerät speichert noch und meldet sich ab
+        """
+        now = time.time()
+        others = [(sid, x) for sid, x in self.active.items() if x["user"] == user]
+        if others and not takeover:
+            other = max((x for _sid, x in others), key=lambda x: x["start"])
+            return "conflict", {"title": other["title"], "since": iso(other["start"]), "file": other["file"]}
+        for sid, other in others:
+            if not other.get("stop"):
+                other["stop"] = now
+                log.info("Übernahme: %s soll %s speichern und beenden", user, other["title"])
+            if now - other["ping"] > TAKEOVER_DEAD or now - other["stop"] > TAKEOVER_MAX:
+                log.info("Übernahme: anderes Gerät antwortet nicht - Sitzung %s beendet", other["title"])
+                self.end(sid, until=other["ping"])
+        if any(x["user"] == user for x in self.active.values()):
+            return "wait", {}
+        return "ok", self.start(file, title, player, user)
+
+    def start(self, file, title, player, user=None):
         now = time.time()
         sid = secrets.token_hex(8)
-        self.active[sid] = {"file": file, "title": title, "player": player, "start": now, "ping": now, "booked": now}
+        self.active[sid] = {"file": file, "title": title, "player": player, "user": user or player,
+                            "start": now, "ping": now, "booked": now, "stop": None}
         game = self._game(file, title)
         game["starts"] += 1
         game["last"] = now
@@ -266,11 +306,12 @@ class Stats:
         return sid
 
     def ping(self, sid):
+        """None = unbekannt, "stop" = anderes Gerät übernimmt (speichern und beenden), sonst "ok"."""
         session = self.active.get(sid)
         if session is None:
-            return False
+            return None
         session["ping"] = time.time()
-        return True
+        return "stop" if session.get("stop") else "ok"
 
     def _book(self, session, until):
         delta = max(0.0, until - session["booked"])
@@ -487,16 +528,25 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
         data = await read_json(request)
         name = str(data.get("rom", ""))
         library.rom(name)
-        sid = stats.start(name, title_of(name), player_of(request))
+        result, payload = stats.claim(name, title_of(name), player_of(request), user_of(request),
+                                      takeover=bool(data.get("takeover")))
+        if result == "conflict":
+            return no_cache(web.json_response({"conflict": payload}, status=409))
+        if result == "wait":
+            return no_cache(web.json_response({"waiting": True}, status=202))
         stats.save()
         asyncio.create_task(publish())
-        return no_cache(web.json_response({"sid": sid}))
+        return no_cache(web.json_response({"sid": payload}))
 
     async def session_ping(request):
         data = await read_json(request)
-        if not stats.ping(str(data.get("sid", ""))):
+        result = stats.ping(str(data.get("sid", "")))
+        if result is None:
             raise web.HTTPNotFound(text="Sitzung unbekannt")
-        return no_cache(web.json_response({"ok": True}))
+        return no_cache(web.json_response({"ok": True, "stop": result == "stop"}))
+
+    async def config_get(_request):
+        return no_cache(web.json_response({"idle_minutes": idle_minutes()}))
 
     async def session_end(request):
         data = await read_json(request)
@@ -533,6 +583,7 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
     app.router.add_post("/api/session/ping", session_ping)
     app.router.add_post("/api/session/end", session_end)
     app.router.add_get("/api/stats", stats_get)
+    app.router.add_get("/api/config", config_get)
     app.router.add_get("/", index)
     app.router.add_get("/play", play)
     app.router.add_get("/api/roms", roms)

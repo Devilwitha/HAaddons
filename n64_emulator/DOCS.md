@@ -82,6 +82,19 @@ Alles liegt im Spiele-Ordner:
 
 Beim Löschen eines Spiels bleiben seine Spielstände erhalten.
 
+## Automatisch speichern und ein Gerät pro Benutzer
+- **Inaktivität:** Nach 10 Minuten ohne Eingabe (Tastatur, Touch, Maus oder Controller) sichert die
+  Seite den Spielstand und einen **Auto-Speicherstand**, pausiert das Spiel und beendet die Sitzung.
+  Mit **Weiterspielen** geht es an derselben Stelle weiter. Die Minuten stellst du mit der Option
+  `idle_minutes` ein (0 = aus).
+- **Auto-Speicherstand:** liegt in einem eigenen Slot und überschreibt deine Slots 1–9 nicht. Beim
+  nächsten Start des Spiels – auch auf einem anderen Gerät – bietet ein Hinweis oben an, ihn zu laden.
+- **Ein Gerät pro Benutzer:** Startest du ein Spiel, während du (derselbe Home-Assistant-Benutzer) schon
+  auf einem anderen Gerät spielst, fragt die Seite nach. Mit **Hier spielen** speichert das andere Gerät
+  sofort (Spielstand und Auto-Speicherstand), pausiert und meldet sich ab; erst dann startet das Spiel
+  hier mit dem frischen Stand. Antwortet das andere Gerät nicht (Tab zu, Akku leer), wird es nach
+  15 Sekunden abgemeldet.
+
 ## Sensoren in Home Assistant
 Das Add-on legt ein Gerät **N64 Emulator** mit diesen Sensoren an (mit eingerichtetem MQTT-Broker,
 z. B. Mosquitto, als Gerät unter *Einstellungen → Geräte & Dienste → MQTT*; sonst als einzelne
@@ -110,6 +123,7 @@ REST-API.
 |---|---|
 | `rom_folder` | Spiele-Ordner, muss unter `/share` oder `/media` liegen. Standard: `/share/n64` |
 | `use_mqtt` | Sensoren per MQTT als Gerät anlegen (Standard: an), sonst über die REST-API |
+| `idle_minutes` | Minuten ohne Eingabe bis zum automatischen Speichern und Pausieren (Standard 10, 0 = aus) |
 
 ## Datenschutz
 Die Seite ist nur über Home Assistant erreichbar (Ingress), es wird kein Port geöffnet. Emulator

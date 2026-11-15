@@ -5,3 +5,6 @@ configuration:
   use_mqtt:
     name: MQTT verwenden
     description: Sensoren (Wird gespielt, Spielzeit, Sitzungen …) per MQTT als Gerät anlegen, wenn ein MQTT-Broker eingerichtet ist. Sonst über die REST-API.
+  idle_minutes:
+    name: Automatisch speichern nach (Minuten)
+    description: Ohne Eingabe so lange -> Spielstand und Auto-Speicherstand sichern, Spiel pausieren. 0 = aus.

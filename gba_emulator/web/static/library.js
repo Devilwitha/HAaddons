@@ -61,7 +61,9 @@
       const parts = [];
       if (r.played) parts.push("Gespielt " + ago(r.played));
       else parts.push("Neu · " + size(r.size));
-      if (r.slots.length) parts.push(r.slots.length === 1 ? "1 Speicherstand" : r.slots.length + " Speicherstände");
+      const manual = r.slots.filter((s) => s.slot > 0).length;      // Slot 0 = Auto-Speicherstand
+      if (manual) parts.push(manual === 1 ? "1 Speicherstand" : manual + " Speicherstände");
+      if (r.slots.some((s) => s.slot === 0)) parts.push("Auto-Stand");
       node.querySelector(".meta").textContent = parts.join(" · ");
       const shot = r.slots.filter((s) => s.shot).sort((a, b) => b.time - a.time)[0];
       if (shot) {

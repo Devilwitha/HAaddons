@@ -5,3 +5,6 @@ configuration:
   use_mqtt:
     name: Use MQTT
     description: Create the sensors (now playing, play time, sessions …) as an MQTT device when a broker is set up. Otherwise via the REST API.
+  idle_minutes:
+    name: Auto-save after (minutes)
+    description: Without input for this long, save the game and an auto save state and pause. 0 = off.
