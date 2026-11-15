@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.5
+
+- Fehler behoben: Das Add-on bekam kein Supervisor-Token (s6-overlay leerte die Umgebung). Darum fehlten die Sensoren in Home Assistant und die Version stand auf „dev“
+- Absicherung: Fehlt die System-Kennung, liest der Server sie aus der eigenen Oberfläche
+
 ## 1.0.4
 
 - Sensoren für Home Assistant: Wird gespielt, Spieler, Sitzung, Gesamtzeit, Sitzungen (mit Starts pro Spiel), Zuletzt gespielt, Letztes Spiel, Meistgespielt (Rangliste), Spiele, Aktiv – per MQTT als Gerät oder über die REST-API

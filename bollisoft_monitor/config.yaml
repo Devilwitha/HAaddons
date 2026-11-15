@@ -1,5 +1,5 @@
 name: Bollisoft Server Monitor
-version: "1.1.1"
+version: "1.1.2"
 slug: bollisoft_monitor
 description: CPU, RAM, Laufwerke, Laufzeit, Dienste und Ollama des Bollisoft-Servers – mit Neustart-Knöpfen (von BolliSoft)
 url: https://github.com/Devilwitha/HAaddons

@@ -1,6 +1,10 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
+# s6-overlay (/init im Basis-Image) leert sonst die Umgebung für CMD: SUPERVISOR_TOKEN und die
+# eigenen ENV-Werte (System, Version) kämen im Programm nicht an.
+ENV S6_KEEP_ENV=1
+
 # aiohttp für den Ingress-Server. Auf armv7 gibt es nicht für jedes Paket ein fertiges
 # musl-Wheel; dann wird ohne C-Erweiterungen gebaut (reines Python, gleiche Funktion).
 ENV AIOHTTP_NO_EXTENSIONS=1 \

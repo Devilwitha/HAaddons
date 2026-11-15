@@ -48,10 +48,26 @@ SYSTEMS = {
 }
 
 VERSION = os.environ.get("EMU_VERSION") or "dev"   # aus config.yaml (BUILD_VERSION beim Bauen)
-SYSTEM_ID = os.environ.get("EMU_SYSTEM", "gba")
-SYSTEM = SYSTEMS[SYSTEM_ID]
 OPTIONS_PATH = Path(os.environ.get("EMU_OPTIONS", "/data/options.json"))
 WEB_DIR = Path(os.environ.get("EMU_WEB", Path(__file__).resolve().parent / "web"))
+
+
+def detect_system():
+    """EMU_SYSTEM aus dem Dockerfile; fehlt es, das System aus web/static/system.js lesen."""
+    env = os.environ.get("EMU_SYSTEM")
+    if env in SYSTEMS:
+        return env
+    try:
+        match = re.search(r'\bid:\s*"(\w+)"', (WEB_DIR / "static" / "system.js").read_text(encoding="utf-8"))
+        if match and match.group(1) in SYSTEMS:
+            return match.group(1)
+    except OSError:
+        pass
+    return "gba"
+
+
+SYSTEM_ID = detect_system()
+SYSTEM = SYSTEMS[SYSTEM_ID]
 EJS_DIR = Path(os.environ.get("EMU_EJS", "/opt/emulatorjs/data"))
 PORT = int(os.environ.get("EMU_PORT", "8099"))
 INGRESS_PEER = os.environ.get("EMU_INGRESS_PEER", "172.30.32.2")

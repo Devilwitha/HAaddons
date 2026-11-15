@@ -5,6 +5,8 @@ eigenen Ordner mit `config.yaml`; HA liest den Stand von `main` auf GitHub. Hilf
 im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retropie-mqtt/`, `rpi5-bridge/`).
 
 ## Allgemein
+- Jedes Dockerfile mit Python-/Shell-CMD braucht `ENV S6_KEEP_ENV=1` (oder `#!/usr/bin/with-contenv`):
+  s6-overlay im HA-Basis-Image leert sonst die Umgebung – `SUPERVISOR_TOKEN` und eigene ENV-Werte fehlen.
 - Texte für Nutzer auf Deutsch. Autor in Beschreibungen/DOCS: „von BolliSoft“.
 - Bei jeder Änderung an einem Add-on `version` in dessen `config.yaml` erhöhen und `CHANGELOG.md`
   ergänzen, sonst bietet HA kein Update an.

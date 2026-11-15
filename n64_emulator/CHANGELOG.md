@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.3
+
+- Fehler behoben: Das Add-on bekam kein Supervisor-Token und keine eigenen Umgebungswerte (s6-overlay leerte die Umgebung). Darum fehlten die Sensoren, die Version stand auf „dev“ und der Server lief mit GBA-Einstellungen (N64-Uploads wurden abgelehnt)
+- Absicherung: Fehlt die System-Kennung, liest der Server sie aus der eigenen Oberfläche
+
 ## 1.0.2
 
 - Sensoren für Home Assistant: Wird gespielt, Spieler, Sitzung, Gesamtzeit, Sitzungen (mit Starts pro Spiel), Zuletzt gespielt, Letztes Spiel, Meistgespielt (Rangliste), Spiele, Aktiv – per MQTT als Gerät oder über die REST-API

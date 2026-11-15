@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.2
+
+- Fehler behoben: Das Add-on bekam kein Supervisor-Token (s6-overlay leerte die Umgebung). Darum legte es weder MQTT- noch REST-Sensoren an
+
 ## 1.1.1
 
 - Seitenleiste: Balken sind leer, solange noch keine Daten da sind (vorher voll)
