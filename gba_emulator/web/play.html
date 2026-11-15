@@ -14,7 +14,8 @@
   <a class="btn ghost" id="back" href="./" title="Zurück zur Bibliothek">&#8592; Bibliothek</a>
   <h1 id="title">…</h1>
   <span class="sync" id="sync" title="Spielstand auf dem Server">&#9679;</span>
-  <button class="btn ghost" id="touchbtn" type="button" title="Touch-Steuerung einstellen" aria-expanded="false" aria-controls="touchpanel">&#127918;<span class="label"> Touch</span></button>
+  <button class="btn ghost" id="touchbtn" type="button" title="Touch-Steuerung einstellen" aria-expanded="false" aria-controls="touchpanel">&#9995;<span class="label"> Touch</span></button>
+  <button class="btn ghost" id="padbtn" type="button" title="Controller-Belegung (Xbox, PlayStation …)" aria-expanded="false" aria-controls="padpanel">&#127918;<span class="label"> Controller</span></button>
   <a class="btn ghost" id="newtab" href="#" target="_blank" rel="noopener" hidden title="Vollbild und Controller funktionieren im eigenen Tab am zuverlässigsten">&#8599; Eigener Tab</a>
 </header>
 <main id="stage"><div id="game"></div></main>
@@ -44,9 +45,33 @@
   </div>
 </section>
 
+<section class="panel" id="padpanel" hidden aria-label="Controller-Belegung">
+  <div class="panel-head">
+    <h2>Controller</h2>
+    <button class="icon-btn" id="padclose" type="button" aria-label="Schließen">&#10005;</button>
+  </div>
+  <p class="hint" id="paddetected"></p>
+  <label class="select">Vorlage
+    <select id="padpreset"></select></label>
+  <label class="select">Tasten-Beschriftung
+    <select id="padlabels">
+      <option value="xbox">Xbox (A B X Y, LB RB LT RT)</option>
+      <option value="ps">PlayStation (&#10005; &#9675; &#9633; &#9651;, L1 R1 L2 R2)</option>
+    </select></label>
+  <table class="padmap" id="padmap">
+    <thead><tr><th>Konsole</th><th>Controller</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="panel-foot">
+    <span class="hint">Gilt für alle Spiele auf diesem Gerät.</span>
+    <button class="btn ghost" id="padedit" type="button">Einzelne Tasten ändern</button>
+  </div>
+</section>
+
 <div class="toast" id="toast" hidden></div>
 <script src="static/play.js"></script>
 <script src="static/touch.js"></script>
+<script src="static/controller.js"></script>
 <script src="ejs/loader.js"></script>
 </body>
 </html>

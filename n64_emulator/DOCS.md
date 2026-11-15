@@ -33,8 +33,20 @@ aktuellen Browser). Auf iPhone und iPad nimmt EmulatorJS automatisch den Kern `p
 Belegung ändern: im Emulator unten auf das Controller-Symbol. USB- und Bluetooth-Controller werden
 erkannt, sobald du eine Taste drückst – mit Controller spielt es sich am besten.
 
+### Controller (Xbox, PlayStation …)
+USB- oder Bluetooth-Controller am PC, Tablet oder Android-Handy verbinden und im Spiel eine Taste
+drücken. Oben auf **🎮 Controller** tippen:
+- **Vorlage Standard:** A = A, X = B (PlayStation ✕ / □), LT = Z, LB/RB = L/R, linker Stick =
+  Analogstick, rechter Stick = C-Tasten
+- **Vorlage Alternative:** wie Standard, aber B auf der rechten Taste und Z auf RT
+- **Tasten-Beschriftung:** Xbox oder PlayStation – wird am Controller erkannt, lässt sich umstellen
+- **Einzelne Tasten ändern:** öffnet das Steuerungsmenü des Emulators
+
+Die Vorlage gilt für alle Spiele auf diesem Gerät. Wer in einem Spiel einzelne Tasten ändert,
+behält diese Änderung für dieses Spiel.
+
 ### Touch-Steuerung
-Oben rechts auf **🎮 Touch** tippen:
+Oben rechts auf **✋ Touch** tippen:
 - **Automatisch:** erscheint, wenn du das Spiel mit dem Finger startest
 - **Immer an:** z. B. für Tablets oder Touch-Laptops, die nicht erkannt werden
 - **Aus:** wenn du mit Controller oder Tastatur spielst

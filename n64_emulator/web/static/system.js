@@ -11,6 +11,30 @@ window.EMU = {
   // Natürliche Größe des Touch-Gamepads in px: Breite links+rechts (C-Tasten ragen 15 px über),
   // Höhe Block + L/Z/R darüber + Stick, der unten übersteht
   pad: { width: 125 + 145, height: 125 + 140 + 50 },
+  // Echte Controller: Tabelle (RetroPad-Nummer -> N64-Taste) und Vorlagen mit EmulatorJS-Namen.
+  // mupen64plus: RetroPad B (0) = N64 A, RetroPad Y (1) = N64 B, L2 (12) = Z,
+  // linker Stick (16-19) = Analogstick, rechter Stick (20-23) = C-Tasten.
+  controller: {
+    rows: [[0, "A"], [1, "B"], [12, "Z"], [10, "L"], [11, "R"], [3, "Start"],
+      [[16, 17, 18, 19], "Analogstick"], [[20, 21, 22, 23], "C-Tasten"], [[4, 5, 6, 7], "Steuerkreuz ↑ ↓ ← →"]],
+    defaultPreset: "standard",
+    presets: {
+      standard: {
+        name: { xbox: "Standard (A = A, X = B, LT = Z)", ps: "Standard (✕ = A, □ = B, L2 = Z)" },
+        map: { 0: "BUTTON_1", 1: "BUTTON_3", 12: "LEFT_BOTTOM_SHOULDER", 10: "LEFT_TOP_SHOULDER",
+          11: "RIGHT_TOP_SHOULDER", 3: "START", 4: "DPAD_UP", 5: "DPAD_DOWN", 6: "DPAD_LEFT", 7: "DPAD_RIGHT",
+          16: "LEFT_STICK_X:+1", 17: "LEFT_STICK_X:-1", 18: "LEFT_STICK_Y:+1", 19: "LEFT_STICK_Y:-1",
+          20: "RIGHT_STICK_X:+1", 21: "RIGHT_STICK_X:-1", 22: "RIGHT_STICK_Y:+1", 23: "RIGHT_STICK_Y:-1" },
+      },
+      alternative: {
+        name: { xbox: "Alternative (A = A, B = B, RT = Z)", ps: "Alternative (✕ = A, ○ = B, R2 = Z)" },
+        map: { 0: "BUTTON_1", 1: "BUTTON_2", 12: "RIGHT_BOTTOM_SHOULDER", 10: "LEFT_TOP_SHOULDER",
+          11: "RIGHT_TOP_SHOULDER", 3: "START", 4: "DPAD_UP", 5: "DPAD_DOWN", 6: "DPAD_LEFT", 7: "DPAD_RIGHT",
+          16: "LEFT_STICK_X:+1", 17: "LEFT_STICK_X:-1", 18: "LEFT_STICK_Y:+1", 19: "LEFT_STICK_Y:-1",
+          20: "RIGHT_STICK_X:+1", 21: "RIGHT_STICK_X:-1", 22: "RIGHT_STICK_Y:+1", 23: "RIGHT_STICK_Y:-1" },
+      },
+    },
+  },
   // Touch-Layout: Belegung wie der N64-Standard von EmulatorJS, aber L/Z hängen am Stick-Block
   // und R am C-Tasten-Block – so wachsen sie beim Vergrößern mit und nichts überdeckt sich.
   layout: [

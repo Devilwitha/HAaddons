@@ -26,8 +26,19 @@ Lade nur Spiele hoch, die du besitzt. Ein BIOS ist nicht nötig.
 Belegung ändern: im Emulator unten auf das Controller-Symbol. USB- und Bluetooth-Controller werden
 erkannt, sobald du eine Taste drückst.
 
+### Controller (Xbox, PlayStation …)
+USB- oder Bluetooth-Controller am PC, Tablet oder Android-Handy verbinden und im Spiel eine Taste
+drücken. Oben auf **🎮 Controller** tippen:
+- **Vorlage:** *Nach Beschriftung* (Xbox A = A, B = B bzw. PlayStation ✕ = A) oder
+  *Wie Nintendo-Anordnung* (die rechte Taste ist A, wie am Original)
+- **Tasten-Beschriftung:** Xbox oder PlayStation – wird am Controller erkannt, lässt sich umstellen
+- **Einzelne Tasten ändern:** öffnet das Steuerungsmenü des Emulators; dort jede Taste neu belegen
+
+Die Vorlage gilt für alle Spiele auf diesem Gerät. Wer in einem Spiel einzelne Tasten ändert,
+behält diese Änderung für dieses Spiel.
+
 ### Touch-Steuerung
-Oben rechts auf **🎮 Touch** tippen:
+Oben rechts auf **✋ Touch** tippen:
 - **Automatisch:** erscheint, wenn du das Spiel mit dem Finger startest
 - **Immer an:** z. B. für Tablets oder Touch-Laptops, die nicht erkannt werden
 - **Aus:** wenn du mit Controller oder Tastatur spielst

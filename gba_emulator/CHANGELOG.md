@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.3
+
+- Controller-Belegung: Vorlagen für Xbox und PlayStation (nach Beschriftung oder wie Nintendo), Anzeige mit passender Tastenbeschriftung, Knopf für einzelne Tasten
+- Controller, der schon vor dem Spielstart aktiv war, wird jetzt Spieler 1 zugeordnet (vorher wurden seine Tasten ignoriert)
+
 ## 1.0.2
 
 - Gemeinsamer Code mit dem neuen N64 Emulator (keine sichtbare Änderung)

@@ -342,10 +342,35 @@ body.play {
 .range input { display: block; width: 100%; margin-top: 4px; accent-color: var(--accent); }
 
 .panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+
+.select { display: block; margin: 10px 0; font-size: 14px; }
+.select select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.padmap { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; }
+.padmap th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px; }
+.padmap td { padding: 4px; border-top: 1px solid var(--line); }
+.padmap .key {
+  display: inline-block;
+  min-width: 30px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  text-align: center;
+}
 .panel-foot .hint { margin: 0; }
 
 @media (max-width: 560px) {
-  .play #touchbtn .label { display: none; }
+  .play #touchbtn .label,
+  .play #padbtn .label { display: none; }
   .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .bar input[type=search] { display: none; }
   .play #newtab { display: none; }

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.1
+
+- Controller-Belegung: Vorlagen Standard (LT = Z) und Alternative (RT = Z), Xbox- oder PlayStation-Beschriftung, Knopf für einzelne Tasten
+- Controller, der schon vor dem Spielstart aktiv war, wird jetzt Spieler 1 zugeordnet
+
 ## 1.0.0
 
 - Erste Version: Bibliothek in der Seitenleiste „N64“ mit Upload, Drag & Drop und Löschen
