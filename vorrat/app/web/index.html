@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Vorrat</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="static/app.css">
+</head>
+<body>
+  <header class="bar">
+    <h1>Vorrat</h1>
+    <span class="status" id="status" data-state="ok">…</span>
+    <button class="btn primary" id="scan-all" type="button">Alle zählen</button>
+  </header>
+
+  <main id="main">
+    <p class="empty" id="empty" hidden>
+      Noch keine Kamera eingetragen. In Home Assistant unter <b>Einstellungen → Add-ons → Vorrat → Konfiguration</b>
+      bei <code>cameras</code> Kameras mit Name, Adresse und Ort ergänzen.
+    </p>
+    <div id="locations"></div>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Verlauf</h2>
+      </div>
+      <ul class="history" id="history"></ul>
+    </section>
+
+    <p class="foot muted" id="foot"></p>
+  </main>
+
+  <dialog id="edit">
+    <form method="dialog" id="edit-form">
+      <h3 id="edit-title">Vorrat</h3>
+      <label>Name
+        <input id="edit-name" maxlength="60" required>
+      </label>
+      <p class="hint">Gibt es den Namen schon, werden beide zusammengeführt. Die Kamera verwendet ab jetzt diesen Namen.</p>
+      <div class="row2">
+        <label>Anzahl
+          <input id="edit-count" type="number" min="0" max="9999" inputmode="numeric">
+        </label>
+        <label>Mindestens
+          <input id="edit-min" type="number" min="0" max="9999" inputmode="numeric">
+        </label>
+      </div>
+      <p class="hint">Fällt die Anzahl unter „Mindestens“, wird der Vorrat als fehlend markiert (und kommt auf die Einkaufsliste, falls eingerichtet). 0 = keine Meldung.</p>
+      <label class="check"><input type="checkbox" id="edit-ignore"> Ignorieren (die Kamera zählt ihn nicht mehr)</label>
+      <div class="actions">
+        <button class="btn danger" id="edit-delete" type="button">Löschen</button>
+        <span class="grow"></span>
+        <button class="btn" value="cancel" type="submit" formnovalidate>Abbrechen</button>
+        <button class="btn primary" id="edit-save" value="save" type="submit">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="static/app.js"></script>
+</body>
+</html>

@@ -105,6 +105,23 @@ SWITCH2_OPTIONS=/pfad/options.json SWITCH2_NO_GUARD=1 python switch2_remote_play
 protokolliert die Bridge jede empfangene Eingabe („Testmodus - Eingabe: …“).
 Benötigt lokal: `aiohttp aiortc websockets PyYAML opencv-python-headless numpy`.
 
+## Vorrat (`vorrat/`)
+Vorräte mit Kameras + Ollama zählen. Code in `vorrat/app/`: `server.py` (Optionen, Warteschlange `Counter`,
+API, Ingress), `vision.py` (Fotos: `http…` oder `camera.…` über `/core/api/camera_proxy`; Ollama mit Server-Ersatz
+wie WerWarDas, JSON-Schema `{"items":[{name,count}]}`), `inventory.py` (Stand in `/data/inventory.json`),
+`ha.py` (eigenes MQTT-Discovery mit dynamischen Entitäten, REST-Ersatz, To-do-Sync).
+- Prinzip **Bestand zählen statt Bewegungen verfolgen**: jeder Durchlauf ersetzt den Stand des Ortes, Verlauf
+  entsteht aus den Unterschieden. Kameras eines Ortes werden addiert. Schlägt eine Kamera fehl, bleibt der Stand.
+- Namen bleiben stabil über bekannte Namen im Prompt, Vergleich ohne Groß-/Kleinschreibung und Aliase beim
+  Umbenennen/Zusammenführen. Nur von der Kamera erkannte Vorräte verschwinden nach 3 Tagen auf 0.
+- MQTT: Gerät „Vorrat“, Topics `bollisoft/vorrat/…`, Knöpfe `bollisoft/vorrat/<ort>/scan` und `scan_all`;
+  gelöschte Entitäten bekommen eine leere Discovery-Nachricht (Liste in `/data/mqtt_entities.json`).
+- Einkaufsliste: nur selbst angelegte Einträge werden wieder entfernt (`/data/todo.json`).
+- AI HAT+ (Hailo) geht unter HA OS nicht im Add-on (kein Treiber), daher nur Ollama.
+- Lokal testen: `SUPERVISOR_TOKEN=x VORRAT_SUPERVISOR_URL=… VORRAT_OPTIONS=… VORRAT_DATA=… VORRAT_NO_GUARD=1
+  VORRAT_PORT=… python vorrat/app/server.py` gegen einen Ersatz für Kamera, Ollama (`/api/tags`, `/api/chat`)
+  und Supervisor.
+
 ## WerWarDas (`werwardas/`, `ollama/`, `werwardas-apps/`)
 Aufräum-Wächter, bis 11/2026 eigenes Repository `Devilwitha/werwardas` (Verlauf mit übernommen).
 - `werwardas/` und `ollama/` sind die Add-ons. Das Kamera-Add-on lädt beim Bauen das Archiv von HAaddons `main`

@@ -1,0 +1,51 @@
+name: Vorrat
+version: "0.1.0"
+slug: vorrat
+description: Zählt Vorräte mit Kameras (ESP32-CAM, Raspberry Pi, HA-Kameras) und KI über Ollama und führt die Liste von selbst (von BolliSoft)
+url: https://github.com/Devilwitha/HAaddons/tree/main/vorrat
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+
+# Liste und Kamerabilder in der HA-Seitenleiste
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:fridge-outline
+panel_title: Vorrat
+
+# Sensoren und Knöpfe per MQTT-Discovery (sonst Sensoren über die REST-API), Fotos von HA-Kameras,
+# Einkaufsliste (To-do)
+homeassistant_api: true
+services:
+  - mqtt:want
+
+options:
+  cameras: []
+  ollama_servers:
+    - url: "http://ac854b7e-ollama:11434"
+      model: "qwen2.5vl:3b"
+      timeout_seconds: 1800
+  interval_minutes: 60
+  active_hours: "06:00-23:00"
+  items_hint: ""
+  todo_entity: ""
+  use_mqtt: true
+schema:
+  cameras:
+    - name: str
+      source: str
+      location: str
+      rotation: list(0|90|180|270)?
+  ollama_servers:
+    - url: url
+      model: str
+      timeout_seconds: int(30,3600)?
+      max_width: int(320,2048)?
+  interval_minutes: int(0,1440)
+  active_hours: str?
+  items_hint: str?
+  todo_entity: str?
+  use_mqtt: bool

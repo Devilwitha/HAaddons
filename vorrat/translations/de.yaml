@@ -1,0 +1,29 @@
+configuration:
+  cameras:
+    name: Kameras
+    description: >-
+      Je Kamera Name, Quelle und Ort. Quelle ist die Adresse eines Fotos (z. B. ESP32-CAM
+      http://192.168.1.170/capture?flash=1) oder eine Kamera aus Home Assistant (camera.kuehlschrank).
+      Kameras mit gleichem Ort werden zusammengezählt. rotation dreht das Bild (0, 90, 180, 270).
+  ollama_servers:
+    name: Ollama-Server
+    description: >-
+      Werden der Reihe nach versucht, z. B. erst der PC mit Grafikkarte, dann das Ollama-Add-on
+      (http://ac854b7e-ollama:11434). Das Modell muss Bilder verstehen, z. B. qwen2.5vl:7b oder qwen2.5vl:3b.
+  interval_minutes:
+    name: Zählen alle (Minuten)
+    description: Alle Orte regelmäßig zählen. 0 = nur per Knopf (Oberfläche oder Home Assistant).
+  active_hours:
+    name: Aktive Zeit
+    description: Zeitraum für das regelmäßige Zählen, z. B. 06:00-23:00. Leer = rund um die Uhr.
+  items_hint:
+    name: Hinweis für die KI
+    description: Optional, z. B. „Im Kühlschrank stehen oft Dosen Cola, Milch und Joghurt. Flaschen in der Tür mitzählen.“
+  todo_entity:
+    name: Einkaufsliste
+    description: >-
+      Optional eine To-do-Liste aus Home Assistant (z. B. todo.einkaufsliste). Vorräte unter ihrem
+      Mindestbestand kommen darauf und wieder herunter, sobald genug da ist.
+  use_mqtt:
+    name: MQTT verwenden
+    description: Sensoren und Knöpfe per MQTT als Gerät „Vorrat“ anlegen, wenn ein MQTT-Broker eingerichtet ist. Sonst nur Sensoren über die REST-API.

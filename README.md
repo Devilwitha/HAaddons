@@ -41,6 +41,12 @@ Home Assistant. Ist es zu unordentlich, zeigt der Windows-PC oder das Kinderhand
 später. Dazu gehören die Kamera-Software für den Raspberry Pi, die Windows-App, die Android-Apps (Kind und
 Eltern), eine ESP32-CAM-Firmware und ein Blueprint – alles in [werwardas-apps](werwardas-apps/).
 
+### [Vorrat](vorrat/)
+Zählt Vorräte mit mehreren Kameras (ESP32-CAM, Raspberry Pi oder jede Kamera aus Home Assistant) und einem
+Vision-Modell über Ollama und führt die Liste je Ort von selbst: zwei Dosen in den Kühlschrank, eine wieder
+heraus – noch eine da. Mit Verlauf, Korrektur von Hand, Mindestbestand mit Einkaufsliste und Sensoren je
+Vorrat. Details: [DOCS.md](vorrat/DOCS.md)
+
 ## Installation
 Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories →
 `https://github.com/Devilwitha/HAaddons` hinzufügen.

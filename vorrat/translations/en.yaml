@@ -1,0 +1,29 @@
+configuration:
+  cameras:
+    name: Cameras
+    description: >-
+      Name, source and location per camera. Source is the address of a photo (e.g. ESP32-CAM
+      http://192.168.1.170/capture?flash=1) or a Home Assistant camera (camera.fridge).
+      Cameras with the same location are added up. rotation turns the image (0, 90, 180, 270).
+  ollama_servers:
+    name: Ollama servers
+    description: >-
+      Tried in order, e.g. first a PC with a GPU, then the Ollama add-on (http://ac854b7e-ollama:11434).
+      The model must understand images, e.g. qwen2.5vl:7b or qwen2.5vl:3b.
+  interval_minutes:
+    name: Count every (minutes)
+    description: Count all locations regularly. 0 = only on request (button in the UI or in Home Assistant).
+  active_hours:
+    name: Active hours
+    description: Time range for regular counting, e.g. 06:00-23:00. Empty = around the clock.
+  items_hint:
+    name: Hint for the AI
+    description: Optional, e.g. "The fridge often contains cans of cola, milk and yoghurt."
+  todo_entity:
+    name: Shopping list
+    description: >-
+      Optional Home Assistant to-do list (e.g. todo.shopping_list). Items below their minimum are
+      added and removed again once there are enough.
+  use_mqtt:
+    name: Use MQTT
+    description: Create sensors and buttons as device "Vorrat" via MQTT if a broker is set up. Otherwise sensors only via the REST API.
