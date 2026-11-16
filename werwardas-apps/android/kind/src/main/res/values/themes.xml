@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WerWarDas" parent="@android:style/Theme.Material">
+        <item name="android:colorPrimary">#11161C</item>
+        <item name="android:colorPrimaryDark">#0B0F14</item>
+        <item name="android:colorAccent">#2FD96B</item>
+        <item name="android:windowBackground">#11161C</item>
+        <item name="android:textColorPrimary">#E6EAF0</item>
+        <item name="android:textColorSecondary">#8A94A2</item>
+        <item name="android:textColorHint">#5A6472</item>
+    </style>
+</resources>

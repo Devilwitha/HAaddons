@@ -1,0 +1,29 @@
+name: Pi-Software testen
+
+on:
+  push:
+    branches: [main]
+    paths: ["pi/**", ".github/workflows/pi.yml"]
+  pull_request:
+    paths: ["pi/**", ".github/workflows/pi.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # wie Raspberry Pi OS Bookworm
+
+      - name: Abhängigkeiten
+        run: pip install -r pi/requirements.txt -r pi/requirements-claude.txt numpy pillow pytest
+
+      - name: Tests
+        working-directory: pi
+        run: python -m pytest -q
+
+      - name: Installationsskript prüfen
+        run: shellcheck pi/install.sh

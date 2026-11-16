@@ -1,0 +1,45 @@
+name: WerWarDas Kamera
+version: "0.3.0"
+slug: werwardas
+description: "Aufräum-Wächter: holt das Foto der Kamera, bewertet die Ordnung und meldet sie an Home Assistant"
+url: https://github.com/Devilwitha/werwardas
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+services:
+  - mqtt:need
+options:
+  camera_url: "http://192.168.1.165/capture"
+  rotation: 0
+  analyzer: ollama
+  ollama_servers:
+    - url: "http://192.168.1.139:11434"
+      model: "qwen2.5vl:7b"
+    - url: "http://045e59a3-ollama:11434"
+      model: "qwen2.5vl:3b"
+      timeout_seconds: 1800
+      max_width: 768
+      fallback: true
+  claude_api_key: ""
+  prompt_hint: ""
+  active_hours: "08:00-22:00"
+  interval_minutes: 30
+  threshold: 60
+schema:
+  camera_url: url
+  rotation: list(0|90|180|270)
+  analyzer: list(reference|ollama|claude)
+  ollama_servers:
+    - url: url
+      model: str
+      timeout_seconds: int(30,3600)?
+      max_width: int(320,1600)?
+      fallback: bool?
+  claude_api_key: password?
+  prompt_hint: str?
+  active_hours: str?
+  interval_minutes: int(1,240)
+  threshold: int(0,100)

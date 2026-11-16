@@ -1,0 +1,61 @@
+# WerWarDas – Konfiguration der Kamera
+# Datei liegt nach der Installation unter /etc/werwardas/config.yaml
+# Nach Änderungen:  sudo systemctl restart werwardas
+
+mqtt:
+  host: homeassistant.local     # IP oder Name des Home-Assistant-Rechners (Mosquitto-Add-on)
+  port: 1883
+  username: werwardas
+  password: ""
+  topic_prefix: werwardas
+
+camera:
+  type: auto        # auto | picamera2 | usb | http
+  width: 1920
+  height: 1080
+  rotation: 0       # 0, 90, 180, 270
+  url: ""           # nur für ESP32-CAM, z. B. http://192.168.1.50/capture
+
+interval_minutes: 30            # wie oft ein Foto gemacht wird (auch in HA änderbar)
+active_hours: "08:00-22:00"     # nur in diesem Zeitfenster prüfen ("" = immer)
+threshold: 60                   # Score darunter = unordentlich (auch in HA änderbar)
+
+# Bewertung: reference (offline, Vergleich mit Referenzfoto)
+#            ollama    (lokale KI, z. B. auf deinem PC oder einem Server)
+#            claude    (Cloud, API-Key nötig)
+analyzer: reference
+
+# Optional: Hinweise für die KI, z. B. "Der Wäschekorb in der Ecke ist erlaubt."
+prompt_hint: ""
+
+# Unveränderte Fotos nicht neu bewerten: sieht das Zimmer bei einer automatischen Intervall-Prüfung
+# fast genauso aus wie bei der letzten Bewertung, wird der alte Score übernommen statt die KI erneut
+# laufen zu lassen. Spart die meisten teuren Läufe. (In Home Assistant: Schalter "Unveränderte überspringen".)
+# Ein manuelles "Jetzt prüfen" und jede Einstellungsänderung bewerten immer neu.
+skip_unchanged: true
+# Höchstens so viel Anteil geänderter Kacheln (0..1) gilt noch als "unverändert". Kleiner = vorsichtiger
+# (öfter neu bewerten). Nutzt denselben Helligkeitsausgleich wie der Referenzvergleich (reference.sensitivity).
+unchanged_fraction: 0.03
+
+reference:
+  sensitivity: 25     # höher = unempfindlicher
+  gain: 5             # wie stark Veränderungen den Score senken
+  ignore_areas: []    # Bereiche ignorieren, [x, y, breite, höhe] in Prozent, z. B. [[70, 0, 30, 40]] fürs Fenster
+
+ollama:
+  url: http://192.168.1.20:11434
+  model: qwen2.5vl:7b
+  # Alternativ mehrere Server, der Reihe nach versucht (z. B. erst der PC, sonst ein kleines Modell auf dem Pi):
+  # servers:
+  #   - {url: "http://192.168.1.20:11434", model: "qwen2.5vl:7b"}
+  #   - {url: "http://045e59a3-ollama:11434", model: "qwen2.5vl:3b", timeout_seconds: 1800, fallback: true}
+  # fallback: true = nur Ersatz, in HA mit dem Schalter "Pi-KI als Ersatz" abschaltbar
+
+claude:
+  api_key: ""         # von https://console.anthropic.com
+  model: claude-opus-5-5
+
+storage:
+  dir: /var/lib/werwardas
+  keep_days: 7        # Fotos werden spätestens danach gelöscht
+  max_photos: 4       # nur das aktuelle Foto und die 3 davor aufheben

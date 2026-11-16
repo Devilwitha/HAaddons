@@ -1,0 +1,132 @@
+blueprint:
+  name: WerWarDas – Aufräum-Wächter
+  description: >
+    Sperrt den PC, wenn das Zimmer zu lange unordentlich ist, und gibt ihn wieder frei,
+    sobald aufgeräumt ist. Optional fährt der PC nach einer weiteren Wartezeit herunter.
+    Nur nötig, wenn die Windows-App auf "Nur Home Assistant" steht.
+  domain: automation
+  source_url: https://github.com/Devilwitha/werwardas/blob/main/homeassistant/blueprints/automation/werwardas/aufraeum_waechter.yaml
+  input:
+    messy_sensor:
+      name: Unordentlich-Sensor
+      description: binary_sensor "Unordentlich" der WerWarDas Kamera
+      selector:
+        entity:
+          domain: binary_sensor
+    pc_lock:
+      name: PC-Sperre
+      description: switch "Sperre" des WerWarDas PCs
+      selector:
+        entity:
+          domain: switch
+    pc_warn:
+      name: Hinweis-Button (optional)
+      description: button "Hinweis anzeigen" des WerWarDas PCs
+      default: []
+      selector:
+        entity:
+          domain: button
+    pc_shutdown:
+      name: Herunterfahren-Button (optional)
+      description: button "Herunterfahren" des WerWarDas PCs
+      default: []
+      selector:
+        entity:
+          domain: button
+    grace:
+      name: Schonfrist bis zur Sperre
+      default:
+        minutes: 15
+      selector:
+        duration:
+    shutdown_after:
+      name: Herunterfahren nach (gesperrt)
+      description: 0 = nie herunterfahren
+      default:
+        minutes: 0
+      selector:
+        duration:
+    notify_service:
+      name: Benachrichtigung (optional)
+      description: z. B. notify.mobile_app_mein_handy – leer lassen für keine Nachricht
+      default: ""
+      selector:
+        text:
+
+mode: restart
+
+variables:
+  notify_service: !input notify_service
+  pc_warn: !input pc_warn
+  pc_shutdown: !input pc_shutdown
+  shutdown_after: !input shutdown_after
+  shutdown_seconds: >
+    {{ (shutdown_after.hours | default(0) | int) * 3600
+       + (shutdown_after.minutes | default(0) | int) * 60
+       + (shutdown_after.seconds | default(0) | int) }}
+
+trigger:
+  - platform: state
+    entity_id: !input messy_sensor
+    to: "on"
+    id: messy
+  - platform: state
+    entity_id: !input messy_sensor
+    to: "off"
+    id: tidy
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: tidy
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: !input pc_lock
+      - conditions:
+          - condition: trigger
+            id: messy
+        sequence:
+          - if:
+              - "{{ pc_warn | length > 0 }}"
+            then:
+              - service: button.press
+                target:
+                  entity_id: !input pc_warn
+          - if:
+              - "{{ notify_service != '' }}"
+            then:
+              - service: "{{ notify_service }}"
+                data:
+                  title: "🧹 Zimmer aufräumen!"
+                  message: "{{ state_attr(trigger.entity_id, 'friendly_name') }}: Das Zimmer ist unordentlich."
+          - wait_for_trigger:
+              - platform: state
+                entity_id: !input messy_sensor
+                to: "off"
+            timeout: !input grace
+            continue_on_timeout: true
+          - if:
+              - "{{ wait.trigger is not none }}"
+            then:
+              - stop: Aufgeräumt
+          - service: switch.turn_on
+            target:
+              entity_id: !input pc_lock
+          - if:
+              - "{{ shutdown_seconds | int > 0 and pc_shutdown | length > 0 }}"
+            then:
+              - wait_for_trigger:
+                  - platform: state
+                    entity_id: !input messy_sensor
+                    to: "off"
+                timeout:
+                  seconds: "{{ shutdown_seconds | int }}"
+                continue_on_timeout: true
+              - if:
+                  - "{{ wait.trigger is none }}"
+                then:
+                  - service: button.press
+                    target:
+                      entity_id: !input pc_shutdown

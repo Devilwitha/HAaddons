@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>WerWarDas</AssemblyName>
+    <RootNamespace>WerWarDas</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>WerWarDas Aufräum-Wächter</Product>
+    <ApplicationIcon>Assets\werwardas.ico</ApplicationIcon>
+    <!-- Ermöglicht den Build auch unter Linux (z. B. zum Testen); die Release-Exe baut GitHub Actions unter Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\werwardas.ico" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,55 @@
+# Beispiel-Karte für das Home-Assistant-Dashboard.
+# Dashboard bearbeiten -> Karte hinzufügen -> "Manuell" -> diesen Text einfügen.
+# Die Entitäts-IDs ggf. an deine anpassen (Einstellungen -> Geräte -> WerWarDas Kamera).
+type: vertical-stack
+cards:
+  - type: picture-entity
+    entity: camera.werwardas_kamera_zimmer
+    show_state: false
+    show_name: false
+  - type: entities
+    title: Aufräum-Wächter
+    entities:
+      - entity: sensor.werwardas_kamera_ordnung
+      - entity: binary_sensor.werwardas_kamera_unordentlich
+      - entity: sensor.werwardas_kamera_begrundung
+      - entity: sensor.werwardas_kamera_letzte_prufung
+      - entity: sensor.werwardas_kamera_streak
+      - entity: sensor.werwardas_kamera_rekord
+      - entity: switch.werwardas_kamera_uberwachung
+      - entity: button.werwardas_kamera_jetzt_prufen
+      - entity: button.werwardas_kamera_als_aufgeraumt_speichern
+  - type: gauge
+    entity: sensor.werwardas_kamera_ordnung
+    min: 0
+    max: 100
+    severity:
+      green: 70
+      yellow: 50
+      red: 0
+  # Verlauf: funktioniert sofort, ohne weitere Einrichtung (der Sensor "Ordnung" hat
+  # dank state_class "measurement" automatisch eine Home-Assistant-Historie).
+  - type: history-graph
+    title: Ordnung – letzte 48 Stunden
+    hours_to_show: 48
+    entities:
+      - entity: sensor.werwardas_kamera_ordnung
+  - type: statistics-graph
+    title: Ordnung – Verlauf (Tagesmittel)
+    days_to_show: 30
+    period: day
+    stat_types:
+      - mean
+    entities:
+      - sensor.werwardas_kamera_ordnung
+  # Streak: kommt automatisch vom Kameradienst, keine Einrichtung nötig (siehe README Abschnitt 8).
+  - type: markdown
+    content: >
+      ## 🔥 {{ states('sensor.werwardas_kamera_streak') }} Tage in Folge aufgeräumt
+
+      {% if states('sensor.werwardas_kamera_streak') | int(0) >= states('sensor.werwardas_kamera_rekord') | int(0)
+            and states('sensor.werwardas_kamera_streak') | int(0) > 0 %}
+      Neuer Rekord! 🎉
+      {% else %}
+      Rekord: {{ states('sensor.werwardas_kamera_rekord') }} Tage
+      {% endif %}

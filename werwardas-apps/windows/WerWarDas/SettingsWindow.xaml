@@ -1,0 +1,137 @@
+<Window x:Class="WerWarDas.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WerWarDas – Einstellungen" Width="520" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13">
+    <Window.Resources>
+        <Style TargetType="TextBlock" x:Key="Label">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,12,0" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Margin" Value="0,4" />
+            <Setter Property="Padding" Value="3" />
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Margin" Value="0,4" />
+            <Setter Property="Padding" Value="3" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Margin" Value="0,4" />
+        </Style>
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Padding" Value="8" />
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="16">
+        <GroupBox Header="Home Assistant / MQTT-Broker">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                </Grid.RowDefinitions>
+                <TextBlock Style="{StaticResource Label}" Text="Adresse" />
+                <TextBox x:Name="HostBox" Grid.Column="1" />
+                <TextBlock Style="{StaticResource Label}" Grid.Row="1" Text="Port" />
+                <TextBox x:Name="PortBox" Grid.Row="1" Grid.Column="1" Width="80" HorizontalAlignment="Left" />
+                <TextBlock Style="{StaticResource Label}" Grid.Row="2" Text="Benutzer" />
+                <TextBox x:Name="UserBox" Grid.Row="2" Grid.Column="1" />
+                <TextBlock Style="{StaticResource Label}" Grid.Row="3" Text="Passwort" />
+                <PasswordBox x:Name="PasswordBox" Grid.Row="3" Grid.Column="1" />
+                <TextBlock Style="{StaticResource Label}" Grid.Row="4" Text="Topic-Präfix" />
+                <TextBox x:Name="PrefixBox" Grid.Row="4" Grid.Column="1" />
+                <TextBlock Style="{StaticResource Label}" Grid.Row="5" Text="Name dieses PCs" />
+                <TextBox x:Name="PcNameBox" Grid.Row="5" Grid.Column="1" />
+            </Grid>
+        </GroupBox>
+
+        <GroupBox Header="Verhalten">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                </Grid.RowDefinitions>
+                <TextBlock Style="{StaticResource Label}" Text="Steuerung" />
+                <ComboBox x:Name="ModeBox" Grid.Column="1">
+                    <ComboBoxItem Content="Automatisch (App entscheidet selbst)" />
+                    <ComboBoxItem Content="Nur Home Assistant (Automationen)" />
+                </ComboBox>
+                <TextBlock Style="{StaticResource Label}" Grid.Row="1" Text="Sperren nach (Min.)" />
+                <TextBox x:Name="GraceBox" Grid.Row="1" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                         ToolTip="Zeit zwischen Hinweis und Sperre. 0 = sofort sperren." />
+                <TextBlock Style="{StaticResource Label}" Grid.Row="2" Text="Herunterfahren nach" />
+                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                    <TextBox x:Name="ShutdownBox" Width="80"
+                             ToolTip="Minuten im gesperrten Zustand, bis der PC herunterfährt. 0 = nie." />
+                    <TextBlock Text="Min. gesperrt (0 = nie)" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <TextBlock Style="{StaticResource Label}" Grid.Row="3" Text="Notfall-PIN" />
+                <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                    <PasswordBox x:Name="PinBox" Width="120"
+                                 ToolTip="Leer lassen = PIN unverändert. Mit der PIN lässt sich die Sperre im Notfall aufheben." />
+                    <CheckBox x:Name="RemovePinBox" Content="PIN entfernen" VerticalAlignment="Center" Margin="10,0,0,0" />
+                </StackPanel>
+                <TextBlock Style="{StaticResource Label}" Grid.Row="4" Text="Notfall-Entsperrung" />
+                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
+                    <TextBox x:Name="EmergencyBox" Width="80"
+                             ToolTip="So lange bleibt der PC nach Eingabe der Notfall-PIN frei, egal was die Kamera meldet." />
+                    <TextBlock Text="Min. nach PIN (1–1440)" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <TextBlock Style="{StaticResource Label}" Grid.Row="5" Text="Nach Updates suchen" />
+                <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal">
+                    <TextBox x:Name="UpdateBox" Width="80"
+                             ToolTip="So oft wird auf GitHub nach einer neuen Version gesucht. Ein Update wird automatisch installiert, sobald der PC frei ist, danach startet die App neu." />
+                    <TextBlock Text="alle … Stunden (0 = nie)" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <CheckBox x:Name="AutostartBox" Grid.Row="6" Grid.Column="1" Margin="0,8,0,0"
+                          Content="Mit Windows starten" />
+            </Grid>
+        </GroupBox>
+
+        <GroupBox x:Name="CamGroup" Header="Kamera-Prüfung (gilt für den Kameradienst, auch in HA änderbar)">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                </Grid.RowDefinitions>
+                <TextBlock Style="{StaticResource Label}" Text="Prüfen alle" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <TextBox x:Name="IntervalBox" Width="80" ToolTip="Abstand zwischen zwei automatischen Prüfungen (1–240 Minuten)." />
+                    <TextBlock Text="Minuten (1–240)" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <TextBlock Style="{StaticResource Label}" Grid.Row="1" Text="Aufgeräumt ab" />
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                    <TextBox x:Name="ThresholdBox" Width="80"
+                             ToolTip="Ab diesem Ordnungs-Score (0–100 %) gilt das Zimmer als aufgeräumt." />
+                    <TextBlock Text="% Ordnung (0–100)" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <TextBlock Style="{StaticResource Label}" Grid.Row="2" Text="Prüfzeit" />
+                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                    <TextBox x:Name="ActiveHoursBox" Width="120"
+                             ToolTip="Nur in diesem Zeitfenster prüfen, z. B. 08:00-22:00. Leer = immer. Über Mitternacht geht auch (20:00-02:00)." />
+                    <TextBlock Text="z. B. 08:00-22:00, leer = immer" VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+                <TextBlock x:Name="CamHint" Grid.Row="3" Grid.ColumnSpan="2" Foreground="Gray" TextWrapping="Wrap"
+                           Margin="0,4,0,0" Visibility="Collapsed"
+                           Text="Kameradienst nicht erreichbar – diese Werte können gerade nicht geändert werden." />
+            </Grid>
+        </GroupBox>
+
+        <TextBlock x:Name="ErrorText" Foreground="Firebrick" TextWrapping="Wrap" Margin="0,0,0,8" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Speichern" Padding="18,5" Margin="0,0,8,0" IsDefault="True" Click="Save_Click" />
+            <Button Content="Abbrechen" Padding="18,5" IsCancel="True" />
+        </StackPanel>
+    </StackPanel>
+</Window>

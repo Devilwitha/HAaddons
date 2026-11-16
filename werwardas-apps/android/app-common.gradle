@@ -1,0 +1,41 @@
+// Gemeinsame Einstellungen beider Apps: Version (von GitHub Actions gesetzt) und Signatur.
+// Signatur: Umgebungsvariablen WERWARDAS_KEYSTORE / WERWARDAS_KEYSTORE_PASSWORD (CI)
+// oder android/keystore.properties (lokal, nicht im Repo).
+def props = new Properties()
+def propsFile = rootProject.file("keystore.properties")
+if (propsFile.exists()) propsFile.withInputStream { props.load(it) }
+def storePath = System.getenv("WERWARDAS_KEYSTORE") ?: props.getProperty("storeFile")
+def storePass = System.getenv("WERWARDAS_KEYSTORE_PASSWORD") ?: props.getProperty("password")
+def haveKeystore = storePath != null && !storePath.isEmpty() && storePass != null && !storePass.isEmpty()
+
+android {
+    compileSdk 34
+    defaultConfig {
+        minSdk 26
+        targetSdk 34
+        versionCode((project.findProperty("appVersionCode") ?: "1") as int)
+        versionName((project.findProperty("appVersionName") ?: "1.0.0") as String)
+    }
+    signingConfigs {
+        release {
+            if (haveKeystore) {
+                storeFile file(storePath)
+                storePassword storePass
+                keyAlias "werwardas"
+                keyPassword storePass
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Ohne eigenen Keystore (lokaler Build) mit dem Debug-Schlüssel signieren.
+            signingConfig = haveKeystore ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    buildFeatures { buildConfig true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

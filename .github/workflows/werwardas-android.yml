@@ -1,0 +1,78 @@
+name: Android-Apps bauen
+
+# Jeder Push auf main, der etwas unter android/ ändert, baut beide Apps und veröffentlicht ein Release
+# mit den fertigen APKs. Die installierten Apps aktualisieren sich daraus selbst.
+on:
+  push:
+    branches: [main]
+    paths: ["android/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Signaturschlüssel bereitstellen
+        id: keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.WERWARDAS_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/werwardas.jks"
+            echo "path=$RUNNER_TEMP/werwardas.jks" >> "$GITHUB_OUTPUT"
+            echo "Signaturschlüssel aus Secret geladen."
+          else
+            echo "::warning::Kein Keystore-Secret – Apps werden mit dem Debug-Schlüssel signiert (Selbst-Update schlägt dann fehl)."
+          fi
+
+      - name: Version festlegen
+        id: version
+        run: echo "code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: APKs bauen
+        env:
+          WERWARDAS_KEYSTORE: ${{ steps.keystore.outputs.path }}
+          WERWARDAS_KEYSTORE_PASSWORD: ${{ secrets.WERWARDAS_KEYSTORE_PASSWORD }}
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :kind:assembleRelease :eltern:assembleRelease \
+            -PappVersionCode=${{ steps.version.outputs.code }} \
+            -PappVersionName=1.0.${{ steps.version.outputs.code }} --no-daemon
+          cp kind/build/outputs/apk/release/kind-release.apk "$RUNNER_TEMP/WerWarDas-Kind.apk"
+          cp eltern/build/outputs/apk/release/eltern-release.apk "$RUNNER_TEMP/WerWarDas-Eltern.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WerWarDas-Android
+          path: ${{ runner.temp }}/WerWarDas-*.apk
+
+      - name: Release erstellen
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="1.0.${{ steps.version.outputs.code }}"
+          gh release create "android-v$v" \
+            "$RUNNER_TEMP/WerWarDas-Kind.apk" "$RUNNER_TEMP/WerWarDas-Eltern.apk" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "WerWarDas Android $v" \
+            --notes "Android-Apps (Kind + Eltern) Version $v. Zum Aktualisieren bereits installierter Apps automatisch." \
+            --latest=false

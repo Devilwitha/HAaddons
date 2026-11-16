@@ -1,0 +1,28 @@
+name: Ollama (WerWarDas)
+version: "0.40.13-2"
+slug: ollama
+description: "Lokale KI für die WerWarDas-Bewertung direkt auf dem Home-Assistant-Rechner"
+url: https://ollama.com
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: services
+boot: auto
+# Modelle (mehrere GB) nicht ins Backup – sie werden beim Start bei Bedarf neu geladen
+backup_exclude:
+  - "models"
+  - "models/*"
+# Nur im internen Add-on-Netz erreichbar (http://045e59a3-ollama:11434; 045e59a3 = Kennung dieses Repos in HA). Für Zugriff aus dem LAN hier einen Port eintragen.
+ports:
+  11434/tcp: null
+ports_description:
+  11434/tcp: Ollama-API (nur nötig, wenn andere Geräte im LAN zugreifen sollen)
+options:
+  models:
+    - "qwen2.5vl:3b"
+  keep_alive: "5m"
+schema:
+  models:
+    - str
+  keep_alive: str
