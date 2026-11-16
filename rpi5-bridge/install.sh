@@ -41,7 +41,7 @@ main() {
   apt-get install -y -q \
     git python3 python3-venv python3-pip python3-dev \
     bluez bluez-tools libdbus-glib-1-dev libdbus-1-dev python3-dbus \
-    python3-opencv python3-numpy v4l-utils ffmpeg < /dev/null
+    python3-opencv python3-numpy v4l-utils ffmpeg alsa-utils < /dev/null
 
   # 3. Repository holen oder aktualisieren (BolliSoft-Add-on-Repository, nur der neueste Stand).
   #    Lokale Änderungen in ${REPO_DIR} werden dabei verworfen - Einstellungen liegen in ${CONF_DIR}.

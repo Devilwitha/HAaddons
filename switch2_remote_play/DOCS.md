@@ -59,13 +59,21 @@ stehen in `/etc/switch2-bridge/config.yaml`, danach `sudo systemctl restart swit
 ## Schritt 3: Erstes Koppeln
 1. Auf der Konsole **Controller → Griffweise/Reihenfolge ändern** öffnen.
 2. In Home Assistant oben auf **Konsole koppeln** tippen.
-3. Nach einigen Sekunden erscheint der Controller auf der Konsole, die Anzeige **Konsole** wird grün.
+3. Bis zu einer Minute warten – nicht mehrfach drücken. Der Controller erscheint auf der Konsole, die
+   Anzeige **Konsole** wird grün.
+
+Nach dem Start der Bridge dauert es etwa eine Minute, bis Bluetooth bereit ist (Anzeige **Konsole**
+„Controller wird gestartet“). Stürzt die Controller-Emulation ab, startet die Bridge sie von selbst neu.
 
 Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die Konsole an ist.
 
 ## Bedienung
 - **Obere Leiste** (mit dem Pfeil einklappbar): Status von Bridge, Konsole, Capture und Ping,
-  Schalter **Touch-Steuerung**, **Controller**, **Konsole koppeln**, **Vollbild**.
+  Schalter **Touch-Steuerung**, **Controller**, **Ton**, **Messwerte**, **Konsole koppeln**, **Vollbild**.
+- **Ton:** kommt bei WebRTC von der Capture-Card mit (nicht bei MJPEG). Browser spielen Ton erst nach einer
+  Berührung ab – einmal auf die Seite tippen. Bild und Ton werden nicht abgeglichen, damit das Bild nicht
+  wartet; der Ton kann dadurch ein paar Millisekunden hinterherhängen. Abschalten am Pi:
+  `audio: device: "off"` in `/etc/switch2-bridge/config.yaml`.
 - **Touch-Gamepad:** zwei Analogsticks, A/B/X/Y, Steuerkreuz, L/ZL/R/ZR, −/+/HOME/Aufnahme.
   Mehrere Finger gleichzeitig (z. B. Stick und A) funktionieren.
 - **Echte Controller:** per USB oder Bluetooth am Handy, Tablet oder PC verbinden und eine Taste
@@ -132,6 +140,8 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
 | **Capture** gelb | Karte gefunden, aber kein Bild: Konsole im Standby oder HDMI-Kabel prüfen |
 | **Capture** rot | Keine Capture-Card: `v4l2-ctl --list-devices`, ggf. `device` in der config.yaml anpassen |
 | Ruckelt | `webrtc_fps`/`mjpeg_fps` oder Auflösung in der config.yaml senken |
+| Kein Ton | Messwerte → **Ton** zeigt den Grund. Konsole auf Ton über TV/HDMI stellen; `arecord -l` am Pi muss die Capture-Card zeigen |
+| Koppeln klappt nicht | Auf der Konsole *Griffweise/Reihenfolge ändern* offen lassen, einmal drücken, bis zu einer Minute warten; Protokoll: `journalctl -u switch2-bridge -n 80` |
 
 ## Entfernen
 ```bash

@@ -12,6 +12,7 @@
   <main id="stage">
     <video id="video" autoplay playsinline muted></video>
     <img id="mjpeg" alt="" hidden>
+    <audio id="audio" autoplay></audio>
     <div id="novideo" class="novideo">
       <div class="novideo-icon">&#128250;</div>
       <p id="novideo-text">Verbinde mit der Raspberry Pi 5 Bridge …</p>
@@ -33,6 +34,7 @@
           <span>Touch-Steuerung</span>
         </label>
         <button class="btn" id="pad-btn" type="button" aria-expanded="false" aria-controls="pad-panel">&#127918; Controller</button>
+        <button class="btn" id="sound-btn" type="button" aria-pressed="true" title="Ton ein- oder ausschalten">&#128266; Ton</button>
         <button class="btn" id="stats-btn" type="button" aria-expanded="false" aria-controls="stats-panel">&#128202; Messwerte</button>
         <button class="btn" id="pair-btn" type="button">Konsole koppeln</button>
         <button class="btn" id="fs-btn" type="button">Vollbild</button>
@@ -87,6 +89,7 @@
         <tr><td>Eingaben über</td><td id="sv-input">–</td></tr>
         <tr class="group"><th colspan="2">Browser</th></tr>
         <tr><td>Video</td><td id="sv-video">–</td></tr>
+        <tr><td>Ton</td><td id="sv-audio">–</td></tr>
         <tr><td>Angezeigt</td><td id="sv-fps">–</td></tr>
         <tr><td title="Wie lange Bilder vor dem Anzeigen gesammelt werden">Puffer</td><td id="sv-jitter">–</td></tr>
         <tr><td>Dekodieren</td><td id="sv-decode">–</td></tr>

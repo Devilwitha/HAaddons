@@ -7,6 +7,10 @@ HTTP-Server (Standard-Port 8766):
   GET  /snapshot.jpg  einzelnes Bild
   GET  /status        Zustand der Capture-Card als JSON
 
+Ton: Bringt das WebRTC-Angebot eine Tonspur mit, nimmt die Bridge den Ton der Capture-Card per arecord
+auf (siehe AudioSource). Die Tonspur bekommt eine eigene Stream-ID, damit der Browser das Bild nicht
+zugunsten der Lippensynchronität verzögert.
+
 Die Capture-Card wird im MJPEG-Format geöffnet (geringste USB-Latenz). Ist sie nicht da oder
 liefert sie kein Bild (Konsole im Standby), wird ein "Kein Signal"-Bild gezeigt und alle
 2 Sekunden neu verbunden. device: "test" erzeugt ein Testbild ohne Capture-Card.
@@ -17,6 +21,8 @@ import fractions
 import logging
 import threading
 import time
+import uuid
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -24,7 +30,7 @@ from aiohttp import web
 
 try:
     from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
-    from aiortc.mediastreams import MediaStreamTrack
+    from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
     import av
     HAVE_WEBRTC = True
 except ImportError:                 # MJPEG funktioniert auch ohne aiortc
@@ -291,14 +297,169 @@ class StreamStats:
         return out
 
 
+AUDIO_RATE = 48000
+AUDIO_CHANNELS = 2
+AUDIO_SAMPLES = 960                 # 20 ms pro Paket (Opus)
+AUDIO_BYTES = AUDIO_SAMPLES * AUDIO_CHANNELS * 2
+AUDIO_BACKLOG = 3                   # höchstens 60 ms Ton puffern, Älteres wird verworfen
+
+
+def find_audio_device():
+    """Erste USB-Soundkarte mit Aufnahme-Eingang (die Capture-Card) als ALSA-Name."""
+    for card in sorted(Path("/proc/asound").glob("card[0-9]*")):
+        captures = sorted(card.glob("pcm*c"))
+        if not (card / "usbid").exists() or not captures:
+            continue
+        try:
+            card_id = (card / "id").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        return f"plughw:CARD={card_id},DEV={captures[0].name[3:-1]}"
+    return None
+
+
+class AudioSource:
+    """Ton der Capture-Card über arecord (ALSA), 48 kHz Stereo in Paketen zu 20 ms.
+
+    Läuft nur, solange mindestens ein Browser per WebRTC zuhört. device: "auto" sucht die erste
+    USB-Soundkarte mit Eingang, "off" schaltet den Ton ab, "test" erzeugt einen Piepton, solange
+    eine Taste gedrückt ist (zum Testen ohne Capture-Card)."""
+
+    def __init__(self, cfg, test_pattern=False):
+        device = str((cfg or {}).get("device", "auto")).strip() or "auto"
+        self.device = "test" if test_pattern and device == "auto" else device
+        self.enabled = self.device != "off"
+        self.state = "off" if self.enabled else "disabled"
+        self.detail = ""
+        self.active_device = ""
+        self.input_active = None
+        self._queues = set()
+        self._task = None
+
+    def subscribe(self):
+        queue = asyncio.Queue(maxsize=AUDIO_BACKLOG)
+        self._queues.add(queue)
+        if self._task is None or self._task.done():
+            self._task = asyncio.get_running_loop().create_task(self._run())
+        return queue
+
+    def unsubscribe(self, queue):
+        self._queues.discard(queue)
+
+    def _publish(self, data):
+        for queue in list(self._queues):
+            if queue.full():
+                queue.get_nowait()          # Ton bleibt aktuell statt sich aufzustauen
+            queue.put_nowait(data)
+
+    async def _run(self):
+        try:
+            if self.device == "test":
+                await self._run_test()
+                return
+            while self._queues:
+                device = find_audio_device() if self.device == "auto" else self.device
+                if not device:
+                    self.state = "unavailable"
+                    self.detail = "keine Ton-Quelle gefunden (Capture-Card ohne Audio?)"
+                    await asyncio.sleep(5)
+                    continue
+                await self._record(device)
+                if self._queues:
+                    await asyncio.sleep(RECONNECT_SECONDS)
+        finally:
+            self.state = "off" if self.enabled else "disabled"
+            self.active_device = ""
+
+    async def _record(self, device):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "arecord", "-q", "-D", device, "-f", "S16_LE", "-r", str(AUDIO_RATE), "-c", str(AUDIO_CHANNELS),
+                "-t", "raw", "--buffer-time=40000", "--period-time=10000",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        except FileNotFoundError:
+            self.state = "unavailable"
+            self.detail = "arecord fehlt (Paket alsa-utils)"
+            await asyncio.sleep(10)
+            return
+        self.state = "ok"
+        self.detail = ""
+        self.active_device = device
+        log.info("Ton-Aufnahme gestartet: %s", device)
+        try:
+            while self._queues:
+                self._publish(await proc.stdout.readexactly(AUDIO_BYTES))
+        except asyncio.IncompleteReadError:
+            err = (await proc.stderr.read()).decode("utf-8", "replace").strip()
+            self.state = "unavailable"
+            self.detail = (err.splitlines() or ["arecord beendet"])[-1][:200]
+            log.warning("Ton-Aufnahme beendet: %s", self.detail)
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
+            log.info("Ton-Aufnahme gestoppt")
+
+    async def _run_test(self):
+        self.state = "ok"
+        self.detail = "Testton"
+        self.active_device = "test"
+        t = np.arange(AUDIO_SAMPLES) / AUDIO_RATE
+        silence = bytes(AUDIO_BYTES)
+        phase = 0
+        next_at = time.monotonic()
+        while self._queues:
+            if self.input_active is not None and self.input_active():
+                wave = (np.sin(2 * np.pi * 660 * (t + phase * AUDIO_SAMPLES / AUDIO_RATE)) * 8000).astype(np.int16)
+                self._publish(np.repeat(wave, AUDIO_CHANNELS).tobytes())
+            else:
+                self._publish(silence)
+            phase += 1
+            next_at += AUDIO_SAMPLES / AUDIO_RATE
+            await asyncio.sleep(max(0.0, next_at - time.monotonic()))
+
+    def status(self):
+        return {"state": self.state, "detail": self.detail, "device": self.active_device,
+                "listeners": len(self._queues)}
+
+
+class AudioTrack(MediaStreamTrack):
+    """WebRTC-Tonspur aus der AudioSource."""
+
+    kind = "audio"
+
+    def __init__(self, source):
+        super().__init__()
+        self.source = source
+        self.queue = source.subscribe()
+        self.pts = 0
+
+    async def recv(self):
+        if self.readyState != "live":
+            raise MediaStreamError
+        data = await self.queue.get()
+        frame = av.AudioFrame(format="s16", layout="stereo", samples=AUDIO_SAMPLES)
+        frame.planes[0].update(data)
+        frame.sample_rate = AUDIO_RATE
+        frame.pts = self.pts
+        frame.time_base = fractions.Fraction(1, AUDIO_RATE)
+        self.pts += AUDIO_SAMPLES
+        return frame
+
+    def stop(self):
+        super().stop()
+        self.source.unsubscribe(self.queue)
+
+
 class VideoStreamer:
-    def __init__(self, cfg):
+    def __init__(self, cfg, audio_cfg=None):
         self.cfg = cfg
         self.host = str(cfg.get("host", "0.0.0.0"))
         self.port = int(cfg.get("port", 8766))
         self.mjpeg_fps = int(cfg.get("mjpeg_fps", 30))
         self.webrtc_fps = int(cfg.get("webrtc_fps", 60))
         self.source = FrameSource(cfg)
+        self.audio = AudioSource(audio_cfg, test_pattern=self.source.device == "test")
         self.pcs = set()
         # Wird von der Bridge gesetzt: on_channel(channel, pc) für den Eingabe-Datenkanal
         self.on_channel = None
@@ -321,11 +482,14 @@ class VideoStreamer:
         # aiortc (Google) würde den Verbindungsaufbau um Sekunden verzögern.
         pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
         self.pcs.add(pc)
+        tracks = []
 
         @pc.on("connectionstatechange")
         async def on_state():
             log.info("WebRTC %s: %s", request.remote, pc.connectionState)
             if pc.connectionState in ("failed", "closed"):
+                for track in tracks:
+                    track.stop()
                 await pc.close()
                 self.pcs.discard(pc)
 
@@ -334,7 +498,14 @@ class VideoStreamer:
             if channel.label == "input" and self.on_channel is not None:
                 self.on_channel(channel, pc)
 
-        pc.addTrack(CaptureTrack(self.source, self.webrtc_fps, self.webrtc_stats))
+        tracks.append(CaptureTrack(self.source, self.webrtc_fps, self.webrtc_stats))
+        pc.addTrack(tracks[-1])
+        if self.audio.enabled and "m=audio" in offer.sdp:
+            tracks.append(AudioTrack(self.audio))
+            sender = pc.addTrack(tracks[-1])
+            # Eigene Stream-ID: ohne gemeinsame Gruppe gleicht der Browser Bild und Ton nicht ab –
+            # sonst würde er das Bild verzögern, bis der (etwas spätere) Ton aufholt.
+            sender._stream_id = str(uuid.uuid4())
         await pc.setRemoteDescription(offer)
         answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
@@ -372,7 +543,8 @@ class VideoStreamer:
         """Messwerte für den Status an den Browser."""
         return {"webrtc": self.webrtc_stats.snapshot() if self.pcs else None,
                 "mjpeg_fps": self.mjpeg_stats.fps(),
-                "webrtc_clients": len(self.pcs)}
+                "webrtc_clients": len(self.pcs),
+                "audio": self.audio.status()}
 
     async def handle_snapshot(self, _request):
         data = await asyncio.get_running_loop().run_in_executor(None, self.source.jpeg)

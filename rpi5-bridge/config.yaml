@@ -15,12 +15,17 @@ video:
   width: 1280
   height: 720
   fps: 60                     # Aufnahme von der Capture-Card
-  fourcc: "MJPG"              # MJPEG von der Karte = geringste USB-Latenz
+  fourcc: "MJPG"              # USB-2.0-Karten: "MJPG"; echte USB-3.0-Karten: "YUYV" (unkomprimiert, schneller)
   jpeg_quality: 80            # Qualität des MJPEG-Streams (1-100)
   mjpeg_fps: 30               # Bilder pro Sekunde im MJPEG-Stream
   webrtc_fps: 60              # Bilder pro Sekunde über WebRTC (mehr = weniger Verzögerung; schafft die CPU
                               # weniger, sinkt die Rate von selbst, ohne dass sich Bilder stauen)
   webrtc_max_bitrate: 6000000 # höchste WebRTC-Bitrate in Bit/s
+
+audio:
+  device: "auto"              # Ton der Capture-Card (nur über WebRTC): "auto" = erste USB-Soundkarte mit
+                              # Eingang, "off" = kein Ton, oder ALSA-Name wie "plughw:CARD=Link4K,DEV=0"
+                              # (Liste: arecord -l)
 
 controller:
   enabled: true               # false = Testmodus ohne Bluetooth

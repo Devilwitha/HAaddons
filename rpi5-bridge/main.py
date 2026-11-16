@@ -46,6 +46,7 @@ DEFAULTS = {
     "video": {"host": "0.0.0.0", "port": 8766, "device": "/dev/video0", "width": 1280, "height": 720,
               "fps": 60, "fourcc": "MJPG", "jpeg_quality": 80, "mjpeg_fps": 30, "webrtc_fps": 60,
               "webrtc_max_bitrate": 6000000},
+    "audio": {"device": "auto"},
     "controller": {"enabled": True, "watchdog_seconds": 2.0, "input_rate_hz": 120,
                    "reconnect_file": "/var/lib/switch2-bridge/switch_addresses.json"},
     "log_level": "INFO",
@@ -86,11 +87,12 @@ class Bridge:
     def __init__(self, cfg, dry_run):
         self.cfg = cfg
         self.controller = ControllerEmulator(cfg["controller"], dry_run=dry_run)
-        self.video = VideoStreamer(cfg["video"])
+        self.video = VideoStreamer(cfg["video"], cfg.get("audio"))
         self.clients = {}                 # websocket -> letzter Eingabezustand
         self.channels = {}                # WebRTC-Datenkanal -> {"state", "seq", "seen"}
         self.video.on_channel = self.add_channel
         self.video.source.input_active = lambda: bool(self.controller.buttons)
+        self.video.audio.input_active = self.video.source.input_active
         self.tasks = []
         self.stopping = asyncio.Event()
 

@@ -172,6 +172,7 @@
 
   // ------------------------------------------------------------------ Video
   const video = $("video");
+  const audio = $("audio");
   const mjpeg = $("mjpeg");
   let pc = null;
   let mode = "webrtc";
@@ -199,6 +200,7 @@
       if (lastInput) send(lastInput);
     }
     video.srcObject = null;
+    audio.srcObject = null;
     mjpeg.onload = null;
     mjpeg.onerror = null;
     mjpeg.removeAttribute("src");
@@ -235,6 +237,7 @@
     const conn = new RTCPeerConnection({ iceServers: [] });
     pc = conn;
     conn.addTransceiver("video", { direction: "recvonly" });
+    conn.addTransceiver("audio", { direction: "recvonly" });
     const channel = conn.createDataChannel("input", { ordered: false, maxRetransmits: 0 });
     channel.onopen = () => {
       if (conn !== pc) return;
@@ -259,7 +262,12 @@
         if ("jitterBufferTarget" in ev.receiver) ev.receiver.jitterBufferTarget = 0;
         if ("playoutDelayHint" in ev.receiver) ev.receiver.playoutDelayHint = 0;
       } catch (err) { /* ältere Browser */ }
-      video.srcObject = ev.streams[0] || new MediaStream([ev.track]);
+      if (ev.track.kind === "audio") {
+        audio.srcObject = new MediaStream([ev.track]);
+        applySound();
+        return;
+      }
+      video.srcObject = new MediaStream([ev.track]);
       video.play().catch(() => {});
     };
     conn.onconnectionstatechange = () => {
@@ -598,8 +606,11 @@
       toast("Keine Verbindung zur Bridge.", true);
       return;
     }
+    // Antwort (läuft schon / gestartet / Fehler) kommt von der Bridge; kurz sperren gegen Doppelklicks
     send({ type: "system", action: "pair" });
-    toast("Kopplung gestartet – auf der Konsole „Controller → Griffweise/Reihenfolge ändern“ öffnen.");
+    toast("Kopplung wird vorbereitet …");
+    $("pair-btn").disabled = true;
+    setTimeout(() => { $("pair-btn").disabled = false; }, 5000);
   });
 
   $("fs-btn").addEventListener("click", async () => {
@@ -695,6 +706,8 @@
     const w = el.videoWidth || el.naturalWidth || 0;
     const h = el.videoHeight || el.naturalHeight || 0;
     setVal("sv-video", (mode === "webrtc" ? "WebRTC" : "MJPEG") + (w ? " · " + w + "×" + h : ""), mode === "webrtc" ? "good" : "warn");
+    const sound = soundInfo();
+    setVal("sv-audio", sound[0], sound[1]);
 
     if (mode === "webrtc" && pc) {
       try {
@@ -850,6 +863,45 @@
     $("rt-hint").textContent = "Jetzt eine Taste drücken – jeder Druck ist eine Messung. Am Touch-Gamepad eine Taste links nehmen (L, Steuerkreuz), rechts liegt dieses Feld darüber.";
     showReaction("Warte auf Tastendruck …");
   });
+
+  // ------------------------------------------------------------------ Ton
+  // Der Ton kommt als eigene WebRTC-Spur (nur bei WebRTC, nicht bei MJPEG). Browser spielen Ton erst nach
+  // einer Berührung oder einem Klick ab – darum startet er spätestens beim ersten Tippen auf die Seite.
+  let soundWanted = true;
+  try { soundWanted = localStorage.getItem("sw2-sound") !== "off"; } catch (err) { /* ohne Speicher */ }
+
+  function soundInfo() {
+    const a = (lastStatus && lastStatus.stream && lastStatus.stream.audio) || null;
+    if (mode !== "webrtc") return ["Ton gibt es nur über WebRTC", "warn"];
+    if (!audio.srcObject) return [a && a.state === "disabled" ? "am Pi abgeschaltet" : "keine Tonspur", "warn"];
+    if (a && a.state === "unavailable") return [a.detail || "keine Ton-Quelle", "bad"];
+    if (!soundWanted) return ["stumm", ""];
+    if (audio.paused) return ["zum Abspielen einmal tippen", "warn"];
+    return ["läuft" + (a && a.device ? " (" + a.device + ")" : ""), "good"];
+  }
+
+  function updateSoundBtn() {
+    const btn = $("sound-btn");
+    btn.innerHTML = (soundWanted ? "&#128266;" : "&#128263;") + " Ton";
+    btn.setAttribute("aria-pressed", soundWanted ? "true" : "false");
+    btn.title = "Ton " + (soundWanted ? "ausschalten" : "einschalten") + " – " + soundInfo()[0];
+  }
+
+  function applySound() {
+    audio.muted = !soundWanted;
+    if (soundWanted && audio.srcObject && audio.paused) audio.play().then(updateSoundBtn, updateSoundBtn);
+    updateSoundBtn();
+  }
+
+  $("sound-btn").addEventListener("click", () => {
+    soundWanted = !soundWanted;
+    try { localStorage.setItem("sw2-sound", soundWanted ? "on" : "off"); } catch (err) { /* ohne Speicher */ }
+    applySound();
+  });
+  ["pointerdown", "keydown"].forEach((type) => document.addEventListener(type, () => {
+    if (soundWanted && audio.srcObject && audio.paused) applySound();
+  }, true));
+  setInterval(updateSoundBtn, 2000);
 
   // ------------------------------------------------------------------ Start
   async function init() {

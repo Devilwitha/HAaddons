@@ -5,12 +5,15 @@
   werden alle Tasten losgelassen und die Sticks auf (0, 0) gesetzt.
 - Merkt sich die Bluetooth-Adresse der gekoppelten Konsole und verbindet sich nach einem
   Neustart von selbst wieder, solange die Konsole an ist.
+- Stürzt nxbt ab (z. B. weil der Bluetooth-Dienst kurz weg war), wird nxbt komplett neu gestartet –
+  sonst bliebe der Adapter belegt und jede weitere Kopplung endete mit "No adapters available".
 
 nxbt braucht Root-Rechte (der systemd-Dienst läuft als root). Fehlt nxbt (z. B. beim Testen
 auf einem anderen Rechner) oder ist der Controller abgeschaltet, läuft die Bridge im
 Testmodus weiter: Eingaben werden angenommen, aber nicht gesendet.
 """
 import asyncio
+import atexit
 import json
 import logging
 import time
@@ -28,6 +31,10 @@ STICK_PRESS = {"LS": "L_STICK", "RS": "R_STICK"}
 VALID_BUTTONS = set(BUTTON_KEYS) | set(STICK_PRESS)
 # Bluetooth-Name, unter dem sich die Konsole bei BlueZ meldet (technisch nötig zum Wiederfinden)
 SWITCH_ALIAS_PREFIX = "NINTENDO SWITCH"
+PAIR_BUSY_SECONDS = 90              # so lange gilt ein Kopplungsversuch als laufend
+RECOVER_AFTER = 3.0                 # nach einem Absturz so lange warten, dann nxbt neu starten
+RECOVER_MIN_GAP = 30.0              # höchstens alle 30 s automatisch neu starten
+RESTART_ATTEMPTS = 6                # Versuche beim Neustart (der Bluetooth-Dienst startet dabei neu)
 
 
 def clamp_stick(value):
@@ -61,6 +68,10 @@ class ControllerEmulator:
         self._changed = None              # asyncio.Event: neue Eingabe -> sofort senden
         self._connected = False
         self._connected_checked = 0.0
+        self._pairing_since = 0.0
+        self._recovering = False
+        self._last_recover = 0.0
+        self._crashed_since = 0.0
 
     # ------------------------------------------------------------------ Start / Kopplung
     async def start(self):
@@ -77,13 +88,52 @@ class ControllerEmulator:
     def _start_nxbt(self):
         import nxbt
         self.nxbt = nxbt
-        self.nx = nxbt.Nxbt()
         addresses = self._load_addresses()
         if addresses:
             log.info("Verbinde erneut mit gekoppelter Konsole: %s", ", ".join(addresses))
         else:
             log.info("Noch keine Konsole gekoppelt - warte auf Kopplung (Griffweise/Reihenfolge ändern)")
-        self._create(addresses or None)
+        self._restart_nxbt(addresses or None)
+
+    def _shutdown_nxbt(self):
+        """Beendet die Prozesse von nxbt und gibt damit den Bluetooth-Adapter frei."""
+        old = self.nx
+        self.nx = None
+        self.index = None
+        self._connected = False
+        if old is None:
+            return
+        try:
+            atexit.unregister(old._on_exit)
+        except AttributeError:
+            pass
+        try:
+            if old.controllers.is_alive():
+                old.controllers.terminate()
+                old.controllers.join(5)
+        except Exception as err:
+            log.debug("nxbt-Prozess beenden: %s", err)
+        try:
+            old.resource_manager.shutdown()
+        except Exception as err:
+            log.debug("nxbt-Manager beenden: %s", err)
+
+    def _restart_nxbt(self, reconnect_address):
+        """nxbt komplett neu starten und einen Controller anlegen. nxbt startet dabei den Bluetooth-Dienst
+        neu; bis der Adapter wieder da ist, meldet es "No adapters available" – darum mehrere Versuche."""
+        self._shutdown_nxbt()
+        last = None
+        for attempt in range(1, RESTART_ATTEMPTS + 1):
+            try:
+                self.nx = self.nxbt.Nxbt()
+                self._create(reconnect_address)
+                return
+            except Exception as err:
+                last = err
+                log.warning("nxbt-Start Versuch %d/%d fehlgeschlagen: %s", attempt, RESTART_ATTEMPTS, err)
+                self._shutdown_nxbt()
+                time.sleep(3)
+        raise last
 
     def _create(self, reconnect_address):
         if self.index is not None:
@@ -95,24 +145,80 @@ class ControllerEmulator:
         self._saved_connected = False
         self.index = self.nx.create_controller(self.nxbt.PRO_CONTROLLER, reconnect_address=reconnect_address)
         self.error = ""
+        if reconnect_address is None:
+            self._pairing_since = time.monotonic()      # Kopplungsmodus: Konsole kann sich jetzt verbinden
+
+    def _state(self):
+        try:
+            return self.nx.state[self.index].get("state", "unknown")
+        except Exception:                 # Index weg oder Manager-Prozess beendet
+            return "crashed"
 
     async def pair(self):
         """Neue Kopplung: Controller ohne Wiederverbindungsadresse neu anlegen.
         Auf der Konsole muss dazu "Controller -> Griffweise/Reihenfolge ändern" offen sein."""
         if not self.enabled:
             return False, "Controller-Emulation ist aus (Testmodus)."
-        if self.nx is None:
+        if self.nxbt is None:
             return False, "nxbt läuft nicht: " + (self.error or "unbekannter Fehler")
+        if self._lock.locked():
+            return True, "Bluetooth wird gerade vorbereitet – bitte einen Moment warten und nicht erneut drücken."
+        state = self._state() if self.nx is not None and self.index is not None else "crashed"
+        if state == "connected":
+            return True, "Die Konsole ist schon verbunden."
+        if state == "connecting" and time.monotonic() - self._pairing_since < PAIR_BUSY_SECONDS:
+            return True, ("Kopplung läuft bereits – auf der Konsole „Controller → Griffweise/Reihenfolge ändern“ "
+                          "offen lassen und bis zu einer Minute warten.")
         async with self._lock:
             loop = asyncio.get_running_loop()
             try:
-                await loop.run_in_executor(None, self._create, None)
+                if state == "crashed":
+                    # Abgestürzter Versuch: nxbt neu starten, damit der Adapter wieder frei ist
+                    log.info("Controller-Emulation abgestürzt - starte nxbt für die Kopplung neu")
+                    await loop.run_in_executor(None, self._restart_nxbt, None)
+                else:
+                    try:
+                        await loop.run_in_executor(None, self._create, None)
+                    except Exception as err:
+                        log.warning("Kopplung ohne Neustart fehlgeschlagen (%s) - starte nxbt neu", err)
+                        await loop.run_in_executor(None, self._restart_nxbt, None)
             except Exception as err:
                 self.error = f"{err.__class__.__name__}: {err}"
                 log.error("Kopplung fehlgeschlagen: %s", self.error)
-                return False, "Kopplung fehlgeschlagen: " + self.error
+                return False, ("Kopplung fehlgeschlagen: " + self.error +
+                               " – Bluetooth am Pi prüfen (sudo systemctl status bluetooth).")
         log.info("Kopplungsmodus aktiv")
-        return True, "Kopplung gestartet – auf der Konsole „Controller → Griffweise/Reihenfolge ändern“ öffnen."
+        return True, ("Kopplung gestartet – auf der Konsole „Controller → Griffweise/Reihenfolge ändern“ öffnen "
+                      "und bis zu einer Minute warten.")
+
+    def _check_crash(self, state, now):
+        """Nach einem Absturz nxbt nach kurzer Zeit von selbst neu starten (mit Wiederverbindung)."""
+        if state != "crashed":
+            self._crashed_since = 0.0
+            return
+        if not self._crashed_since:
+            self._crashed_since = now
+            return
+        if (self._recovering or self._lock.locked() or now - self._crashed_since < RECOVER_AFTER
+                or now - self._last_recover < RECOVER_MIN_GAP):
+            return
+        self._recovering = True
+        self._last_recover = now
+        asyncio.get_running_loop().create_task(self._recover())
+
+    async def _recover(self):
+        try:
+            async with self._lock:
+                addresses = self._load_addresses()
+                log.warning("Controller-Emulation abgestürzt - starte nxbt neu%s",
+                            " und verbinde mit der Konsole" if addresses else "")
+                await asyncio.get_running_loop().run_in_executor(None, self._restart_nxbt, addresses or None)
+        except Exception as err:
+            self.error = f"{err.__class__.__name__}: {err}"
+            log.error("Neustart von nxbt fehlgeschlagen: %s", self.error)
+        finally:
+            self._recovering = False
+            self._crashed_since = 0.0
 
     # ------------------------------------------------------------------ Adressen merken
     def _load_addresses(self):
@@ -193,6 +299,8 @@ class ControllerEmulator:
     def status(self):
         if not self.enabled:
             return {"state": "unavailable", "detail": self.error}
+        if self._recovering or self._lock.locked():
+            return {"state": "initializing", "detail": "Bluetooth wird neu gestartet …"}
         if self.nx is None or self.index is None:
             return {"state": "unavailable" if self.error else "initializing", "detail": self.error}
         try:
@@ -225,13 +333,15 @@ class ControllerEmulator:
                     log.warning("Keine Heartbeats seit %.1f s - alle Tasten losgelassen, Sticks auf (0, 0)",
                                 self.watchdog_seconds)
                 self.release_all()
-            if self.nx is not None and self.index is not None:
+            if self.nx is not None and self.index is not None and not self._lock.locked():
                 current = (self.buttons, self.ls, self.rs)
                 try:
                     # Verbindungszustand nur alle 250 ms abfragen (jede Abfrage geht an einen anderen Prozess)
                     if started - self._connected_checked > 0.25:
-                        self._connected = self.nx.state[self.index].get("state") == "connected"
+                        state = self._state()
+                        self._connected = state == "connected"
                         self._connected_checked = started
+                        self._check_crash(state, started)
                     if self._connected:
                         # Änderungen sofort, sonst den gleichen Zustand alle 50 ms erneut setzen
                         if current != last_sent or started - last_time > 0.05:

@@ -1,5 +1,13 @@
 # Änderungen
 
+## 1.0.6
+
+- Ton: Der Ton der Capture-Card kommt bei WebRTC mit (Schalter **Ton** in der Leiste, startet nach dem ersten
+  Tippen auf die Seite). Bild und Ton werden bewusst nicht abgeglichen, damit das Bild nicht auf den Ton wartet
+- Koppeln zuverlässiger: Mehrfaches Drücken bricht einen laufenden Versuch nicht mehr ab; nach einem Absturz der
+  Controller-Emulation startet die Bridge sie selbst neu, statt mit „No adapters available“ hängen zu bleiben
+- Bridge mit `install.sh` aktualisieren (neu: Paket `alsa-utils` für die Tonaufnahme)
+
 ## 1.0.5
 
 - Neu: **Messwerte** in der oberen Leiste – Bildrate der Capture-Card, gesendete Bilder, Bildalter und Kodierzeit am Pi, Ping direkt und über Home Assistant, Puffer/Dekodieren/verworfene Bilder im Browser (grün/gelb/rot)

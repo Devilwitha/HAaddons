@@ -57,7 +57,7 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 ### Protokoll Browser ↔ Bridge (WebSocket, JSON)
 - Browser → Bridge: `{"type":"input","buttons":[...],"ls":[x,y],"rs":[x,y]}` (x/y −100…100, y oben
   positiv), `{"type":"heartbeat","t":ms}`, `{"type":"system","action":"pair"}`
-- Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"stream":{webrtc:{fps,age,convert,encode}|null,mjpeg_fps,webrtc_clients},"clients":n}`,
+- Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"stream":{webrtc:{fps,age,convert,encode}|null,mjpeg_fps,webrtc_clients,audio:{state,detail,device,listeners}},"clients":n}`,
   `{"type":"pong","t":ms}`, `{"type":"info"|"error","message":...}`
 - Der Ingress-Server schickt zusätzlich `{"type":"proxy","status":"connected"|"unreachable"|"bridge_closed"}`.
 - Schnellster Weg für Eingaben: WebRTC-Datenkanal `input` (ungeordnet, `maxRetransmits: 0`) direkt zum Pi,
@@ -78,6 +78,14 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   MJPEG zurück (läuft komplett über Ingress). aiortc ohne STUN-Server starten
   (`RTCConfiguration(iceServers=[])`), sonst wartet der Aufbau Sekunden auf Google-STUN.
 - **Watchdog** 2,0 s ohne Heartbeat/Eingabe → alle Tasten los, Sticks (0, 0).
+- **Ton** nur über WebRTC: Bridge liest die Capture-Card per `arecord` (alsa-utils, 48 kHz Stereo, 20-ms-Pakete,
+  höchstens 60 ms Puffer), nur solange jemand zuhört. Die Tonspur bekommt eine **eigene Stream-ID**
+  (`sender._stream_id`), sonst gleicht der Browser Bild und Ton ab und verzögert das Bild. `audio.device`:
+  `auto` (erste USB-Soundkarte mit Eingang), `off`, ALSA-Name; beim Testbild ein Piepton bei gedrückter Taste.
+- **nxbt-Abstürze:** Ein abgestürzter Controller-Prozess hält den Adapter belegt („No adapters available“).
+  Die Bridge beendet dann die nxbt-Prozesse selbst (`controllers.terminate()`, `resource_manager.shutdown()`,
+  ohne `_on_exit`, das BlueZ neu starten würde) und legt `nxbt.Nxbt()` mit mehreren Versuchen neu an.
+  Koppeln während eines laufenden Versuchs (`connecting`, < 90 s) wird abgelehnt.
 - **Konfiguration der Bridge** liegt nach der Installation in `/etc/switch2-bridge/config.yaml`
   (bei Updates nicht überschrieben); `rpi5-bridge/config.yaml` ist nur die Vorlage.
 - Eingaben mehrerer Clients: Tasten ODER-verknüpft, Sticks nach größtem Ausschlag.
