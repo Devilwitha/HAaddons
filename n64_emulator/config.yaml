@@ -1,5 +1,5 @@
 name: N64 Emulator
-version: "1.0.6"
+version: "1.0.7"
 slug: n64_emulator
 description: Nintendo-64-Spiele direkt in Home Assistant spielen – Spielstände liegen auf dem Server (von BolliSoft)
 url: https://github.com/Devilwitha/HAaddons

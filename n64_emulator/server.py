@@ -48,6 +48,10 @@ SYSTEMS = {
 }
 
 VERSION = os.environ.get("EMU_VERSION") or "dev"   # aus config.yaml (BUILD_VERSION beim Bauen)
+# Hängt an den Adressen von Skripten/Stylesheets: Nach einem Update lädt der Browser sie garantiert neu,
+# statt eine zwischengespeicherte alte Fassung zu benutzen (die HA-App hält Dateien sonst stundenlang).
+ASSET_TAG = f"{VERSION}-{int(time.time())}"
+ASSET_RE = re.compile(r'((?:static|ejs)/[\w.-]+\.(?:js|css))"')
 OPTIONS_PATH = Path(os.environ.get("EMU_OPTIONS", "/data/options.json"))
 WEB_DIR = Path(os.environ.get("EMU_WEB", Path(__file__).resolve().parent / "web"))
 
@@ -394,10 +398,17 @@ def make_app(library, ingress_only=True, stats=None, hub=None):
     async def guard(request, handler):
         if ingress_only and request.remote != INGRESS_PEER:
             raise web.HTTPForbidden(text="Nur über Home Assistant erreichbar")
-        return await handler(request)
+        response = await handler(request)
+        # Statische Dateien bei jedem Laden beim Server nachfragen (kostet nur eine 304-Antwort)
+        if request.path.startswith(("/static/", "/ejs/")):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     async def page(name):
-        return no_cache(web.FileResponse(WEB_DIR / name))
+        html = (WEB_DIR / name).read_text(encoding="utf-8")
+        html = ASSET_RE.sub(lambda m: f'{m.group(1)}?v={ASSET_TAG}"', html)
+        html = html.replace("<head>", f'<head><script>window.EMU_ASSET = "{ASSET_TAG}";</script>', 1)
+        return no_cache(web.Response(text=html, content_type="text/html"))
 
     async def index(_request):
         return await page("index.html")

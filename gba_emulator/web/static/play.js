@@ -587,7 +587,7 @@
     document.getElementById("romload").hidden = true;
     window.EJS_gameUrl = url;
     const script = document.createElement("script");
-    script.src = "ejs/loader.js";
+    script.src = "ejs/loader.js?v=" + encodeURIComponent(window.EMU_ASSET || "");
     document.body.appendChild(script);
   }
 

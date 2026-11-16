@@ -33,6 +33,9 @@ im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retro
 - Große Antworten über Ingress bleiben auf manchen Geräten hängen: `play.js` lädt das Spiel über
   `/api/rom/<name>/info` und `/part` in 4-MB-Teilen, cacht es (Cache API) und startet EmulatorJS erst
   danach mit einer `blob:`-Adresse (`loader.js` wird dynamisch nachgeladen, `EJS_gameName` = Dateiname).
+- Die HA-App hält statische Dateien sonst stundenlang im Cache: `page()` hängt `?v=<ASSET_TAG>` an alle
+  `static/`- und `ejs/`-Skripte/Stylesheets im HTML, `/static/` und `/ejs/` gehen mit `Cache-Control: no-cache` raus.
+  Neue Skripte nur über `<script src="static/….js">` im HTML einbinden (sonst greift das nicht).
 - EmulatorJS wird im Dockerfile von npm geladen (SHA-256 gepinnt), zu `emulator.min.js` zusammengefügt
   und an zwei Stellen gepatcht (Steuerkreuz-Mitte, Analogstick bei 0°); die `grep`-Prüfungen müssen bleiben.
 

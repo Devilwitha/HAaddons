@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.9
+
+- Fehler behoben: Nach einem Update benutzte der Browser bzw. die Home-Assistant-App teils noch die alten Skripte aus dem Zwischenspeicher – das Spiel blieb dann weiter bei „Spieldaten herunterladen …MB“ stehen. Skripte und Stylesheets tragen jetzt die Version in der Adresse und werden bei jedem Laden beim Server geprüft
+
 ## 1.0.8
 
 - Fehler behoben: Große Spiele blieben beim Laden bei „Spieldaten herunterladen …MB“ stehen (große Antworten über Home-Assistant-Ingress). Die Spielseite lädt das Spiel jetzt selbst in Teilen zu 4 MB mit Fortschrittsanzeige und Wiederholung
