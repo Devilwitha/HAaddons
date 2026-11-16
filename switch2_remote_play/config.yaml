@@ -1,5 +1,5 @@
 name: "Game Remote"
-version: "1.0.4"
+version: "1.0.5"
 slug: "switch2_remote_play"
 description: "Spielkonsole aus der Seitenleiste fernsteuern – Low-Latency Video-Stream, Touch-Gamepad und Controller über Raspberry Pi 5 (von BolliSoft)"
 url: "https://github.com/Devilwitha/HAaddons"

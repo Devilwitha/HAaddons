@@ -1,5 +1,11 @@
 # Änderungen
 
+## 1.0.5
+
+- Neu: **Messwerte** in der oberen Leiste – Bildrate der Capture-Card, gesendete Bilder, Bildalter und Kodierzeit am Pi, Ping direkt und über Home Assistant, Puffer/Dekodieren/verworfene Bilder im Browser (grün/gelb/rot)
+- Neu: **Reaktionstest** – misst die Zeit vom Tastendruck bis zur Bildänderung (alles außer dem Bildschirm)
+- Bridge (mit `install.sh` aktualisieren): liefert die Messwerte, Ping über den Datenkanal; das Testbild zeigt gedrückte Tasten an
+
 ## 1.0.4
 
 - Weniger Verzögerung: Eingaben gehen bei WebRTC über einen Datenkanal direkt an den Pi (nicht mehr über Home Assistant), werden sofort statt zum nächsten Bild geschickt, Controller werden alle 4 ms statt 60-mal pro Sekunde abgefragt, der Browser zeigt Bilder mit minimalem Puffer an

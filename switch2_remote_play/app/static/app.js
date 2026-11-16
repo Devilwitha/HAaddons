@@ -58,6 +58,8 @@
   let ws = null;
   let wsRetry = 1000;
   let lastPong = 0;
+  let lastStatus = null;
+  let wsPing = null;
 
   function wsUrl() {
     const url = new URL("ws", location.href);
@@ -138,6 +140,7 @@
         $("novideo-text").textContent = "Raspberry Pi 5 Bridge nicht erreichbar – IP und Ports in der Add-on-Konfiguration prüfen.";
       }
     } else if (msg.type === "status") {
+      lastStatus = msg;
       const sw = msg.switch || {};
       const t = SWITCH_TEXT[sw.state] || ["off", sw.state || "unbekannt"];
       setPill("st-switch", t[0], t[1] + (sw.detail ? " (" + sw.detail + ")" : ""));
@@ -155,6 +158,7 @@
     } else if (msg.type === "pong") {
       lastPong = performance.now();
       const ms = Math.max(0, Math.round(lastPong - msg.t));
+      wsPing = ms;
       $("ping-value").textContent = ms + " ms";
       setPill("st-ping", ms < 60 ? "ok" : ms < 150 ? "busy" : "err", "Antwortzeit Browser ↔ Bridge");
     } else if (msg.type === "info") {
@@ -238,6 +242,11 @@
       // Was bisher über den WebSocket kam, dort loslassen – ab jetzt zählt der Datenkanal
       send({ type: "input", buttons: [], ls: [0, 0], rs: [0, 0] });
       if (lastInput) sendInput(lastInput);
+    };
+    channel.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (err) { return; }
+      if (msg.type === "pong" && typeof msg.t === "number") dcPing = Math.max(0, Math.round(performance.now() - msg.t));
     };
     channel.onclose = () => {
       if (inputChannel !== channel) return;
@@ -327,6 +336,7 @@
       if (key !== lastSent) {
         lastSent = key;
         sendInput(msg);
+        reactionInput(msg);
       }
     });
   }
@@ -495,6 +505,7 @@
   });
 
   function openPanel(open) {
+    if (open) openStats(false);
     $("pad-panel").hidden = !open;
     $("pad-btn").setAttribute("aria-expanded", open ? "true" : "false");
     if (open) renderPanel();
@@ -632,6 +643,213 @@
       }
     } catch (err) { /* nicht erlaubt */ }
   }
+
+  // ------------------------------------------------------------------ Messwerte
+  let dcPing = null;
+  let statsTimer = null;
+  let prevRtc = null;
+
+  function setVal(id, text, level) {
+    const cell = $(id);
+    cell.textContent = text;
+    cell.className = level || "";
+  }
+
+  // Grenzwerte: bis "good" grün, bis "warn" gelb, darüber rot
+  function grade(value, good, warn) {
+    if (value === null || value === undefined || Number.isNaN(value)) return "";
+    return value <= good ? "good" : value <= warn ? "warn" : "bad";
+  }
+
+  function ms(value) {
+    return value === null || value === undefined || Number.isNaN(value) ? "–" : Math.round(value) + " ms";
+  }
+
+  async function updateStats() {
+    if (channelOpen()) {
+      try { inputChannel.send(JSON.stringify({ type: "heartbeat", t: performance.now() })); } catch (err) { /* zu */ }
+    } else {
+      dcPing = null;
+    }
+    const st = lastStatus || {};
+    const cap = st.capture || {};
+    const stream = st.stream || {};
+    const rtc = stream.webrtc || null;
+    const wanted = cap.fps || 0;
+    setVal("sv-capture", cap.state === "ok" ? (cap.width + "×" + cap.height + " · " + cap.fps + " fps") : (cap.detail || cap.state || "–"),
+      cap.state === "ok" ? grade(-cap.fps, -55, -28) : "bad");
+    if (mode === "webrtc" && rtc) {
+      setVal("sv-sent", rtc.fps + " fps (WebRTC)", grade(-rtc.fps, -Math.min(55, wanted - 5), -25));
+      setVal("sv-age", ms(rtc.age), grade(rtc.age, 20, 40));
+      setVal("sv-convert", ms(rtc.convert), grade(rtc.convert, 5, 10));
+      setVal("sv-encode", ms(rtc.encode), grade(rtc.encode, 16, 33));
+    } else {
+      setVal("sv-sent", stream.mjpeg_fps !== undefined ? stream.mjpeg_fps + " fps (MJPEG)" : "–");
+      ["sv-age", "sv-convert", "sv-encode"].forEach((id) => setVal(id, "–"));
+    }
+    setVal("sv-ping-dc", channelOpen() ? ms(dcPing) : "kein Datenkanal", channelOpen() ? grade(dcPing, 5, 20) : "warn");
+    setVal("sv-ping-ws", ms(wsPing), grade(wsPing, 15, 50));
+    setVal("sv-input", channelOpen() ? "Datenkanal (direkt)" : "WebSocket (über Home Assistant)", channelOpen() ? "good" : "warn");
+
+    const el = mode === "webrtc" ? video : mjpeg;
+    const w = el.videoWidth || el.naturalWidth || 0;
+    const h = el.videoHeight || el.naturalHeight || 0;
+    setVal("sv-video", (mode === "webrtc" ? "WebRTC" : "MJPEG") + (w ? " · " + w + "×" + h : ""), mode === "webrtc" ? "good" : "warn");
+
+    if (mode === "webrtc" && pc) {
+      try {
+        const report = await pc.getStats();
+        let inbound = null;
+        report.forEach((r) => { if (r.type === "inbound-rtp" && r.kind === "video") inbound = r; });
+        if (inbound) {
+          const cur = {
+            t: inbound.timestamp, frames: inbound.framesDecoded || 0, decode: inbound.totalDecodeTime || 0,
+            jitter: inbound.jitterBufferDelay || 0, emitted: inbound.jitterBufferEmittedCount || 0,
+            dropped: inbound.framesDropped || 0,
+          };
+          if (prevRtc) {
+            const frames = cur.frames - prevRtc.frames;
+            const seconds = (cur.t - prevRtc.t) / 1000;
+            const fps = seconds > 0 ? frames / seconds : 0;
+            const emitted = cur.emitted - prevRtc.emitted;
+            setVal("sv-fps", Math.round(inbound.framesPerSecond || fps) + " fps", grade(-(inbound.framesPerSecond || fps), -50, -25));
+            setVal("sv-decode", frames > 0 ? ms(((cur.decode - prevRtc.decode) / frames) * 1000) : "–",
+              frames > 0 ? grade(((cur.decode - prevRtc.decode) / frames) * 1000, 8, 16) : "");
+            const jitter = emitted > 0 ? ((cur.jitter - prevRtc.jitter) / emitted) * 1000 : null;
+            setVal("sv-jitter", ms(jitter), grade(jitter, 20, 50));
+            setVal("sv-dropped", String(cur.dropped), cur.dropped - prevRtc.dropped > 0 ? "warn" : "good");
+          }
+          prevRtc = cur;
+        }
+      } catch (err) { /* Verbindung gerade weg */ }
+    } else {
+      prevRtc = null;
+      ["sv-fps", "sv-jitter", "sv-decode", "sv-dropped"].forEach((id) => setVal(id, "–"));
+    }
+  }
+
+  function openStats(open) {
+    if (open && !$("pad-panel").hidden) openPanel(false);
+    $("stats-panel").hidden = !open;
+    $("stats-btn").setAttribute("aria-expanded", open ? "true" : "false");
+    clearInterval(statsTimer);
+    prevRtc = null;
+    if (open) {
+      updateStats();
+      statsTimer = setInterval(updateStats, 1000);
+    } else {
+      stopReaction();
+    }
+  }
+
+  $("stats-btn").addEventListener("click", () => openStats($("stats-panel").hidden));
+  $("stats-close").addEventListener("click", () => openStats(false));
+
+  // ------------------------------------------------------------------ Reaktionstest
+  // Beim Drücken einer Taste wird das aktuelle Bild verkleinert gemerkt; danach wird jedes neue Bild
+  // damit verglichen. Ändert sich ein spürbarer Teil des Bildes, ist die Zeit seit dem Tastendruck das Ergebnis.
+  const RT_W = 64;
+  const RT_H = 36;
+  const RT_TIMEOUT_MS = 1500;
+  const rtCanvas = document.createElement("canvas");
+  rtCanvas.width = RT_W;
+  rtCanvas.height = RT_H;
+  const rtCtx = rtCanvas.getContext("2d", { willReadFrequently: true });
+  let rtActive = false;
+  let rtPressed = false;
+  let rtMeasure = null;            // { t0, ref }
+  let rtResults = [];
+
+  function grab() {
+    const el = mode === "webrtc" ? video : mjpeg;
+    if (!(el.videoWidth || el.naturalWidth)) return null;
+    try {
+      rtCtx.drawImage(el, 0, 0, RT_W, RT_H);
+      const data = rtCtx.getImageData(0, 0, RT_W, RT_H).data;
+      const gray = new Uint8Array(RT_W * RT_H);
+      for (let i = 0, j = 0; i < data.length; i += 4, j += 1) gray[j] = (data[i] * 3 + data[i + 1] * 6 + data[i + 2]) / 10;
+      return gray;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function changed(a, b) {
+    let count = 0;
+    for (let i = 0; i < a.length; i += 1) if (Math.abs(a[i] - b[i]) > 24) count += 1;
+    return count > a.length * 0.01;
+  }
+
+  function median(list) {
+    const sorted = list.slice().sort((x, y) => x - y);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  function showReaction(text, level) {
+    const el = $("rt-result");
+    el.textContent = text;
+    el.className = "rt-result " + (level || "");
+  }
+
+  function watchFrame() {
+    if (!rtMeasure) return;
+    const now = performance.now();
+    const elapsed = now - rtMeasure.t0;
+    const cur = grab();
+    if (cur && changed(rtMeasure.ref, cur)) {
+      rtMeasure = null;
+      rtResults = rtResults.concat([elapsed]).slice(-7);
+      const med = median(rtResults);
+      showReaction("Letzte " + Math.round(elapsed) + " ms · Mittel " + Math.round(med) + " ms (" + rtResults.length + "×)",
+        grade(med, 100, 160));
+      return;
+    }
+    if (elapsed > RT_TIMEOUT_MS) {
+      rtMeasure = null;
+      showReaction("Keine Bildänderung erkannt – eine Taste nehmen, die sofort etwas im Bild ändert", "warn");
+      return;
+    }
+    if (mode === "webrtc" && video.requestVideoFrameCallback) video.requestVideoFrameCallback(watchFrame);
+    else requestAnimationFrame(watchFrame);
+  }
+
+  // Wird bei jeder gesendeten Eingabe aufgerufen: misst beim Übergang "nichts gedrückt" -> "Taste gedrückt"
+  function reactionInput(msg) {
+    const pressed = msg.buttons.length > 0;
+    const rising = pressed && !rtPressed;
+    rtPressed = pressed;
+    if (!rtActive || !rising || rtMeasure) return;
+    const ref = grab();
+    if (!ref) {
+      showReaction("Kein Videobild", "bad");
+      return;
+    }
+    rtMeasure = { t0: performance.now(), ref };
+    showReaction("Messe …");
+    if (mode === "webrtc" && video.requestVideoFrameCallback) video.requestVideoFrameCallback(watchFrame);
+    else requestAnimationFrame(watchFrame);
+  }
+
+  function stopReaction() {
+    rtActive = false;
+    rtMeasure = null;
+    $("rt-btn").textContent = "Test starten";
+    $("rt-hint").hidden = true;
+  }
+
+  $("rt-btn").addEventListener("click", () => {
+    if (rtActive) {
+      stopReaction();
+      return;
+    }
+    rtActive = true;
+    rtResults = [];
+    $("rt-btn").textContent = "Test beenden";
+    $("rt-hint").hidden = false;
+    $("rt-hint").textContent = "Jetzt eine Taste drücken – jeder Druck ist eine Messung. Am Touch-Gamepad eine Taste links nehmen (L, Steuerkreuz), rechts liegt dieses Feld darüber.";
+    showReaction("Warte auf Tastendruck …");
+  });
 
   // ------------------------------------------------------------------ Start
   async function init() {

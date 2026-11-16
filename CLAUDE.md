@@ -53,13 +53,14 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 ### Protokoll Browser ↔ Bridge (WebSocket, JSON)
 - Browser → Bridge: `{"type":"input","buttons":[...],"ls":[x,y],"rs":[x,y]}` (x/y −100…100, y oben
   positiv), `{"type":"heartbeat","t":ms}`, `{"type":"system","action":"pair"}`
-- Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"clients":n}`,
+- Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"stream":{webrtc:{fps,age,convert,encode}|null,mjpeg_fps,webrtc_clients},"clients":n}`,
   `{"type":"pong","t":ms}`, `{"type":"info"|"error","message":...}`
 - Der Ingress-Server schickt zusätzlich `{"type":"proxy","status":"connected"|"unreachable"|"bridge_closed"}`.
 - Schnellster Weg für Eingaben: WebRTC-Datenkanal `input` (ungeordnet, `maxRetransmits: 0`) direkt zum Pi,
   Nachrichten wie `input` plus `seq` (ältere verworfen). Der Browser wiederholt den Zustand alle 50 ms; nach
   0,5 s ohne Paket gilt der Kanal als neutral. Ohne offenen Kanal gehen Eingaben über den WebSocket; beim
   Wechsel schickt der Browser auf dem bisherigen Weg einmal „alles los“.
+  Über den Kanal auch `heartbeat` → `pong` mit `"via":"dc"` (Ping direkt in der Messanzeige).
 - Tastennamen: A B X Y L R ZL ZR MINUS PLUS HOME CAPTURE DPAD_UP/DOWN/LEFT/RIGHT LS RS
   (müssen in `virtual-gamepad.js`, `app.js` und `controller_emulator.py` übereinstimmen).
 

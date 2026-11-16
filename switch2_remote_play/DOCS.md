@@ -76,6 +76,13 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
   - Beschriftung Xbox, PlayStation oder Pro Controller (wird erkannt, lässt sich umstellen). Beim Pro
     Controller passt *Nach Beschriftung* (A = A) – die Vorlage ist dann schon eingestellt.
   Die Belegung gilt pro Gerät und Browser.
+- **Messwerte:** zeigt, wo Verzögerung entsteht – am Pi (Bildrate der Capture-Card, gesendete Bilder,
+  Bildalter, Kodieren), im Netz (Ping direkt und über Home Assistant) und im Browser (Puffer, Dekodieren,
+  verworfene Bilder). Grün ist gut, gelb geht, rot bremst. Der **Reaktionstest** misst vom Tastendruck bis
+  sich das Bild ändert (alles außer dem Bildschirm, inklusive Capture-Card und der Reaktion des Spiels).
+  Eine Taste nehmen, die sofort etwas ändert (z. B. Menü öffnen), und mehrmals messen. Mit
+  `device: "test"` am Pi zeigt das Testbild gedrückte Tasten an – so lässt sich die Strecke ohne
+  Capture-Card und Konsole messen.
 - **Vollbild:** Im eingebetteten HA-Fenster erlauben manche Browser kein Vollbild – dann die Seite
   in einem eigenen Browser-Tab öffnen.
 

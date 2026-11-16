@@ -33,6 +33,7 @@
           <span>Touch-Steuerung</span>
         </label>
         <button class="btn" id="pad-btn" type="button" aria-expanded="false" aria-controls="pad-panel">&#127918; Controller</button>
+        <button class="btn" id="stats-btn" type="button" aria-expanded="false" aria-controls="stats-panel">&#128202; Messwerte</button>
         <button class="btn" id="pair-btn" type="button">Konsole koppeln</button>
         <button class="btn" id="fs-btn" type="button">Vollbild</button>
       </div>
@@ -65,6 +66,42 @@
       <span class="hint">Gilt nur für dieses Gerät.</span>
       <button class="btn" id="pad-reset" type="button">Vorlage zurücksetzen</button>
     </div>
+  </section>
+
+  <section class="panel" id="stats-panel" hidden aria-label="Messwerte">
+    <div class="panel-head">
+      <h2>Messwerte</h2>
+      <button class="icon-btn" id="stats-close" type="button" aria-label="Schließen">&#10005;</button>
+    </div>
+    <table class="map stats" id="stats-table">
+      <tbody>
+        <tr class="group"><th colspan="2">Raspberry Pi</th></tr>
+        <tr><td>Capture-Card</td><td id="sv-capture">–</td></tr>
+        <tr><td>Gesendet</td><td id="sv-sent">–</td></tr>
+        <tr><td title="Wie alt das neueste Bild ist, wenn es kodiert wird">Bildalter beim Kodieren</td><td id="sv-age">–</td></tr>
+        <tr><td>Farbumrechnung</td><td id="sv-convert">–</td></tr>
+        <tr><td>Kodieren + Senden</td><td id="sv-encode">–</td></tr>
+        <tr class="group"><th colspan="2">Netz</th></tr>
+        <tr><td title="Browser ↔ Pi über den WebRTC-Datenkanal">Ping direkt</td><td id="sv-ping-dc">–</td></tr>
+        <tr><td title="Browser ↔ Home Assistant ↔ Pi">Ping über Home Assistant</td><td id="sv-ping-ws">–</td></tr>
+        <tr><td>Eingaben über</td><td id="sv-input">–</td></tr>
+        <tr class="group"><th colspan="2">Browser</th></tr>
+        <tr><td>Video</td><td id="sv-video">–</td></tr>
+        <tr><td>Angezeigt</td><td id="sv-fps">–</td></tr>
+        <tr><td title="Wie lange Bilder vor dem Anzeigen gesammelt werden">Puffer</td><td id="sv-jitter">–</td></tr>
+        <tr><td>Dekodieren</td><td id="sv-decode">–</td></tr>
+        <tr><td>Verworfene Bilder</td><td id="sv-dropped">–</td></tr>
+      </tbody>
+    </table>
+    <h3 class="sub">Reaktionstest</h3>
+    <p class="hint">Misst die Zeit vom Tastendruck bis sich das Bild ändert – alles außer dem Bildschirm, inklusive
+      Capture-Card und der Reaktion des Spiels selbst (auch direkt an der Konsole meist 30–70 ms). Taste drücken, die sofort
+      etwas ändert, z. B. ein Menü öffnen. Mehrmals messen.</p>
+    <div class="panel-foot">
+      <span id="rt-result" class="rt-result">–</span>
+      <button class="btn" id="rt-btn" type="button">Test starten</button>
+    </div>
+    <p class="hint" id="rt-hint" hidden></p>
   </section>
 
   <div id="gamepad" hidden></div>

@@ -90,6 +90,7 @@ class Bridge:
         self.clients = {}                 # websocket -> letzter Eingabezustand
         self.channels = {}                # WebRTC-Datenkanal -> {"state", "seq", "seen"}
         self.video.on_channel = self.add_channel
+        self.video.source.input_active = lambda: bool(self.controller.buttons)
         self.tasks = []
         self.stopping = asyncio.Event()
 
@@ -123,7 +124,16 @@ class Bridge:
                 msg = json.loads(raw)
             except ValueError:
                 return
-            if not isinstance(msg, dict) or msg.get("type") != "input":
+            if not isinstance(msg, dict):
+                return
+            if msg.get("type") == "heartbeat":
+                # Ping direkt über den Datenkanal (für die Messanzeige)
+                try:
+                    channel.send(json.dumps({"type": "pong", "t": msg.get("t"), "via": "dc"}))
+                except Exception as err:          # Kanal gerade zu
+                    log.debug("Pong über Datenkanal: %s", err)
+                return
+            if msg.get("type") != "input":
                 return
             seq = msg.get("seq")
             if isinstance(seq, int):
@@ -169,6 +179,7 @@ class Bridge:
             "type": "status",
             "switch": self.controller.status(),
             "capture": self.video.source.status(),
+            "stream": self.video.stats(),
             "clients": len(self.clients),
         })
 

@@ -12,6 +12,7 @@ liefert sie kein Bild (Konsole im Standby), wird ein "Kein Signal"-Bild gezeigt 
 2 Sekunden neu verbunden. device: "test" erzeugt ein Testbild ohne Capture-Card.
 """
 import asyncio
+import collections
 import fractions
 import logging
 import threading
@@ -75,6 +76,8 @@ class FrameSource:
         self._waiters = set()
         self._measured_fps = 0.0
         self.placeholder = self._make_placeholder()
+        # Testbild: liefert True, solange eine Taste gedrückt ist (Reaktionstest ohne Konsole)
+        self.input_active = None
 
     # ------------------------------------------------------------------ Thread
     def start(self, loop):
@@ -166,6 +169,10 @@ class FrameSource:
             cv2.putText(frame, "Game Remote Bridge - Testbild", (40, 70), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 4)
             cv2.putText(frame, time.strftime("%H:%M:%S") + f"  #{n}", (40, self.height - 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 0, 0), 3)
+            if self.input_active is not None and self.input_active():
+                cv2.rectangle(frame, (self.width * 2 // 3, 0), (self.width, self.height // 3), (255, 255, 255), -1)
+                cv2.putText(frame, "Taste", (self.width * 2 // 3 + 40, self.height // 6 + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 0, 0), 5)
             self._publish(frame)
             n += 1
             self._stop.wait(period)
@@ -218,24 +225,32 @@ class CaptureTrack(MediaStreamTrack):
 
     kind = "video"
 
-    def __init__(self, source, max_fps):
+    def __init__(self, source, max_fps, stats):
         super().__init__()
         self.source = source
         self.period = 1.0 / max(1, max_fps)
         self.last_id = None
         self.start = None
         self.next_at = 0.0
+        self.stats = stats
+        self.returned_at = None
 
     async def recv(self):
         now = time.monotonic()
         if self.start is None:
             self.start = now
+        if self.returned_at is not None:
+            # Zeit seit der Rückgabe des letzten Bildes = Kodieren + Senden in aiortc
+            self.stats.add("encode", now - self.returned_at)
         if now < self.next_at:
             await asyncio.sleep(self.next_at - now)
         await self.source.wait_frame(self.last_id, 0.5)
         frame, frame_id = self.source.current()
         self.last_id = frame_id
-        self.next_at = time.monotonic() + self.period
+        picked = time.monotonic()
+        if frame_id != -1 and self.source.frame_time:
+            self.stats.add("age", picked - self.source.frame_time)
+        self.next_at = picked + self.period
         # Farbumrechnung mit OpenCV (NEON-optimiert) statt im Encoder: spart pro Bild einige Millisekunden
         if frame.shape[0] % 2 == 0 and frame.shape[1] % 2 == 0:
             yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
@@ -244,7 +259,36 @@ class CaptureTrack(MediaStreamTrack):
             video_frame = av.VideoFrame.from_ndarray(frame, format="bgr24")
         video_frame.pts = int((time.monotonic() - self.start) * VIDEO_CLOCK)
         video_frame.time_base = fractions.Fraction(1, VIDEO_CLOCK)
+        done = time.monotonic()
+        self.stats.add("convert", done - picked)
+        self.stats.frame(done)
+        self.returned_at = done
         return video_frame
+
+
+class StreamStats:
+    """Gleitende Messwerte (Millisekunden) und Bildrate für die Messanzeige im Browser."""
+
+    def __init__(self):
+        self.values = {}
+        self.frames = collections.deque(maxlen=240)
+
+    def add(self, key, seconds):
+        ms = seconds * 1000.0
+        old = self.values.get(key)
+        self.values[key] = ms if old is None else old * 0.9 + ms * 0.1
+
+    def frame(self, now):
+        self.frames.append(now)
+
+    def fps(self):
+        now = time.monotonic()
+        return sum(1 for t in self.frames if now - t <= 1.0)
+
+    def snapshot(self):
+        out = {key: round(value, 1) for key, value in self.values.items()}
+        out["fps"] = self.fps()
+        return out
 
 
 class VideoStreamer:
@@ -258,6 +302,8 @@ class VideoStreamer:
         self.pcs = set()
         # Wird von der Bridge gesetzt: on_channel(channel, pc) für den Eingabe-Datenkanal
         self.on_channel = None
+        self.webrtc_stats = StreamStats()
+        self.mjpeg_stats = StreamStats()
         self.runner = None
         set_max_bitrate(cfg.get("webrtc_max_bitrate", 6000000))
 
@@ -288,7 +334,7 @@ class VideoStreamer:
             if channel.label == "input" and self.on_channel is not None:
                 self.on_channel(channel, pc)
 
-        pc.addTrack(CaptureTrack(self.source, self.webrtc_fps))
+        pc.addTrack(CaptureTrack(self.source, self.webrtc_fps, self.webrtc_stats))
         await pc.setRemoteDescription(offer)
         answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
@@ -314,12 +360,19 @@ class VideoStreamer:
                 await response.write(
                     f"--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(data)}\r\n\r\n".encode()
                     + data + b"\r\n")
+                self.mjpeg_stats.frame(time.monotonic())
                 wait = period - (time.monotonic() - started)
                 if wait > 0:
                     await asyncio.sleep(wait)
         except (ConnectionResetError, asyncio.CancelledError):
             pass
         return response
+
+    def stats(self):
+        """Messwerte für den Status an den Browser."""
+        return {"webrtc": self.webrtc_stats.snapshot() if self.pcs else None,
+                "mjpeg_fps": self.mjpeg_stats.fps(),
+                "webrtc_clients": len(self.pcs)}
 
     async def handle_snapshot(self, _request):
         data = await asyncio.get_running_loop().run_in_executor(None, self.source.jpeg)
