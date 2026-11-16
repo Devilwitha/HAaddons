@@ -23,7 +23,7 @@ Alles ist in **Home Assistant** eingebunden. Von BolliSoft, Teil des Repositorys
 | [`android/`](android) | Android-Apps für das Kinderhandy und die Eltern (Kotlin), auch unterwegs über Nabu Casa – siehe [android/README.md](android/README.md) |
 | [`homeassistant/`](homeassistant) | Blueprint und Beispiel-Karte fürs Dashboard |
 | [`../werwardas/`](../werwardas), [`../ollama/`](../ollama) | Home-Assistant-Add-ons (Kameradienst, Ollama) |
-| [`esp32cam/`](esp32cam) | Firmware für eine ESP32-CAM als günstige WLAN-Kamera (PlatformIO) |
+| [`../esp32cam/`](../esp32cam) | Firmware für eine ESP32-CAM als günstige WLAN-Kamera (BolliSoft Kamera, auch für das Add-on Vorrat) |
 
 ---
 
@@ -85,16 +85,12 @@ curl -fsSL .../install.sh | sudo bash -s -- --uninstall     # entfernen
 
 Statt Pi + Kamera geht auch eine **ESP32-CAM (AI-Thinker)** als WLAN-Kamera. Die Bewertung läuft dann auf dem Windows-PC.
 
-**Firmware flashen** (ESP32-CAM-MB per USB, [PlatformIO](https://platformio.org) nötig: `pip install platformio`):
+**Firmware flashen:** siehe [BolliSoft Kamera](../esp32cam/README.md) – fertige Firmware aus den Releases
+(`esp32cam-v…`) oder selbst gebaut mit PlatformIO. WLAN richtet die Kamera über ihren Hotspot ein, danach
+aktualisiert sie sich selbst von GitHub. Der Name ist ab Werk `werwardas-cam`.
 
-```powershell
-cd esp32cam
-copy include\secrets.example.h include\secrets.h   # WLAN-Name/Passwort eintragen (nur 2,4 GHz)
-pio run -t upload --upload-port COM41               # COM-Port im Geräte-Manager nachsehen
-pio run -e ota -t upload --upload-port werwardas-cam.local   # spätere Updates per WLAN
-```
-
-Danach liefert `http://werwardas-cam.local/capture` ein Foto (Statusseite: `http://werwardas-cam.local/`).
+Danach liefert `http://werwardas-cam.local/capture` ein Foto (Statusseite: `http://werwardas-cam.local/`,
+Livestream: `http://werwardas-cam.local:81/stream`).
 
 **Kameradienst installieren** (Python 3.10+ nötig, keine Admin-Rechte):
 

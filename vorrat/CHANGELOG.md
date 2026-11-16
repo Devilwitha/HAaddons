@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.1.1
+
+- ESP32-CAM: Beispiele mit gedimmter LED (`?led=60`) für die neue BolliSoft-Kamera-Firmware (Livestream,
+  Einrichtung per Hotspot, automatische Updates), Hinweise für Kameras im Kühlschrank
+
 ## 0.1.0
 
 - Erste Version: Vorräte mit mehreren Kameras (ESP32-CAM, Raspberry Pi, Kameras aus Home Assistant) und einem

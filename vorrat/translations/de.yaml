@@ -3,7 +3,7 @@ configuration:
     name: Kameras
     description: >-
       Je Kamera Name, Quelle und Ort. Quelle ist die Adresse eines Fotos (z. B. ESP32-CAM
-      http://192.168.1.170/capture?flash=1) oder eine Kamera aus Home Assistant (camera.kuehlschrank).
+      http://192.168.1.170/capture?led=60) oder eine Kamera aus Home Assistant (camera.kuehlschrank).
       Kameras mit gleichem Ort werden zusammengezählt. rotation dreht das Bild (0, 90, 180, 270).
   ollama_servers:
     name: Ollama-Server

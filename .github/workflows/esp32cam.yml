@@ -1,0 +1,76 @@
+name: BolliSoft Kamera (ESP32-CAM)
+
+# Jeder Push auf main, der die Firmware ändert, erzeugt ein Release „esp32cam-v1.0.N“ mit
+#   bollisoft-cam.bin           Update – holen sich die Kameras selbst von hier
+#   bollisoft-cam-komplett.bin  erstes Flashen per USB ohne PlatformIO (Adresse 0x0)
+on:
+  push:
+    branches: [main]
+    paths: ["esp32cam/**", ".github/workflows/esp32cam.yml"]
+  pull_request:
+    paths: ["esp32cam/**", ".github/workflows/esp32cam.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: esp32cam-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('esp32cam/platformio.ini') }}
+
+      - name: PlatformIO installieren
+        run: pip install "platformio>=6.1,<7"
+
+      - name: Version festlegen
+        id: version
+        run: echo "version=1.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Firmware bauen (ohne secrets.h – WLAN richtet die Kamera selbst ein)
+        working-directory: esp32cam
+        env:
+          PLATFORMIO_BUILD_FLAGS: -DFW_VERSION=\"${{ steps.version.outputs.version }}\"
+        run: |
+          test ! -f include/secrets.h
+          pio run -e esp32cam
+          B=.pio/build/esp32cam
+          grep -q "BolliSoft-Kamera/${{ steps.version.outputs.version }}" "$B/firmware.bin"
+          mkdir -p ../out
+          cp "$B/firmware.bin" ../out/bollisoft-cam.bin
+          pio pkg exec -p tool-esptoolpy -- esptool.py --chip esp32 merge_bin -o ../out/bollisoft-cam-komplett.bin \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000 "$B/bootloader.bin" 0x8000 "$B/partitions.bin" \
+            0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
+            0x10000 "$B/firmware.bin"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bollisoft-cam
+          path: out/*.bin
+
+      - name: Release erstellen
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          gh release create "esp32cam-v$v" out/bollisoft-cam.bin out/bollisoft-cam-komplett.bin \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "BolliSoft Kamera $v" \
+            --notes "Firmware $v für die ESP32-CAM (WerWarDas, Vorrat). Kameras mit automatischen Updates holen sie sich selbst. Erstes Flashen: bollisoft-cam-komplett.bin an Adresse 0x0." \
+            --latest=false

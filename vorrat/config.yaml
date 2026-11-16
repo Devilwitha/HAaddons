@@ -1,5 +1,5 @@
 name: Vorrat
-version: "0.1.0"
+version: "0.1.1"
 slug: vorrat
 description: Zählt Vorräte mit Kameras (ESP32-CAM, Raspberry Pi, HA-Kameras) und KI über Ollama und führt die Liste von selbst (von BolliSoft)
 url: https://github.com/Devilwitha/HAaddons/tree/main/vorrat

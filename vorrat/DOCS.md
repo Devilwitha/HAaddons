@@ -18,8 +18,10 @@ Durchlauf stimmt wieder.
 ## Was du brauchst
 
 - **Kameras**, die ein Foto per Adresse liefern:
-  - **ESP32-CAM** mit der Firmware aus [`werwardas-apps/esp32cam`](../werwardas-apps/esp32cam):
-    `http://<IP>/capture?flash=1` (mit `flash=1` schaltet sie die LED dazu – im dunklen Kühlschrank nötig)
+  - **ESP32-CAM** mit der [BolliSoft-Kamera-Firmware](../esp32cam/README.md):
+    `http://<IP>/capture?led=60` (die LED leuchtet beim Foto mit Helligkeit 0–255 – im dunklen Kühlschrank
+    nötig; `flash=1` = volle Helligkeit, überstrahlt auf kurze Distanz). Die Firmware hat einen Livestream zum
+    Ausrichten (`http://<IP>:81/stream`) und aktualisiert sich selbst von GitHub.
   - **Raspberry Pi** mit Kamera, z. B. mit dem WerWarDas-Kameradienst oder jedem Programm, das ein JPEG
     unter einer Adresse anbietet
   - **Jede Kamera, die schon in Home Assistant ist** (ESPHome, Generic Camera, Frigate …): einfach die
@@ -38,10 +40,10 @@ Durchlauf stimmt wieder.
    ```yaml
    cameras:
      - name: Kühlschrank oben
-       source: "http://192.168.1.170/capture?flash=1"
+       source: "http://192.168.1.170/capture?led=60"
        location: Kühlschrank
      - name: Kühlschrank unten
-       source: "http://192.168.1.171/capture?flash=1"
+       source: "http://192.168.1.171/capture?led=60"
        location: Kühlschrank
      - name: Vorratsregal
        source: camera.vorratsregal
@@ -115,7 +117,8 @@ automation:
           entity_id: button.vorrat_kuehlschrank_zaehlen
 ```
 
-Dann reicht `interval_minutes: 0`. Die ESP32-CAM leuchtet mit `flash=1` selbst, auch bei geschlossener Tür.
+Dann reicht `interval_minutes: 0`. Die ESP32-CAM leuchtet mit `led=…` selbst, auch bei geschlossener Tür.
+Tipps für Kamera, WLAN und Strom im Kühlschrank: [BolliSoft Kamera](../esp32cam/README.md#im-kühlschrank).
 
 ## Gut zu wissen
 

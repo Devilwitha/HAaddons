@@ -47,6 +47,10 @@ Vision-Modell über Ollama und führt die Liste je Ort von selbst: zwei Dosen in
 heraus – noch eine da. Mit Verlauf, Korrektur von Hand, Mindestbestand mit Einkaufsliste und Sensoren je
 Vorrat. Details: [DOCS.md](vorrat/DOCS.md)
 
+### [BolliSoft Kamera](esp32cam/) (ESP32-CAM-Firmware)
+Macht aus einer ESP32-CAM eine WLAN-Kamera für Vorrat und WerWarDas: Foto mit dimmbarer LED, Livestream,
+Einrichtung über einen eigenen Hotspot und automatische Updates von GitHub. Details: [README](esp32cam/README.md)
+
 ## Installation
 Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories →
 `https://github.com/Devilwitha/HAaddons` hinzufügen.

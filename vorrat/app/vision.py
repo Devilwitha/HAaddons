@@ -1,7 +1,7 @@
 """Fotos holen und mit einem Vision-Modell über Ollama zählen lassen.
 
 Kameras:
-  - Adresse eines Fotos, z. B. ESP32-CAM  http://192.168.1.170/capture?flash=1
+  - Adresse eines Fotos, z. B. ESP32-CAM  http://192.168.1.170/capture?led=60
     oder die WerWarDas-/Pi-Kamera, jede Adresse, die ein JPEG liefert
   - Kamera aus Home Assistant: camera.kuehlschrank (Foto über die Home-Assistant-API)
 

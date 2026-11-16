@@ -21,8 +21,8 @@ werwardas-apps/windows/out/
 .pytest_cache/
 venv/
 .venv/
-werwardas-apps/esp32cam/.pio/
-werwardas-apps/esp32cam/include/secrets.h
+esp32cam/.pio/
+esp32cam/include/secrets.h
 werwardas-apps/android/.gradle/
 werwardas-apps/android/build/
 werwardas-apps/android/*/build/
