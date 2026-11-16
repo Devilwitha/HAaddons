@@ -1,5 +1,0 @@
-# Damit lässt sich dieses Repo in Home Assistant als Add-on-Quelle hinzufügen:
-# Einstellungen → Add-ons → Add-on-Store → ⋮ → Repositories → https://github.com/Devilwitha/werwardas
-name: WerWarDas
-url: https://github.com/Devilwitha/werwardas
-maintainer: Bollshii
