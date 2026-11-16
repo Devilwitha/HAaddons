@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.10
+
+- Pro Controller wird erkannt (wie Xbox und PlayStation): Beschriftung A B X Y / L R ZL ZR und passende Vorlage „Nach Beschriftung“ (rechte Taste A = A)
+
 ## 1.0.9
 
 - Fehler behoben: Nach einem Update benutzte der Browser bzw. die Home-Assistant-App teils noch die alten Skripte aus dem Zwischenspeicher – das Spiel blieb dann weiter bei „Spieldaten herunterladen …MB“ stehen. Skripte und Stylesheets tragen jetzt die Version in der Adresse und werden bei jedem Laden beim Server geprüft

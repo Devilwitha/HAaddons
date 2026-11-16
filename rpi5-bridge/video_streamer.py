@@ -2,6 +2,7 @@
 
 HTTP-Server (Standard-Port 8766):
   POST /offer         WebRTC-Signaling (aiortc): {"sdp", "type"} -> Antwort {"sdp", "type"}
+                      Bringt das Angebot einen Datenkanal "input" mit, kommen die Eingaben direkt darüber.
   GET  /stream.mjpg   MJPEG-Stream (multipart/x-mixed-replace)
   GET  /snapshot.jpg  einzelnes Bild
   GET  /status        Zustand der Capture-Card als JSON
@@ -235,7 +236,12 @@ class CaptureTrack(MediaStreamTrack):
         frame, frame_id = self.source.current()
         self.last_id = frame_id
         self.next_at = time.monotonic() + self.period
-        video_frame = av.VideoFrame.from_ndarray(frame, format="bgr24")
+        # Farbumrechnung mit OpenCV (NEON-optimiert) statt im Encoder: spart pro Bild einige Millisekunden
+        if frame.shape[0] % 2 == 0 and frame.shape[1] % 2 == 0:
+            yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
+            video_frame = av.VideoFrame.from_ndarray(yuv, format="yuv420p")
+        else:
+            video_frame = av.VideoFrame.from_ndarray(frame, format="bgr24")
         video_frame.pts = int((time.monotonic() - self.start) * VIDEO_CLOCK)
         video_frame.time_base = fractions.Fraction(1, VIDEO_CLOCK)
         return video_frame
@@ -247,9 +253,11 @@ class VideoStreamer:
         self.host = str(cfg.get("host", "0.0.0.0"))
         self.port = int(cfg.get("port", 8766))
         self.mjpeg_fps = int(cfg.get("mjpeg_fps", 30))
-        self.webrtc_fps = int(cfg.get("webrtc_fps", 30))
+        self.webrtc_fps = int(cfg.get("webrtc_fps", 60))
         self.source = FrameSource(cfg)
         self.pcs = set()
+        # Wird von der Bridge gesetzt: on_channel(channel, pc) für den Eingabe-Datenkanal
+        self.on_channel = None
         self.runner = None
         set_max_bitrate(cfg.get("webrtc_max_bitrate", 6000000))
 
@@ -274,6 +282,11 @@ class VideoStreamer:
             if pc.connectionState in ("failed", "closed"):
                 await pc.close()
                 self.pcs.discard(pc)
+
+        @pc.on("datachannel")
+        def on_datachannel(channel):
+            if channel.label == "input" and self.on_channel is not None:
+                self.on_channel(channel, pc)
 
         pc.addTrack(CaptureTrack(self.source, self.webrtc_fps))
         await pc.setRemoteDescription(offer)

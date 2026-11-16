@@ -80,6 +80,12 @@ main() {
     info "Konfiguration angelegt: ${CONF_DIR}/config.yaml"
   else
     info "Konfiguration bleibt erhalten: ${CONF_DIR}/config.yaml"
+    # Alte Standard-Bildrate für WebRTC (30) auf die neue (60, weniger Verzögerung) anheben -
+    # nur wenn die Zeile noch genau dem alten Standard entspricht, eigene Werte bleiben.
+    if grep -qE '^  webrtc_fps: 30 +# Bilder pro Sekunde über WebRTC \(Encoder läuft auf der CPU\)$' "${CONF_DIR}/config.yaml"; then
+      sed -i -E 's/^  webrtc_fps: 30( +# Bilder pro Sekunde über WebRTC) \(Encoder läuft auf der CPU\)$/  webrtc_fps: 60\1 (mehr = weniger Verzögerung)/' "${CONF_DIR}/config.yaml"
+      info "WebRTC-Bildrate auf 60 angehoben (weniger Verzögerung)"
+    fi
   fi
 
   # 5. Bluetooth und automatischer Kopplungs-Agent (keine Bestätigung im Terminal nötig)

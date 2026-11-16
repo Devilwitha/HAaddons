@@ -73,7 +73,8 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
   - *Wie Konsolen-Anordnung:* die rechte Taste ist A (Xbox B bzw. PlayStation ○)
   - *Nach Beschriftung:* Xbox A = A bzw. PlayStation ✕ = A
   - *Eigene Belegung:* bei einer Funktion auf **Ändern** tippen und die gewünschte Taste drücken
-  - Beschriftung Xbox oder PlayStation (wird erkannt, lässt sich umstellen)
+  - Beschriftung Xbox, PlayStation oder Pro Controller (wird erkannt, lässt sich umstellen). Beim Pro
+    Controller passt *Nach Beschriftung* (A = A) – die Vorlage ist dann schon eingestellt.
   Die Belegung gilt pro Gerät und Browser.
 - **Vollbild:** Im eingebetteten HA-Fenster erlauben manche Browser kein Vollbild – dann die Seite
   in einem eigenen Browser-Tab öffnen.
@@ -103,8 +104,12 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
   Nabu Casa) ist der Pi nicht direkt erreichbar – dann schaltet die Seite nach einigen Sekunden
   automatisch auf **MJPEG** um, das vollständig über Home Assistant läuft (mehr Bandbreite, etwas
   mehr Verzögerung).
+- **Geringe Verzögerung:** Bei WebRTC gehen auch die Eingaben über einen Datenkanal direkt vom Browser
+  zum Pi (ohne Umweg über Home Assistant). Am wenigsten Verzögerung gibt es mit Kabel-LAN für Pi und
+  PC/Konsole, einem Controller per USB und `webrtc_fps: 60` in `/etc/switch2-bridge/config.yaml`.
+  Schafft der Pi die 60 Bilder nicht, sinkt die Rate von selbst, ohne dass sich Bilder stauen.
 - **Sicherheit:** Kommt 2 Sekunden lang kein Lebenszeichen vom Browser (Tab zu, Verbindung weg),
-  lässt der Pi alle Tasten los und stellt die Sticks auf Mitte.
+  lässt der Pi alle Tasten los und stellt die Sticks auf Mitte (beim Datenkanal schon nach 0,5 s).
 - **nxbt:** Die Pro-Controller-Emulation nutzt [nxbt](https://github.com/Brikwerk/nxbt) 0.1.4. Es
   wird ohne seine veralteten Abhängigkeiten installiert, weil nur der Bluetooth-Teil gebraucht wird.
   Ob die Konsole den emulierten Controller annimmt, hängt von ihrer Firmware ab.

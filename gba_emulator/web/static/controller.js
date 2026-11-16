@@ -1,4 +1,4 @@
-/* Emulator – Belegung für echte Controller (Xbox, PlayStation u. a., per USB oder Bluetooth).
+/* Emulator – Belegung für echte Controller (Xbox, PlayStation, Pro Controller u. a., per USB oder Bluetooth).
  *
  * EmulatorJS erkennt Controller selbst (Gamepad API) und speichert die Belegung pro Spiel.
  * Hier kommen Vorlagen dazu (aus system.js, EMU.controller), die für alle Spiele des Systems
@@ -24,6 +24,8 @@
   const LABELS = {
     xbox: ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "LS drücken", "RS drücken", "↑", "↓", "←", "→"],
     ps: ["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Create", "Options", "L3", "R3", "↑", "↓", "←", "→"],
+    // Pro Controller: untere Taste heißt B, rechte A (Standard-Layout der Gamepad API nach Position)
+    pro: ["B", "A", "Y", "X", "L", "R", "ZL", "ZR", "−", "+", "LS drücken", "RS drücken", "↑", "↓", "←", "→"],
   };
   const AXES = {
     "LEFT_STICK_X:+1": "Linker Stick →", "LEFT_STICK_X:-1": "Linker Stick ←",
@@ -34,9 +36,9 @@
 
   function load() {
     try {
-      return Object.assign({ preset: cfg.defaultPreset, labels: null }, JSON.parse(localStorage.getItem(KEY) || "{}"));
+      return Object.assign({ preset: null, labels: null }, JSON.parse(localStorage.getItem(KEY) || "{}"));
     } catch (e) {
-      return { preset: cfg.defaultPreset, labels: null };
+      return { preset: null, labels: null };
     }
   }
 
@@ -54,12 +56,18 @@
   function detectLabels(id) {
     const s = (id || "").toLowerCase();
     if (/xbox|045e|xinput/.test(s)) return "xbox";            // vor "wireless controller" prüfen
+    if (/057e|pro controller|joy-con|nintendo/.test(s)) return "pro";
     if (/054c|dualsense|dualshock|playstation|wireless controller|ps[345]/.test(s)) return "ps";
     return "xbox";
   }
 
   function labelSet() {
     return settings.labels || (padId ? detectLabels(padId) : "xbox");
+  }
+
+  // Ohne eigene Wahl: beim Pro Controller die Vorlage nach Beschriftung, sonst die Standard-Vorlage
+  function presetKey() {
+    return settings.preset || (labelSet() === "pro" && cfg.proPreset) || cfg.defaultPreset;
   }
 
   function keyText(value) {
@@ -77,7 +85,7 @@
 
   function applyPreset(force) {
     const e = emu();
-    const preset = cfg.presets[settings.preset];
+    const preset = cfg.presets[presetKey()];
     if (!e || !preset) return false;
     const current = e.controls[0] || (e.controls[0] = {});
     if (!force) {
@@ -131,7 +139,7 @@
     custom.value = "custom";
     custom.textContent = "Eigene Belegung (im Steuerungsmenü)";
     sel.appendChild(custom);
-    sel.value = cfg.presets[settings.preset] ? settings.preset : "custom";
+    sel.value = cfg.presets[presetKey()] ? presetKey() : "custom";
 
     const e = emu();
     const controls = (e && e.controls[0]) || {};
@@ -177,6 +185,7 @@
   $("padlabels").addEventListener("change", (ev) => {
     settings.labels = ev.target.value;
     save();
+    if (!settings.preset) applyPreset(false);
     render();
   });
 
@@ -196,6 +205,7 @@
   window.addEventListener("gamepadconnected", (ev) => {
     padId = ev.gamepad.id;
     setTimeout(ensureAssigned, 100);
+    if (!settings.preset) setTimeout(() => applyPreset(false), 150);   // passende Vorlage zum Controller
     if (!panel.hidden) render();
   });
   window.addEventListener("gamepaddisconnected", () => {

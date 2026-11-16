@@ -58,6 +58,9 @@ class ControllerEmulator:
         self.watchdog_tripped = True
         self._saved_connected = False
         self._lock = asyncio.Lock()
+        self._changed = None              # asyncio.Event: neue Eingabe -> sofort senden
+        self._connected = False
+        self._connected_checked = 0.0
 
     # ------------------------------------------------------------------ Start / Kopplung
     async def start(self):
@@ -159,8 +162,11 @@ class ControllerEmulator:
         new = (frozenset(b for b in buttons if b in VALID_BUTTONS), clamp_stick(ls), clamp_stick(rs))
         if not self.enabled and new != (self.buttons, self.ls, self.rs):
             log.info("Testmodus - Eingabe: Tasten=%s LS=%s RS=%s", ",".join(sorted(new[0])) or "-", new[1], new[2])
+        changed = new != (self.buttons, self.ls, self.rs)
         self.buttons, self.ls, self.rs = new
         self.heartbeat()
+        if changed and self._changed is not None:
+            self._changed.set()
 
     def release_all(self):
         self.buttons = frozenset()
@@ -209,7 +215,9 @@ class ControllerEmulator:
         period = 1.0 / self.input_rate_hz
         last_sent = None
         last_time = 0.0
+        self._changed = asyncio.Event()
         while True:
+            self._changed.clear()
             started = time.monotonic()
             if not self.watchdog_tripped and started - self.last_heartbeat > self.watchdog_seconds:
                 self.watchdog_tripped = True
@@ -220,7 +228,11 @@ class ControllerEmulator:
             if self.nx is not None and self.index is not None:
                 current = (self.buttons, self.ls, self.rs)
                 try:
-                    if self.nx.state[self.index].get("state") == "connected":
+                    # Verbindungszustand nur alle 250 ms abfragen (jede Abfrage geht an einen anderen Prozess)
+                    if started - self._connected_checked > 0.25:
+                        self._connected = self.nx.state[self.index].get("state") == "connected"
+                        self._connected_checked = started
+                    if self._connected:
                         # Änderungen sofort, sonst den gleichen Zustand alle 50 ms erneut setzen
                         if current != last_sent or started - last_time > 0.05:
                             self.nx.set_controller_input(self.index, self._packet())
@@ -229,7 +241,11 @@ class ControllerEmulator:
                 except Exception as err:
                     log.debug("Eingabe senden: %s", err)
             elapsed = time.monotonic() - started
-            await asyncio.sleep(max(0.0, period - elapsed))
+            # Bis zum nächsten Takt warten - neue Eingaben wecken die Schleife sofort
+            try:
+                await asyncio.wait_for(self._changed.wait(), max(0.0, period - elapsed))
+            except asyncio.TimeoutError:
+                pass
 
     async def stop(self):
         self.release_all()

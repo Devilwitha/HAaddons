@@ -44,6 +44,10 @@ DEFAULTS = {
 }
 STATS_PATH = Path(os.environ.get("SWITCH2_STATS", "/data/stats.json"))
 VERSION = os.environ.get("SWITCH2_VERSION") or "dev"
+# Version in den Adressen von Skripten/Stylesheets: Nach einem Update lädt der Browser sie sicher neu
+# (die HA-App hält statische Dateien sonst stundenlang im Zwischenspeicher).
+ASSET_TAG = f"{VERSION}-{int(time.time())}"
+ASSET_RE = re.compile(r'(static/[\w.-]+\.(?:js|css))"')
 TICK_SECONDS = 15
 CONSOLE_TEXT = {
     "connected": "Verbunden", "connecting": "Wartet auf Kopplung", "reconnecting": "Verbindet erneut",
@@ -196,7 +200,9 @@ def no_cache(response):
 
 # --------------------------------------------------------------------------- Handler
 async def index(_request):
-    return no_cache(web.FileResponse(STATIC_DIR / "index.html"))
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = ASSET_RE.sub(lambda m: m.group(1) + "?v=" + ASSET_TAG + '"', html)
+    return no_cache(web.Response(text=html, content_type="text/html"))
 
 
 async def api_config(request):
@@ -355,7 +361,10 @@ def make_app(options, ingress_only=True, stats=None, hub=None):
     async def guard(request, handler):
         if ingress_only and request.remote != INGRESS_PEER:
             raise web.HTTPForbidden(text="Nur über Home Assistant Ingress erreichbar")
-        return await handler(request)
+        response = await handler(request)
+        if request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"   # bei jedem Laden kurz beim Server nachfragen
+        return response
 
     async def publish():
         if hub is not None:

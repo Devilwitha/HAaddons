@@ -5,6 +5,8 @@
  *   wenn WebRTC nicht zustande kommt (z. B. unterwegs über Nabu Casa)
  * - Eingaben aus Touch-Gamepad und echten Controllern (HTML5 Gamepad API) werden zusammengeführt
  *
+ * - Eingaben gehen bei WebRTC über den Datenkanal "input" direkt an den Pi (mit "seq"), sonst über den WebSocket
+ *
  * Nachrichten an die Bridge:
  *   {"type":"input","buttons":["A","DPAD_UP",...],"ls":[x,y],"rs":[x,y]}   x/y: -100..100, y oben positiv
  *   {"type":"heartbeat","t":<ms>}                                          Antwort: {"type":"pong","t":<ms>}
@@ -17,6 +19,8 @@
   const DEADZONE = 0.12;
   const HEARTBEAT_MS = 500;
   const WEBRTC_TIMEOUT_MS = 8000;
+  const INPUT_REPEAT_MS = 50;
+  const PAD_POLL_MS = 4;
 
   const config = { stream_mode: "webrtc", default_touch_overlay: true, haptic_feedback: true };
 
@@ -66,6 +70,7 @@
     ws = new WebSocket(wsUrl());
     ws.onopen = () => {
       wsRetry = 1000;
+      if (lastInput && !channelOpen()) send(lastInput);
     };
     ws.onmessage = (ev) => {
       let msg;
@@ -86,6 +91,33 @@
   function send(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }
+
+  // Eingaben gehen bevorzugt über den WebRTC-Datenkanal direkt an den Pi (ohne Umweg über Home Assistant,
+  // ungeordnet und ohne Wiederholung = kein Warten auf verlorene Pakete). Damit ein verlorenes Paket keine Taste
+  // hängen lässt, wird der aktuelle Zustand alle INPUT_REPEAT_MS erneut geschickt; "seq" verwirft veraltete Pakete.
+  let inputChannel = null;
+  let inputSeq = 0;
+  let lastInput = null;
+
+  function channelOpen() {
+    return inputChannel && inputChannel.readyState === "open";
+  }
+
+  function sendInput(msg) {
+    lastInput = msg;
+    if (channelOpen()) {
+      inputSeq += 1;
+      try {
+        inputChannel.send(JSON.stringify(Object.assign({ seq: inputSeq }, msg)));
+        return;
+      } catch (err) { /* Kanal gerade zu – über den WebSocket */ }
+    }
+    send(msg);
+  }
+
+  setInterval(() => {
+    if (lastInput && channelOpen()) sendInput(lastInput);
+  }, INPUT_REPEAT_MS);
 
   const SWITCH_TEXT = {
     connected: ["ok", "Mit der Konsole verbunden"],
@@ -158,6 +190,10 @@
       pc.close();
       pc = null;
     }
+    if (inputChannel) {
+      inputChannel = null;
+      if (lastInput) send(lastInput);
+    }
     video.srcObject = null;
     mjpeg.onload = null;
     mjpeg.onerror = null;
@@ -195,7 +231,25 @@
     const conn = new RTCPeerConnection({ iceServers: [] });
     pc = conn;
     conn.addTransceiver("video", { direction: "recvonly" });
+    const channel = conn.createDataChannel("input", { ordered: false, maxRetransmits: 0 });
+    channel.onopen = () => {
+      if (conn !== pc) return;
+      inputChannel = channel;
+      // Was bisher über den WebSocket kam, dort loslassen – ab jetzt zählt der Datenkanal
+      send({ type: "input", buttons: [], ls: [0, 0], rs: [0, 0] });
+      if (lastInput) sendInput(lastInput);
+    };
+    channel.onclose = () => {
+      if (inputChannel !== channel) return;
+      inputChannel = null;
+      if (lastInput) send(lastInput);        // weiter über den WebSocket
+    };
     conn.ontrack = (ev) => {
+      // Möglichst kleiner Puffer im Browser: Bilder sofort anzeigen statt für gleichmäßige Wiedergabe zu sammeln
+      try {
+        if ("jitterBufferTarget" in ev.receiver) ev.receiver.jitterBufferTarget = 0;
+        if ("playoutDelayHint" in ev.receiver) ev.receiver.playoutDelayHint = 0;
+      } catch (err) { /* ältere Browser */ }
       video.srcObject = ev.streams[0] || new MediaStream([ev.track]);
       video.play().catch(() => {});
     };
@@ -262,16 +316,17 @@
     return { type: "input", buttons, ls: bigger(touchState.ls, padState.ls), rs: bigger(touchState.rs, padState.rs) };
   }
 
+  // Sofort senden (nicht erst zum nächsten Bild); mehrere Änderungen im selben Ereignis werden zusammengefasst
   function queueSend() {
     if (sendQueued) return;
     sendQueued = true;
-    requestAnimationFrame(() => {
+    queueMicrotask(() => {
       sendQueued = false;
       const msg = merged();
       const key = JSON.stringify(msg);
       if (key !== lastSent) {
         lastSent = key;
-        send(msg);
+        sendInput(msg);
       }
     });
   }
@@ -313,10 +368,12 @@
   const PRESET_TEXT = {
     xbox: { position: "Wie Konsolen-Anordnung (Xbox B = A)", label: "Nach Beschriftung (Xbox A = A)" },
     ps: { position: "Wie Konsolen-Anordnung (○ = A, ✕ = B)", label: "Bestätigen unten (✕ = A, ○ = B)" },
+    pro: { position: "Nach Beschriftung (A = A, B = B)", label: "Vertauscht (B-Taste = A)" },
   };
   const LABELS = {
     xbox: ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "LS", "RS", "↑", "↓", "←", "→", "Xbox", "Share"],
     ps: ["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Create", "Options", "L3", "R3", "↑", "↓", "←", "→", "PS", "Touchpad"],
+    pro: ["B", "A", "Y", "X", "L", "R", "ZL", "ZR", "−", "+", "LS", "RS", "↑", "↓", "←", "→", "HOME", "Aufnahme"],
   };
 
   let padCfg = load("switch2-pad-v1", null) || { preset: "position", labels: null, map: Object.assign({}, PRESETS.position) };
@@ -330,6 +387,7 @@
     const s = (id || "").toLowerCase();
     // Xbox zuerst prüfen: "Xbox Wireless Controller" enthält auch "wireless controller"
     if (/xbox|045e|xinput/.test(s)) return "xbox";
+    if (/057e|pro controller|joy-con|nintendo/.test(s)) return "pro";
     if (/054c|dualsense|dualshock|playstation|wireless controller|ps[345]/.test(s)) return "ps";
     return "xbox";
   }
@@ -507,13 +565,14 @@
     if (listening) state.buttons = Object.fromEntries(Object.keys(state.buttons).map((k) => [k, false]));
     padState = state;
     queueSend();
-    requestAnimationFrame(readPads);
+    // Öfter als einmal pro Bild abfragen: ein Tastendruck ist so spätestens nach 4 ms unterwegs
+    setTimeout(readPads, PAD_POLL_MS);
   }
 
   function startPolling() {
     if (polling) return;
     polling = true;
-    requestAnimationFrame(readPads);
+    setTimeout(readPads, 0);
   }
 
   window.addEventListener("gamepadconnected", (e) => {

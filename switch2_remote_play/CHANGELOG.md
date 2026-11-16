@@ -1,5 +1,12 @@
 # Änderungen
 
+## 1.0.4
+
+- Weniger Verzögerung: Eingaben gehen bei WebRTC über einen Datenkanal direkt an den Pi (nicht mehr über Home Assistant), werden sofort statt zum nächsten Bild geschickt, Controller werden alle 4 ms statt 60-mal pro Sekunde abgefragt, der Browser zeigt Bilder mit minimalem Puffer an
+- Bridge (mit `install.sh` aktualisieren): WebRTC mit 60 statt 30 Bildern pro Sekunde, schnellere Farbumrechnung, Eingaben gehen sofort an den Controller statt im nächsten Takt
+- Nach Updates lädt die Seite immer die neuen Skripte (vorher teils noch alte aus dem Zwischenspeicher der HA-App)
+- Pro Controller wird erkannt (wie Xbox und PlayStation): Beschriftung A B X Y / L R ZL ZR und passende Vorlage „Nach Beschriftung“ (rechte Taste A = A)
+
 ## 1.0.3
 
 - Fehler behoben: Das Add-on bekam kein Supervisor-Token (s6-overlay leerte die Umgebung). Darum fehlten die Sensoren und die Optionen im Protokoll beim Start

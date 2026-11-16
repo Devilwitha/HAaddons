@@ -56,6 +56,10 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 - Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"clients":n}`,
   `{"type":"pong","t":ms}`, `{"type":"info"|"error","message":...}`
 - Der Ingress-Server schickt zusätzlich `{"type":"proxy","status":"connected"|"unreachable"|"bridge_closed"}`.
+- Schnellster Weg für Eingaben: WebRTC-Datenkanal `input` (ungeordnet, `maxRetransmits: 0`) direkt zum Pi,
+  Nachrichten wie `input` plus `seq` (ältere verworfen). Der Browser wiederholt den Zustand alle 50 ms; nach
+  0,5 s ohne Paket gilt der Kanal als neutral. Ohne offenen Kanal gehen Eingaben über den WebSocket; beim
+  Wechsel schickt der Browser auf dem bisherigen Weg einmal „alles los“.
 - Tastennamen: A B X Y L R ZL ZR MINUS PLUS HOME CAPTURE DPAD_UP/DOWN/LEFT/RIGHT LS RS
   (müssen in `virtual-gamepad.js`, `app.js` und `controller_emulator.py` übereinstimmen).
 
@@ -73,7 +77,9 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   (bei Updates nicht überschrieben); `rpi5-bridge/config.yaml` ist nur die Vorlage.
 - Eingaben mehrerer Clients: Tasten ODER-verknüpft, Sticks nach größtem Ausschlag.
 - Controller-Belegung im Browser: Vorlagen „wie Konsolen-Anordnung“ / „nach Beschriftung“, eigene
-  Belegung tauscht bei Doppelbelegung; Xbox-Erkennung vor PlayStation prüfen („Xbox Wireless Controller“).
+  Belegung tauscht bei Doppelbelegung; Erkennung in der Reihenfolge Xbox → Pro Controller (`057e`) →
+  PlayStation („Xbox Wireless Controller“ enthält „wireless controller“). Gilt auch für `controller.js`
+  der Emulatoren (dort `proPreset` in `system.js`).
 
 ### Lokal testen (ohne Pi und ohne Konsole)
 ```bash

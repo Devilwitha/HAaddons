@@ -15,6 +15,10 @@ WebSocket-Protokoll (JSON):
 
 Mehrere Clients gleichzeitig (z. B. Handy mit Touch und PC mit Controller): Tasten werden
 zusammengefasst, bei den Sticks gilt der stärkere Ausschlag.
+
+Schnellster Weg für Eingaben: der WebRTC-Datenkanal "input" (direkt Browser -> Pi, ungeordnet, ohne
+Wiederholung). Nachrichten wie oben plus "seq"; ältere seq werden verworfen. Der Browser wiederholt den
+Zustand alle 50 ms - kommt CHANNEL_STALE Sekunden nichts, gilt der Kanal als neutral.
 """
 import argparse
 import asyncio
@@ -23,6 +27,7 @@ import logging
 import math
 import signal
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -39,13 +44,23 @@ DEFAULT_CONFIG_PATHS = [Path("/etc/switch2-bridge/config.yaml"), HERE / "config.
 DEFAULTS = {
     "websocket": {"host": "0.0.0.0", "port": 8765},
     "video": {"host": "0.0.0.0", "port": 8766, "device": "/dev/video0", "width": 1280, "height": 720,
-              "fps": 60, "fourcc": "MJPG", "jpeg_quality": 80, "mjpeg_fps": 30, "webrtc_fps": 30,
+              "fps": 60, "fourcc": "MJPG", "jpeg_quality": 80, "mjpeg_fps": 30, "webrtc_fps": 60,
               "webrtc_max_bitrate": 6000000},
     "controller": {"enabled": True, "watchdog_seconds": 2.0, "input_rate_hz": 120,
                    "reconnect_file": "/var/lib/switch2-bridge/switch_addresses.json"},
     "log_level": "INFO",
 }
 MAX_MESSAGE = 64 * 1024
+CHANNEL_STALE = 0.5
+
+
+def parse_input(msg):
+    buttons = msg.get("buttons") or []
+    return {
+        "buttons": {str(b) for b in buttons} if isinstance(buttons, list) else set(),
+        "ls": clamp_stick(msg.get("ls")),
+        "rs": clamp_stick(msg.get("rs")),
+    }
 
 
 def merge(base, extra):
@@ -73,6 +88,8 @@ class Bridge:
         self.controller = ControllerEmulator(cfg["controller"], dry_run=dry_run)
         self.video = VideoStreamer(cfg["video"])
         self.clients = {}                 # websocket -> letzter Eingabezustand
+        self.channels = {}                # WebRTC-Datenkanal -> {"state", "seq", "seen"}
+        self.video.on_channel = self.add_channel
         self.tasks = []
         self.stopping = asyncio.Event()
 
@@ -81,7 +98,8 @@ class Bridge:
         buttons = set()
         ls = (0.0, 0.0)
         rs = (0.0, 0.0)
-        for state in self.clients.values():
+        states = list(self.clients.values()) + [entry["state"] for entry in self.channels.values()]
+        for state in states:
             if not state:
                 continue
             buttons.update(state["buttons"])
@@ -90,6 +108,61 @@ class Bridge:
             if math.hypot(*state["rs"]) > math.hypot(*rs):
                 rs = state["rs"]
         self.controller.set_inputs(buttons, ls, rs)
+
+    # ------------------------------------------------------------------ WebRTC-Datenkanal
+    def add_channel(self, channel, pc):
+        self.channels[channel] = {"state": None, "seq": -1, "seen": time.monotonic()}
+        log.info("Eingabe-Datenkanal offen (%d aktiv)", len(self.channels))
+
+        @channel.on("message")
+        def on_message(raw):
+            entry = self.channels.get(channel)
+            if entry is None or isinstance(raw, bytes):
+                return
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                return
+            if not isinstance(msg, dict) or msg.get("type") != "input":
+                return
+            seq = msg.get("seq")
+            if isinstance(seq, int):
+                if seq <= entry["seq"]:
+                    return                    # veraltetes Paket (ungeordnete Zustellung)
+                entry["seq"] = seq
+            entry["seen"] = time.monotonic()
+            entry["state"] = parse_input(msg)
+            self.apply_inputs()
+
+        def drop():
+            if self.channels.pop(channel, None) is not None:
+                self.apply_inputs()
+                log.info("Eingabe-Datenkanal geschlossen (%d aktiv)", len(self.channels))
+
+        channel.on("close", drop)
+
+        @pc.on("connectionstatechange")
+        def on_state():
+            if pc.connectionState in ("failed", "closed"):
+                drop()
+            elif pc.connectionState == "disconnected":
+                entry = self.channels.get(channel)
+                if entry and entry["state"]:
+                    entry["state"] = None         # kurz weg: loslassen, Kanal aber behalten
+                    self.apply_inputs()
+
+    async def channel_watch(self):
+        """Kanäle ohne Lebenszeichen gelten als neutral (der Browser wiederholt den Zustand alle 50 ms)."""
+        while True:
+            await asyncio.sleep(0.1)
+            now = time.monotonic()
+            stale = [entry for entry in self.channels.values()
+                     if entry["state"] and now - entry["seen"] > CHANNEL_STALE]
+            if stale:
+                for entry in stale:
+                    entry["state"] = None
+                log.warning("Eingabe-Datenkanal ohne Lebenszeichen - Eingaben losgelassen")
+                self.apply_inputs()
 
     def status_message(self):
         return json.dumps({
@@ -117,12 +190,7 @@ class Bridge:
                     continue
                 kind = msg.get("type")
                 if kind == "input":
-                    buttons = msg.get("buttons") or []
-                    self.clients[websocket] = {
-                        "buttons": {str(b) for b in buttons} if isinstance(buttons, list) else set(),
-                        "ls": clamp_stick(msg.get("ls")),
-                        "rs": clamp_stick(msg.get("rs")),
-                    }
+                    self.clients[websocket] = parse_input(msg)
                     self.apply_inputs()
                 elif kind == "heartbeat":
                     self.controller.heartbeat()
@@ -157,9 +225,11 @@ class Bridge:
         ws_cfg = self.cfg["websocket"]
         await self.video.start()
         await self.controller.start()
-        self.tasks = [asyncio.create_task(self.controller.run()), asyncio.create_task(self.status_loop())]
+        self.tasks = [asyncio.create_task(self.controller.run()), asyncio.create_task(self.status_loop()),
+                      asyncio.create_task(self.channel_watch())]
+        # Ohne Kompression: die Nachrichten sind winzig, Packen kostet nur Zeit
         async with serve(self.handle_client, ws_cfg["host"], int(ws_cfg["port"]),
-                         max_size=MAX_MESSAGE, ping_interval=20, ping_timeout=20):
+                         max_size=MAX_MESSAGE, ping_interval=20, ping_timeout=20, compression=None):
             log.info("WebSocket-Server auf %s:%s", ws_cfg["host"], ws_cfg["port"])
             await self.stopping.wait()
         for task in self.tasks:

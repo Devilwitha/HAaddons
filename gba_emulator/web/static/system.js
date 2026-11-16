@@ -16,14 +16,17 @@ window.EMU = {
     rows: [[8, "A"], [0, "B"], [10, "L"], [11, "R"], [3, "Start"], [2, "Select"],
       [[4, 5, 6, 7], "Steuerkreuz ↑ ↓ ← →"]],
     defaultPreset: "label",
+    proPreset: "position",
     presets: {
       label: {
-        name: { xbox: "Nach Beschriftung (Xbox A = A, B = B)", ps: "Bestätigen unten (✕ = A, ○ = B)" },
+        name: { xbox: "Nach Beschriftung (Xbox A = A, B = B)", ps: "Bestätigen unten (✕ = A, ○ = B)",
+          pro: "Vertauscht (B-Taste = A, A-Taste = B)" },
         map: { 8: "BUTTON_1", 0: "BUTTON_2", 10: "LEFT_TOP_SHOULDER", 11: "RIGHT_TOP_SHOULDER",
           3: "START", 2: "SELECT", 4: "DPAD_UP", 5: "DPAD_DOWN", 6: "DPAD_LEFT", 7: "DPAD_RIGHT" },
       },
       position: {
-        name: { xbox: "Wie Nintendo-Anordnung (rechte Taste B = A)", ps: "Wie Nintendo-Anordnung (○ = A, ✕ = B)" },
+        name: { xbox: "Wie Nintendo-Anordnung (rechte Taste B = A)", ps: "Wie Nintendo-Anordnung (○ = A, ✕ = B)",
+          pro: "Nach Beschriftung (A = A, B = B)" },
         map: { 8: "BUTTON_2", 0: "BUTTON_1", 10: "LEFT_TOP_SHOULDER", 11: "RIGHT_TOP_SHOULDER",
           3: "START", 2: "SELECT", 4: "DPAD_UP", 5: "DPAD_DOWN", 6: "DPAD_LEFT", 7: "DPAD_RIGHT" },
       },
