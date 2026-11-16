@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.9
+
+- Weniger Verzögerung: Controller werden alle 4 statt alle 10 ms abgefragt, und das Bild geht als Low-Latency-Canvas direkt auf den Bildschirm statt erst durch den Compositor des Browsers (wo der Browser das unterstützt, spart bis zu ein Bild)
+
 ## 1.0.8
 
 - Pro Controller wird erkannt (wie Xbox und PlayStation): Beschriftung A B X Y / L R ZL ZR und neue Vorlage „Nach Beschriftung (A = A, B = B, ZL = Z)“; für Xbox/PlayStation heißt sie „Wie Nintendo-Anordnung“

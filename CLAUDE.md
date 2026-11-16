@@ -37,7 +37,11 @@ im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retro
   `static/`- und `ejs/`-Skripte/Stylesheets im HTML, `/static/` und `/ejs/` gehen mit `Cache-Control: no-cache` raus.
   Neue Skripte nur über `<script src="static/….js">` im HTML einbinden (sonst greift das nicht).
 - EmulatorJS wird im Dockerfile von npm geladen (SHA-256 gepinnt), zu `emulator.min.js` zusammengefügt
-  und an zwei Stellen gepatcht (Steuerkreuz-Mitte, Analogstick bei 0°); die `grep`-Prüfungen müssen bleiben.
+  und an drei Stellen gepatcht (Steuerkreuz-Mitte, Analogstick bei 0°, Controller-Abfrage 4 statt 10 ms);
+  die `grep`-Prüfungen müssen bleiben.
+- Verzögerung: `play.js` fordert für WebGL `desynchronized: true` an (Low-Latency-Canvas). Run-Ahead,
+  Preemptive Frames und `audio_latency` in `retroarch.cfg` wirken im Browser-Build von EmulatorJS 4.2.3 nicht
+  (gemessen, 11/2026) – nicht erneut versuchen.
 
 ## Game Remote (`switch2_remote_play/` + `rpi5-bridge/`)
 Sichtbarer Name **Game Remote**; technische Namen (Ordner `switch2_remote_play`, Slug, Dienst

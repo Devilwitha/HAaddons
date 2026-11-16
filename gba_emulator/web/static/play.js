@@ -525,6 +525,14 @@
   window.EJS_Buttons = { netplay: false, exitEmulation: false };
   if (window.EMU.layout) window.EJS_VirtualGamepadSettings = window.EMU.layout;
 
+  // Bild mit möglichst wenig Verzögerung: Low-Latency-Canvas. Wo der Browser es unterstützt, geht jedes
+  // Bild direkt auf den Bildschirm statt erst durch den Compositor (spart bis zu ein Bild).
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+    if (/webgl/.test(type)) attrs = Object.assign({}, attrs, { desynchronized: true });
+    return getContext.call(this, type, attrs);
+  };
+
   // ------------------------------------------------------------------ Spiel laden
   // Große Antworten über Home-Assistant-Ingress bleiben auf manchen Geräten hängen (z. B. bei 18 MB).
   // Darum holt die Seite das Spiel selbst in Teilen zu 4 MB (mit Wiederholung), merkt es sich im

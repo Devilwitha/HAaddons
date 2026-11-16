@@ -14,6 +14,7 @@ RUN apk add --no-cache python3 py3-aiohttp py3-paho-mqtt
 # Korrektur Steuerkreuz: Die Mitte wird aus der angezeigten Größe berechnet (rect statt
 # clientWidth), sonst trifft es daneben, sobald die Touch-Steuerung vergrößert ist.
 # Korrektur Analogstick: Bei genau 0° (waagerecht nach rechts) kam kein Ausschlag an.
+# Weniger Verzögerung: Controller alle 4 ms statt alle 10 ms abfragen.
 ARG EJS_VERSION=4.2.3
 ARG EJS_SHA256=8033a18a3398cae5efd7a4c12a633b10672435977290959633d671365b589639
 ARG MUPEN_SHA256=2b8952aabbe32dc620cbde31b4456a16d7ff96116f471283699dc9ae09724417
@@ -47,6 +48,8 @@ RUN set -eux; \
     sed -i 's|if (degree > 0 && degree <= 45) {|if (degree >= 0 \&\& degree <= 45) {|; s|if (degree > 315 && degree <= 359.9) {|if (degree > 315 \&\& degree <= 360) {|' "$D/emulator.min.js"; \
     grep -q 'if (degree >= 0 && degree <= 45) {' "$D/emulator.min.js"; \
     grep -q 'if (degree > 315 && degree <= 360) {' "$D/emulator.min.js"; \
+    sed -i 's|setTimeout(this.loop.bind(this), 10)|setTimeout(this.loop.bind(this), 4)|' "$D/emulator.min.js"; \
+    grep -q 'setTimeout(this.loop.bind(this), 4)' "$D/emulator.min.js"; \
     rm -rf /tmp/ejs /tmp/mupen /tmp/parallel /tmp/*.tgz
 
 ARG BUILD_VERSION
