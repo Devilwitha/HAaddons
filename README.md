@@ -35,6 +35,12 @@ Belegung. Braucht einen Raspberry Pi 5 mit USB-Capture-Card neben der Konsole, d
 Bluetooth als Pro Controller ausgibt – eingerichtet mit einem Befehl, siehe
 [rpi5-bridge](rpi5-bridge/). Details: [DOCS.md](switch2_remote_play/DOCS.md)
 
+### [WerWarDas Kamera](werwardas/) und [Ollama (WerWarDas)](ollama/)
+Aufräum-Wächter: Eine Kamera fotografiert regelmäßig das Zimmer, eine KI bewertet die Ordnung und meldet sie an
+Home Assistant. Ist es zu unordentlich, zeigt der Windows-PC oder das Kinderhandy einen Hinweis und sperrt
+später. Dazu gehören die Kamera-Software für den Raspberry Pi, die Windows-App, die Android-Apps (Kind und
+Eltern), eine ESP32-CAM-Firmware und ein Blueprint – alles in [werwardas-apps](werwardas-apps/).
+
 ## Installation
 Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories →
 `https://github.com/Devilwitha/HAaddons` hinzufügen.

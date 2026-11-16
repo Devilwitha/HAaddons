@@ -1,20 +1,20 @@
-name: Windows-App bauen
+name: WerWarDas Windows-App
 
 # Jeder Push auf main, der die Windows-App ändert, erzeugt ein Release mit der fertigen WerWarDas.exe.
 # Die installierte App sucht regelmäßig nach diesem Release und aktualisiert sich selbst.
 on:
   push:
     branches: [main]
-    paths: ["windows/**", ".github/workflows/windows.yml"]
+    paths: ["werwardas-apps/windows/**", ".github/workflows/werwardas-windows.yml"]
   pull_request:
-    paths: ["windows/**", ".github/workflows/windows.yml"]
+    paths: ["werwardas-apps/windows/**", ".github/workflows/werwardas-windows.yml"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: windows-release
+  group: werwardas-windows-release
   cancel-in-progress: false
 
 jobs:
@@ -32,11 +32,12 @@ jobs:
         shell: pwsh
         run: |
           # Fortlaufende Nummer, damit jede neue Version größer ist als die vorige
-          "version=1.0.${{ github.run_number }}" >> $env:GITHUB_OUTPUT
+          # (+100: liegt über den Versionen aus dem früheren Repository "werwardas")
+          "version=1.0.$(${{ github.run_number }} + 100)" >> $env:GITHUB_OUTPUT
 
       - name: Exe bauen (eine Datei, ohne .NET-Installation lauffähig)
         run: >
-          dotnet publish windows/WerWarDas/WerWarDas.csproj
+          dotnet publish werwardas-apps/windows/WerWarDas/WerWarDas.csproj
           -c Release -r win-x64 --self-contained true
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
@@ -57,9 +58,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          gh release create "v$v" out/WerWarDas.exe `
+          gh release create "werwardas-v$v" out/WerWarDas.exe `
             --repo "${{ github.repository }}" `
             --target "${{ github.sha }}" `
             --title "WerWarDas $v" `
-            --generate-notes `
-            --latest
+            --notes "Windows-App WerWarDas $v. Installierte Apps aktualisieren sich automatisch." `
+            --latest=false

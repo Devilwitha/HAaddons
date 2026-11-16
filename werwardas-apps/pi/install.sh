@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # WerWarDas – Installer für den Raspberry Pi (Raspberry Pi OS Bookworm/Trixie, auch Lite)
 #
-#   curl -fsSL https://raw.githubusercontent.com/Devilwitha/werwardas/main/pi/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/Devilwitha/HAaddons/main/werwardas-apps/pi/install.sh | sudo bash
 #
 # Optionen:
 #   --reconfigure   Einrichtungs-Assistent erneut ausführen
@@ -11,9 +11,11 @@
 
 set -euo pipefail
 
-REPO_URL="${WERWARDAS_REPO:-https://github.com/Devilwitha/werwardas.git}"
+REPO_URL="${WERWARDAS_REPO:-https://github.com/Devilwitha/HAaddons.git}"
 BRANCH="${WERWARDAS_BRANCH:-main}"
 APP_DIR=/opt/werwardas
+# Die Pi-Software liegt im Repository HAaddons im Unterordner werwardas-apps/pi
+PI_DIR=$APP_DIR/werwardas-apps/pi
 CONF_DIR=/etc/werwardas
 CONF_FILE=$CONF_DIR/config.yaml
 DATA_DIR=/var/lib/werwardas
@@ -91,10 +93,12 @@ fetch_code() {
     src="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || src=""
     if [[ -n "$src" && -f "$src/werwardas/__init__.py" ]]; then
         # Skript wurde aus einem ausgecheckten Repo gestartet -> diese Dateien nehmen
-        mkdir -p "$APP_DIR"
-        rm -rf "$APP_DIR/pi"
-        cp -r "$src" "$APP_DIR/pi"
+        mkdir -p "$(dirname "$PI_DIR")"
+        rm -rf "$PI_DIR"
+        cp -r "$src" "$PI_DIR"
     elif [[ -d "$APP_DIR/.git" ]]; then
+        # Ältere Installationen kommen aus dem früheren Repository "werwardas" -> auf HAaddons umstellen
+        git -C "$APP_DIR" remote set-url origin "$REPO_URL"
         git -C "$APP_DIR" fetch -q --depth 1 origin "$BRANCH"
         git -C "$APP_DIR" reset -q --hard "origin/$BRANCH"
     else
@@ -110,13 +114,13 @@ setup_venv() {
         python3 -m venv --system-site-packages "$APP_DIR/venv"
     fi
     "$APP_DIR/venv/bin/pip" install -q --upgrade pip
-    "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/pi/requirements.txt"
-    if ! "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/pi/requirements-claude.txt"; then
+    "$APP_DIR/venv/bin/pip" install -q -r "$PI_DIR/requirements.txt"
+    if ! "$APP_DIR/venv/bin/pip" install -q -r "$PI_DIR/requirements-claude.txt"; then
         yellow "Claude-Paket konnte nicht installiert werden – Bewertung 'claude' ist nicht verfügbar."
     fi
     cat >/usr/local/bin/werwardas <<EOF
 #!/bin/sh
-cd $APP_DIR/pi && exec $APP_DIR/venv/bin/python -m werwardas "\$@"
+cd $PI_DIR && exec $APP_DIR/venv/bin/python -m werwardas "\$@"
 EOF
     chmod 755 /usr/local/bin/werwardas
 }
@@ -174,7 +178,7 @@ configure() {
     touch "$CONF_FILE"
     chmod 600 "$CONF_FILE"
     cat >"$CONF_FILE" <<EOF
-# WerWarDas – Konfiguration. Alle Optionen: $APP_DIR/pi/config.example.yaml
+# WerWarDas – Konfiguration. Alle Optionen: $PI_DIR/config.example.yaml
 # Nach Änderungen:  sudo systemctl restart werwardas
 
 mqtt:
@@ -222,7 +226,7 @@ Wants=network-online.target
 User=$SERVICE_USER
 Group=$SERVICE_USER
 SupplementaryGroups=video
-WorkingDirectory=$APP_DIR/pi
+WorkingDirectory=$PI_DIR
 ExecStart=$APP_DIR/venv/bin/python -m werwardas -c $CONF_FILE
 Restart=always
 RestartSec=10

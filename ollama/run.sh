@@ -27,5 +27,5 @@ for model in $(jq -r '.models[]' /data/options.json); do
     fi
 done
 
-echo "Ollama bereit: http://045e59a3-ollama:11434"
+echo "Ollama bereit: http://ac854b7e-ollama:11434"
 wait "$server"

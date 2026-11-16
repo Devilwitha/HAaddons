@@ -3,7 +3,8 @@
 Eine Kamera fotografiert in regelmäßigen Abständen dein Zimmer und bewertet, wie aufgeräumt es ist.
 Ist es zu unordentlich, zeigt dein Windows-PC einen Hinweis an. Bleibt es unordentlich, wird der PC
 **gesperrt**, auf Wunsch auch **heruntergefahren**. Wieder frei wird er erst, wenn aufgeräumt ist.
-Alles ist in **Home Assistant** eingebunden.
+Alles ist in **Home Assistant** eingebunden. Von BolliSoft, Teil des Repositorys
+[HAaddons](https://github.com/Devilwitha/HAaddons) (früher eigenes Repository `werwardas`).
 
 ```
 ┌───────────────────────┐   MQTT   ┌──────────────────────┐   MQTT   ┌────────────────────────┐
@@ -20,7 +21,8 @@ Alles ist in **Home Assistant** eingebunden.
 | [`pi/`](pi) | Kamera-Software für den Raspberry Pi (Python) inklusive Installationsskript |
 | [`windows/`](windows) | Windows-App (C# / .NET 8). Die `.exe` baut GitHub Actions automatisch |
 | [`android/`](android) | Android-Apps für das Kinderhandy und die Eltern (Kotlin), auch unterwegs über Nabu Casa – siehe [android/README.md](android/README.md) |
-| [`homeassistant/`](homeassistant) | Add-ons (Kameradienst, Ollama), Blueprint und Beispiel-Karte fürs Dashboard |
+| [`homeassistant/`](homeassistant) | Blueprint und Beispiel-Karte fürs Dashboard |
+| [`../werwardas/`](../werwardas), [`../ollama/`](../ollama) | Home-Assistant-Add-ons (Kameradienst, Ollama) |
 | [`esp32cam/`](esp32cam) | Firmware für eine ESP32-CAM als günstige WLAN-Kamera (PlatformIO) |
 
 ---
@@ -48,7 +50,7 @@ Raspberry Pi OS Lite mit dem *Raspberry Pi Imager* auf die SD-Karte schreiben (d
 die Kamera anschließen, per SSH verbinden und **einen** Befehl ausführen:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Devilwitha/werwardas/main/pi/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Devilwitha/HAaddons/main/werwardas-apps/pi/install.sh | sudo bash
 ```
 
 Das Skript installiert alles Nötige und fragt dabei nach den MQTT-Zugangsdaten, der Kamera und der Bewertungsart.
@@ -97,7 +99,7 @@ Danach liefert `http://werwardas-cam.local/capture` ein Foto (Statusseite: `http
 **Kameradienst installieren** (Python 3.10+ nötig, keine Admin-Rechte):
 
 ```powershell
-.\pi\install-windows.ps1 -MqttHost <IP-von-HA> -MqttUser werwardas -MqttPassword <passwort> `
+.\werwardas-apps\pi\install-windows.ps1 -MqttHost <IP-von-HA> -MqttUser werwardas -MqttPassword <passwort> `
     -CameraUrl http://werwardas-cam.local/capture -Analyzer ollama
 ```
 
@@ -115,11 +117,12 @@ Liegt das Bild schief: `camera.rotation` in der `config.yaml` setzen. **Update:*
 Läuft Home Assistant OS auf einem Pi 4/5 mit 8 GB (oder einem Mini-PC), kann der Kameradienst samt KI direkt dort laufen.
 Zusammen mit der ESP32-CAM (Abschnitt 3b) braucht es dann keinen eigenen Kamera-Pi und keinen eingeschalteten PC.
 
-1. *Einstellungen → Add-ons → Add-on-Store → ⋮ → Repositories* → `https://github.com/Devilwitha/werwardas` hinzufügen.
+1. *Einstellungen → Add-ons → Add-on-Store → ⋮ → Repositories* → `https://github.com/Devilwitha/HAaddons` hinzufügen
+   (war vorher `…/werwardas` eingetragen: die Add-ons von dort deinstallieren und das alte Repository entfernen).
 2. **Ollama (WerWarDas)** installieren und starten. Beim ersten Start lädt es `qwen2.5vl:3b` (ca. 3 GB, dauert eine Weile).
 3. **WerWarDas Kamera** installieren, im Reiter *Konfiguration* `camera_url` (z. B. `http://192.168.1.165/capture`) prüfen
    und starten. Die MQTT-Zugangsdaten holt sich das Add-on selbst vom Mosquitto-Add-on.
-4. Den Kameradienst auf dem PC entfernen, falls installiert: `.\pi\install-windows.ps1 -Uninstall`.
+4. Den Kameradienst auf dem PC entfernen, falls installiert: `.\werwardas-apps\pi\install-windows.ps1 -Uninstall`.
 
 **PC als Turbo:** In `ollama_servers` stehen mehrere Ollama-Server, die der Reihe nach versucht werden. Standard:
 erst der PC (`qwen2.5vl:7b`, wenige Sekunden), ist der aus, das Ollama-Add-on auf dem Pi (`qwen2.5vl:3b`; gemessen
@@ -171,8 +174,8 @@ Mit `prompt_hint` in der `config.yaml` kannst du der KI Hinweise geben, z. B.
 
 ## 5. Windows-App
 
-1. **`WerWarDas.exe` herunterladen:** unter [Releases](https://github.com/Devilwitha/werwardas/releases)
-   oder unter *Actions → „Windows-App bauen“ → letzter Lauf → Artifacts*.
+1. **`WerWarDas.exe` herunterladen:** unter [Releases](https://github.com/Devilwitha/HAaddons/releases) (Tag `werwardas-v…`)
+   oder unter *Actions → „WerWarDas Windows-App“ → letzter Lauf → Artifacts*.
 2. Die exe an einen festen Ort legen (z. B. `C:\Programme\WerWarDas\`) und starten. Es ist keine Installation nötig.
    Windows SmartScreen warnt eventuell, weil die exe nicht signiert ist: *Weitere Informationen → Trotzdem ausführen*.
 3. Beim ersten Start öffnen sich die Einstellungen: Adresse von Home Assistant, Benutzer `werwardas` und Passwort.
@@ -198,7 +201,7 @@ Die PIN schützt auch die Einstellungen und das Beenden der App.
 **Modus „Nur Home Assistant“:** Die App macht nur, was Home Assistant sagt. Das Gerät **„WerWarDas PC …“** bringt
 dafür den Schalter *Sperre* und die Buttons *Hinweis anzeigen* und *Herunterfahren* mit. Den fertigen Ablauf gibt es als Blueprint:
 
-[![Blueprint importieren](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FDevilwitha%2Fwerwardas%2Fblob%2Fmain%2Fhomeassistant%2Fblueprints%2Fautomation%2Fwerwardas%2Faufraeum_waechter.yaml)
+[![Blueprint importieren](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FDevilwitha%2FHAaddons%2Fblob%2Fmain%2Fwerwardas-apps%2Fhomeassistant%2Fblueprints%2Fautomation%2Fwerwardas%2Faufraeum_waechter.yaml)
 
 Damit lassen sich auch eigene Regeln bauen, z. B. „nur an Schultagen“ oder „Handy-Benachrichtigung“.
 
@@ -240,17 +243,17 @@ Zimmer mindestens einmal als unordentlich erkannt wurde, setzt ihn auf 0 zurück
 ## 9. Entwicklung
 
 ```bash
-# Pi-Software lokal testen
+# Pi-Software lokal testen (im Ordner werwardas-apps)
 cd pi && pip install -r requirements.txt numpy pillow pytest && python -m pytest
 
 # Windows-App bauen (unter Windows; unter Linux geht es mit EnableWindowsTargeting nur ohne Starten)
 dotnet build windows/WerWarDas/WerWarDas.csproj
 ```
 
-Jeder Push auf `main`, der etwas unter `windows/` ändert, baut per GitHub Actions automatisch ein neues
-Release `v1.0.<Laufnummer>` mit angehängter `WerWarDas.exe`.
+Jeder Push auf `main`, der etwas unter `werwardas-apps/windows/` ändert, baut per GitHub Actions automatisch ein neues
+Release `werwardas-v1.0.<Laufnummer + 100>` mit angehängter `WerWarDas.exe`.
 
-**Automatische Updates:** Die App sucht alle *n* Stunden nach dem neuesten Release (Einstellungen → „Nach Updates
+**Automatische Updates:** Die App sucht alle *n* Stunden nach dem neuesten Release mit dem Tag `werwardas-v…` (Einstellungen → „Nach Updates
 suchen“, Standard 1 Stunde, 0 = nie; von Hand über das Tray-Menü). Eine neuere Exe wird heruntergeladen, auf
 Größe, SHA-256-Prüfsumme und Versionsnummer geprüft und eingespielt, sobald der PC **frei** ist (nicht gesperrt,
 kein Hinweis, keine Notfall-Entsperrung). Danach startet die App von selbst neu.

@@ -22,7 +22,7 @@ Sperre bräuchte es den Geräteinhaber-Modus (Device Owner), der das Gerät einm
 ## Einrichten
 
 1. In Home Assistant einen Benutzer ohne Admin-Rechte anlegen (z. B. `werwardas-handy`).
-2. APK aufs Handy laden (aus den [Releases](https://github.com/Devilwitha/werwardas/releases), Tag `android-v…`).
+2. APK aufs Handy laden (aus den [Releases](https://github.com/Devilwitha/HAaddons/releases), Tag `werwardas-android-v…`).
 3. App öffnen → **Einrichten**: Adresse von Home Assistant, Benutzer, Passwort, Gerätename. Die Nabu-Casa-Adresse
    wird dabei automatisch übernommen.
 4. Kinder-App: die beiden Berechtigungen erlauben („Über anderen Apps einblenden", „Unbekannte Apps installieren")
@@ -31,18 +31,19 @@ Sperre bräuchte es den Geräteinhaber-Modus (Device Owner), der das Gerät einm
 
 ## Automatische Updates
 
-Jeder Push auf `main`, der etwas unter `android/` ändert, baut per GitHub Actions beide APKs und veröffentlicht sie
-unter dem Tag `android-v1.0.<Laufnummer>`. Die Apps suchen regelmäßig danach (einstellbar, Standard 1 Stunde),
+Jeder Push auf `main`, der etwas unter `werwardas-apps/android/` ändert, baut per GitHub Actions beide APKs und veröffentlicht sie
+unter dem Tag `werwardas-android-v1.0.<Laufnummer + 100>`. Die Apps suchen regelmäßig danach (einstellbar, Standard 1 Stunde),
 prüfen Größe, SHA-256 und Versionsnummer und installieren das Update, sobald das Handy frei ist. Android zeigt dabei
 einmalig eine Bestätigung; ab Android 12 laufen weitere Updates ohne Nachfrage.
 
 **Damit Updates installiert werden können, müssen alle APKs mit demselben Schlüssel signiert sein.** Dafür zwei
-GitHub-Secrets im Repo anlegen (Settings → Secrets and variables → Actions):
+GitHub-Secrets im Repository HAaddons anlegen (Settings → Secrets and variables → Actions):
 
 - `WERWARDAS_KEYSTORE_BASE64` – der Signaturschlüssel als Base64 (Inhalt der Datei `werwardas.jks.b64`).
 - `WERWARDAS_KEYSTORE_PASSWORD` – das Keystore-Passwort.
 
-Ohne diese Secrets baut CI mit dem Debug-Schlüssel; die Apps laufen dann, können sich aber nicht selbst aktualisieren.
+Ohne diese Secrets baut CI mit dem Debug-Schlüssel und veröffentlicht **kein** Release (die installierten Apps
+könnten es nicht einspielen). Die APKs liegen dann nur unter *Actions → Artifacts*.
 
 ## Lokal bauen
 

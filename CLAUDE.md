@@ -2,7 +2,8 @@
 
 Home-Assistant-Add-on-Repository von BolliSoft (`repository.yaml`). Jedes Add-on liegt in einem
 eigenen Ordner mit `config.yaml`; HA liest den Stand von `main` auf GitHub. Hilfsprogramme, die nicht
-im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retropie-mqtt/`, `rpi5-bridge/`).
+im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retropie-mqtt/`, `rpi5-bridge/`,
+`werwardas-apps/`).
 
 ## Allgemein
 - Jedes Dockerfile mit Python-/Shell-CMD braucht `ENV S6_KEEP_ENV=1` (oder `#!/usr/bin/with-contenv`):
@@ -81,3 +82,18 @@ SWITCH2_OPTIONS=/pfad/options.json SWITCH2_NO_GUARD=1 python switch2_remote_play
 `SWITCH2_NO_GUARD=1` schaltet die Ingress-Sperre ab, `SWITCH2_PORT` ändert den Port. Im Testmodus
 protokolliert die Bridge jede empfangene Eingabe („Testmodus - Eingabe: …“).
 Benötigt lokal: `aiohttp aiortc websockets PyYAML opencv-python-headless numpy`.
+
+## WerWarDas (`werwardas/`, `ollama/`, `werwardas-apps/`)
+Aufräum-Wächter, bis 11/2026 eigenes Repository `Devilwitha/werwardas` (Verlauf mit übernommen).
+- `werwardas/` und `ollama/` sind die Add-ons. Das Kamera-Add-on lädt beim Bauen das Archiv von HAaddons `main`
+  und kopiert `werwardas-apps/pi/werwardas` – der Python-Code existiert nur einmal.
+- Interne Add-on-Adresse von Ollama: `http://ac854b7e-ollama:11434` (`ac854b7e` = sha1 der Repo-URL in
+  Kleinbuchstaben, erste 8 Zeichen).
+- `werwardas-apps/`: `pi/` (Kameradienst, `install.sh` klont HAaddons nach `/opt/werwardas`, Code in
+  `werwardas-apps/pi`), `windows/` (C#/.NET 8), `android/` (Kotlin, Apps Kind + Eltern), `esp32cam/`, `homeassistant/`
+  (Blueprint, Beispiel-Karte).
+- Releases liegen neben denen des PC Agent; jedes Programm filtert nach seinem Tag-Präfix:
+  `pcagent-v…`, `werwardas-v1.0.N` (Windows), `werwardas-android-v1.0.N` (N = versionCode). Die Updater dürfen nie
+  `releases/latest` benutzen. Workflows `werwardas-*.yml`: Laufnummer + 100 (liegt über den Versionen aus dem alten
+  Repository). Android-Releases nur mit den Secrets `WERWARDAS_KEYSTORE_BASE64`/`WERWARDAS_KEYSTORE_PASSWORD`.
+- `HaAuth.CLIENT_ID` bleibt `https://github.com/Devilwitha/werwardas`: HA bindet die Refresh-Token an die Client-ID.

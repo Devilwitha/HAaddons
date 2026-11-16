@@ -1,20 +1,20 @@
-name: Android-Apps bauen
+name: WerWarDas Android-Apps
 
 # Jeder Push auf main, der etwas unter android/ ändert, baut beide Apps und veröffentlicht ein Release
 # mit den fertigen APKs. Die installierten Apps aktualisieren sich daraus selbst.
 on:
   push:
     branches: [main]
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["werwardas-apps/android/**", ".github/workflows/werwardas-android.yml"]
   pull_request:
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["werwardas-apps/android/**", ".github/workflows/werwardas-android.yml"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: android-release
+  group: werwardas-android-release
   cancel-in-progress: false
 
 jobs:
@@ -43,13 +43,14 @@ jobs:
 
       - name: Version festlegen
         id: version
-        run: echo "code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+        # +100: liegt über den Versionen aus dem früheren Repository "werwardas"
+        run: echo "code=$(( ${{ github.run_number }} + 100 ))" >> "$GITHUB_OUTPUT"
 
       - name: APKs bauen
         env:
           WERWARDAS_KEYSTORE: ${{ steps.keystore.outputs.path }}
           WERWARDAS_KEYSTORE_PASSWORD: ${{ secrets.WERWARDAS_KEYSTORE_PASSWORD }}
-        working-directory: android
+        working-directory: werwardas-apps/android
         run: |
           chmod +x gradlew
           ./gradlew :kind:assembleRelease :eltern:assembleRelease \
@@ -64,12 +65,13 @@ jobs:
           path: ${{ runner.temp }}/WerWarDas-*.apk
 
       - name: Release erstellen
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        # Ohne den echten Signaturschlüssel kein Release: die installierten Apps könnten es nicht einspielen.
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && steps.keystore.outputs.path != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="1.0.${{ steps.version.outputs.code }}"
-          gh release create "android-v$v" \
+          gh release create "werwardas-android-v$v" \
             "$RUNNER_TEMP/WerWarDas-Kind.apk" "$RUNNER_TEMP/WerWarDas-Eltern.apk" \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \

@@ -1,7 +1,7 @@
 name: Ollama (WerWarDas)
-version: "0.40.13-2"
+version: "0.40.13-3"
 slug: ollama
-description: "Lokale KI für die WerWarDas-Bewertung direkt auf dem Home-Assistant-Rechner"
+description: "Lokale KI für die WerWarDas-Bewertung direkt auf dem Home-Assistant-Rechner (von BolliSoft)"
 url: https://ollama.com
 arch:
   - aarch64
@@ -13,7 +13,7 @@ boot: auto
 backup_exclude:
   - "models"
   - "models/*"
-# Nur im internen Add-on-Netz erreichbar (http://045e59a3-ollama:11434; 045e59a3 = Kennung dieses Repos in HA). Für Zugriff aus dem LAN hier einen Port eintragen.
+# Nur im internen Add-on-Netz erreichbar (http://ac854b7e-ollama:11434; ac854b7e = Kennung des Repos HAaddons in HA). Für Zugriff aus dem LAN hier einen Port eintragen.
 ports:
   11434/tcp: null
 ports_description:

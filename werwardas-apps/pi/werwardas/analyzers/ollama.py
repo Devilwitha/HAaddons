@@ -6,7 +6,7 @@ PC mit Grafikkarte und, wenn der aus ist, ein kleineres Modell direkt auf dem Ra
     ollama:
       servers:
         - {url: "http://192.168.1.139:11434", model: "qwen2.5vl:7b"}
-        - {url: "http://045e59a3-ollama:11434", model: "qwen2.5vl:3b", timeout_seconds: 1800}
+        - {url: "http://ac854b7e-ollama:11434", model: "qwen2.5vl:3b", timeout_seconds: 1800}
 
 Server mit `fallback: true` sind nur Ersatz. Sie lassen sich in Home Assistant mit dem Schalter
 "Pi-KI als Ersatz" abschalten (Laufzeitwert `ollama_fallback`), dann wird nur mit den übrigen Servern bewertet.

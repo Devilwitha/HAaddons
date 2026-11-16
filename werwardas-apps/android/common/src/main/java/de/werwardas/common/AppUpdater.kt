@@ -17,14 +17,14 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
- * Sucht im GitHub-Repo nach dem neuesten Android-Release (Tag "android-v1.0.N") und installiert die passende APK.
+ * Sucht im GitHub-Repo nach dem neuesten Android-Release (Tag "werwardas-android-v1.0.N") und installiert die passende APK.
  * Die Versionsnummer N ist der versionCode. Android fragt beim ersten Update nach einer Bestätigung;
  * ab Android 12 laufen weitere Updates ohne Nachfrage, sobald die App sich einmal selbst installiert hat.
  */
 class AppUpdater(private val context: Context, private val assetName: String) {
     companion object {
-        const val REPO = "Devilwitha/werwardas"
-        private const val TAG_PREFIX = "android-v"
+        const val REPO = "Devilwitha/HAaddons"
+        private const val TAG_PREFIX = "werwardas-android-v"
         private const val CHANNEL = "updates"
         private const val NOTIFY_ID = 4711
         private val http = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()

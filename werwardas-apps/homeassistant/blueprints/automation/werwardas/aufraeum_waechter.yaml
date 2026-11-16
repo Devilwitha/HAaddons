@@ -5,7 +5,7 @@ blueprint:
     sobald aufgeräumt ist. Optional fährt der PC nach einer weiteren Wartezeit herunter.
     Nur nötig, wenn die Windows-App auf "Nur Home Assistant" steht.
   domain: automation
-  source_url: https://github.com/Devilwitha/werwardas/blob/main/homeassistant/blueprints/automation/werwardas/aufraeum_waechter.yaml
+  source_url: https://github.com/Devilwitha/HAaddons/blob/main/werwardas-apps/homeassistant/blueprints/automation/werwardas/aufraeum_waechter.yaml
   input:
     messy_sensor:
       name: Unordentlich-Sensor

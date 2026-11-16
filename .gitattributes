@@ -7,7 +7,16 @@ claude_code/rootfs/** text eol=lf
 # Game Remote: Add-on und Raspberry-Pi-Bridge laufen unter Linux (curl | sudo bash)
 switch2_remote_play/** text eol=lf
 rpi5-bridge/** text eol=lf
+# WerWarDas: Add-ons laufen unter Linux
+werwardas/** text eol=lf
+ollama/** text eol=lf
+werwardas-apps/android/gradlew text eol=lf
 *.png binary
+*.ico binary
+*.jar binary
+*.apk binary
+*.jks binary
+*.keystore binary
 
 # PowerShell-Skripte: CRLF für Windows
 *.ps1 text eol=crlf

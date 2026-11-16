@@ -22,6 +22,7 @@ class HaAuthExpired(message: String) : IOException(message)
 class HaAuth(private val prefs: SharedPreferences) {
     companion object {
         // HA verlangt eine URL als Client-ID; die Rücksprungadresse muss auf demselben Host liegen.
+        // Bleibt die alte Repo-Adresse: HA bindet die gespeicherten Anmeldungen an diese Client-ID.
         const val CLIENT_ID = "https://github.com/Devilwitha/werwardas"
         private const val REDIRECT_URI = "$CLIENT_ID/auth"
         private val JSON = "application/json".toMediaType()

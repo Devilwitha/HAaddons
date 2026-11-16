@@ -48,7 +48,7 @@ ollama:
   # Alternativ mehrere Server, der Reihe nach versucht (z. B. erst der PC, sonst ein kleines Modell auf dem Pi):
   # servers:
   #   - {url: "http://192.168.1.20:11434", model: "qwen2.5vl:7b"}
-  #   - {url: "http://045e59a3-ollama:11434", model: "qwen2.5vl:3b", timeout_seconds: 1800, fallback: true}
+  #   - {url: "http://ac854b7e-ollama:11434", model: "qwen2.5vl:3b", timeout_seconds: 1800, fallback: true}
   # fallback: true = nur Ersatz, in HA mit dem Schalter "Pi-KI als Ersatz" abschaltbar
 
 claude:

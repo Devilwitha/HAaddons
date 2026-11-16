@@ -1,11 +1,11 @@
-name: Pi-Software testen
+name: WerWarDas Pi-Software testen
 
 on:
   push:
     branches: [main]
-    paths: ["pi/**", ".github/workflows/pi.yml"]
+    paths: ["werwardas-apps/pi/**", ".github/workflows/werwardas-pi.yml"]
   pull_request:
-    paths: ["pi/**", ".github/workflows/pi.yml"]
+    paths: ["werwardas-apps/pi/**", ".github/workflows/werwardas-pi.yml"]
   workflow_dispatch:
 
 jobs:
@@ -19,11 +19,11 @@ jobs:
           python-version: "3.11"   # wie Raspberry Pi OS Bookworm
 
       - name: Abhängigkeiten
-        run: pip install -r pi/requirements.txt -r pi/requirements-claude.txt numpy pillow pytest
+        run: pip install -r werwardas-apps/pi/requirements.txt -r werwardas-apps/pi/requirements-claude.txt numpy pillow pytest
 
       - name: Tests
-        working-directory: pi
+        working-directory: werwardas-apps/pi
         run: python -m pytest -q
 
       - name: Installationsskript prüfen
-        run: shellcheck pi/install.sh
+        run: shellcheck werwardas-apps/pi/install.sh

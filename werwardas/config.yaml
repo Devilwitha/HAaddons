@@ -1,8 +1,8 @@
 name: WerWarDas Kamera
-version: "0.3.0"
+version: "0.3.1"
 slug: werwardas
-description: "Aufräum-Wächter: holt das Foto der Kamera, bewertet die Ordnung und meldet sie an Home Assistant"
-url: https://github.com/Devilwitha/werwardas
+description: "Aufräum-Wächter: holt das Foto der Kamera, bewertet die Ordnung und meldet sie an Home Assistant (von BolliSoft)"
+url: https://github.com/Devilwitha/HAaddons/tree/main/werwardas-apps
 arch:
   - aarch64
   - amd64
@@ -18,7 +18,7 @@ options:
   ollama_servers:
     - url: "http://192.168.1.139:11434"
       model: "qwen2.5vl:7b"
-    - url: "http://045e59a3-ollama:11434"
+    - url: "http://ac854b7e-ollama:11434"
       model: "qwen2.5vl:3b"
       timeout_seconds: 1800
       max_width: 768

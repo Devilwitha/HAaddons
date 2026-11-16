@@ -11,3 +11,23 @@ pc_agent/venv/
 pc_agent/dist/
 pc_agent/build/
 pc_agent/*.spec
+
+# WerWarDas (werwardas-apps/)
+werwardas-apps/windows/**/bin/
+werwardas-apps/windows/**/obj/
+werwardas-apps/windows/out/
+*.user
+.vs/
+.pytest_cache/
+venv/
+.venv/
+werwardas-apps/esp32cam/.pio/
+werwardas-apps/esp32cam/include/secrets.h
+werwardas-apps/android/.gradle/
+werwardas-apps/android/build/
+werwardas-apps/android/*/build/
+werwardas-apps/android/local.properties
+werwardas-apps/android/keystore.properties
+*.jks
+*.jks.b64
+*.keystore

@@ -18,7 +18,9 @@ namespace WerWarDas;
 /// </summary>
 public sealed class Updater : IDisposable
 {
-    public const string Repo = "Devilwitha/werwardas";
+    public const string Repo = "Devilwitha/HAaddons";
+    // Im Repository liegen auch Releases anderer Programme; WerWarDas-Releases heißen "werwardas-v1.0.N".
+    private const string TagPrefix = "werwardas-v";
     private const string AssetName = "WerWarDas.exe";
     public const string UpdatedArg = "--updated";
 
@@ -96,15 +98,22 @@ public sealed class Updater : IDisposable
     /// <summary>Lädt eine neuere Version herunter. null = Update liegt bereit, sonst der Grund, warum nicht.</summary>
     private async Task<string?> DownloadIfNewer()
     {
-        using var resp = await Http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest");
+        using var resp = await Http.GetAsync($"https://api.github.com/repos/{Repo}/releases?per_page=30");
         if (resp.StatusCode == HttpStatusCode.NotFound) return "Auf GitHub gibt es noch kein Release.";
         resp.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-        var root = doc.RootElement;
+        JsonElement? best = null;
+        var latest = new Version(0, 0);
+        foreach (var r in doc.RootElement.EnumerateArray())
+        {
+            if (r.GetProperty("draft").GetBoolean() || r.GetProperty("prerelease").GetBoolean()) continue;
+            var t = r.GetProperty("tag_name").GetString() ?? "";
+            if (!t.StartsWith(TagPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!Version.TryParse(t[TagPrefix.Length..], out var v)) continue;
+            if (Normalize(v) > latest) { latest = Normalize(v); best = r; }
+        }
+        if (best is not { } root) return "Auf GitHub gibt es noch kein WerWarDas-Release.";
         var tag = root.GetProperty("tag_name").GetString() ?? "";
-        if (!Version.TryParse(tag.TrimStart('v', 'V'), out var parsed))
-            return $"Unbekannte Release-Version „{tag}“.";
-        var latest = Normalize(parsed);
         if (latest <= CurrentVersion) return $"WerWarDas ist aktuell (Version {CurrentVersion}).";
 
         JsonElement? asset = null;
