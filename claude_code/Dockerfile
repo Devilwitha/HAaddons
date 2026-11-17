@@ -4,7 +4,7 @@ FROM ${BUILD_FROM}
 # Laufzeit-Abhängigkeiten (Claude Code native Build auf Alpine/musl braucht libgcc, libstdc++, ripgrep)
 RUN apk add --no-cache \
         bash curl git jq ripgrep nano less \
-        openssh-client-default python3 py3-aiohttp \
+        openssh-client-default python3 py3-aiohttp py3-pillow \
         libgcc libstdc++ ca-certificates
 
 ENV USE_BUILTIN_RIPGREP=0 \
@@ -19,6 +19,9 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
     && chmod +x /usr/local/bin/claude \
     && rm -rf /root/.local /root/.claude /root/.claude.json \
     && claude --version
+
+ARG BUILD_VERSION
+ENV BUILD_VERSION=${BUILD_VERSION}
 
 COPY rootfs/ /
 RUN chmod +x /usr/local/bin/ha-* /run.sh

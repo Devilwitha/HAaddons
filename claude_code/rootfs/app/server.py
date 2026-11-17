@@ -2,15 +2,24 @@
 
 Startet `claude` im stream-json-Modus, leitet Ausgaben per WebSocket an den Browser
 weiter, zeigt Erlaubnis-Abfragen als Buttons und übernimmt Login + Remote Control.
+
+Bilder: Der Browser lädt sie per HTTP hoch (/api/upload, Ingress-WebSockets vertragen nur ~4 MB pro
+Nachricht). Für Claude wird eine verkleinerte Fassung in /data/uploads abgelegt, das Original kommt nach
+/share/claude/uploads, damit Claude es auch weiterverwenden kann (z. B. nach /config/www kopieren).
 """
 import asyncio
+import base64
+import io
 import json
 import logging
 import os
 import re
 import shutil
 import time
+import uuid
+from datetime import datetime
 from pathlib import Path
+from urllib.parse import unquote
 
 from aiohttp import web, WSMsgType
 
@@ -21,8 +30,16 @@ CWD = os.environ.get("CC_CWD", "/config")
 PORT = int(os.environ.get("CC_PORT", "8099"))
 STATIC = Path(__file__).with_name("static")
 OPTIONS_FILE = Path(os.environ.get("CC_OPTIONS", "/data/options.json"))
-CLAUDE = shutil.which("claude") or "claude"
+CLAUDE = os.environ.get("CC_CLAUDE") or shutil.which("claude") or "claude"
 EXTRA_ARGS = json.loads(os.environ.get("CC_EXTRA_ARGS", "[]"))  # nur für lokale Tests
+UPLOAD_DIR = Path(os.environ.get("CC_UPLOADS", "/data/uploads"))            # Fassung für Claude
+ORIGINAL_DIR = Path(os.environ.get("CC_ORIGINALS", "/share/claude/uploads"))  # Originale
+MAX_UPLOAD = 15 * 1024 * 1024       # Ingress nimmt höchstens 16 MB pro Anfrage an
+MAX_EDGE = 1568                     # längste Kante, mehr nutzt Claude nicht
+MAX_IMAGES = 10
+IMAGE_ID = re.compile(r"[0-9a-f]{32}")
+ATTACH_NOTE = re.compile(r"\n*\[Angehängte Bilder \(Originale\): [^\]]*\]\s*$")
+VERSION_TAG = f"{os.environ.get('BUILD_VERSION', 'dev')}-{int(time.time())}"
 
 
 def options() -> dict:
@@ -129,10 +146,23 @@ class Runner:
         self.proc.stdin.write((json.dumps(obj) + "\n").encode())
         await self.proc.stdin.drain()
 
-    async def send(self, text: str):
+    async def send(self, text: str, images: list[str] | None = None):
+        content: str | list = text
+        if images:
+            blocks, originals = [], []
+            for image_id in images:
+                info = uploaded_image(image_id)
+                blocks.append({"type": "image", "source": {
+                    "type": "base64", "media_type": info["media_type"],
+                    "data": base64.b64encode(info["path"].read_bytes()).decode()}})
+                if info.get("original"):
+                    originals.append(info["original"])
+            note = f"\n\n[Angehängte Bilder (Originale): {', '.join(originals)}]" if originals else ""
+            blocks.append({"type": "text", "text": (text or "Siehe Bild.") + note})
+            content = blocks
         self.busy = True
         await broadcast({"t": "busy", "busy": True})
-        await self._write({"type": "user", "message": {"role": "user", "content": text},
+        await self._write({"type": "user", "message": {"role": "user", "content": content},
                            "parent_tool_use_id": None, "session_id": self.session_id or "default"})
 
     async def approve_all_pending(self):
@@ -254,14 +284,115 @@ async def reset_runner(session_id: str | None):
     await broadcast({"t": "busy", "busy": False})
 
 
+# --------------------------------------------------------------------------- Bilder
+def _image_meta(image_id: str) -> Path:
+    return UPLOAD_DIR / f"{image_id}.json"
+
+
+def uploaded_image(image_id: str) -> dict:
+    if not IMAGE_ID.fullmatch(image_id or ""):
+        raise ValueError("Ungültiges Bild")
+    try:
+        meta = json.loads(_image_meta(image_id).read_text())
+    except (OSError, ValueError):
+        raise ValueError("Bild nicht mehr vorhanden – bitte neu anhängen") from None
+    meta["path"] = UPLOAD_DIR / meta["file"]
+    if not meta["path"].is_file():
+        raise ValueError("Bild nicht mehr vorhanden – bitte neu anhängen")
+    return meta
+
+
+def _safe_name(name: str) -> str:
+    stem = Path(name).stem
+    for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("Ä", "Ae"), ("Ö", "Oe"), ("Ü", "Ue"), ("ß", "ss")):
+        stem = stem.replace(a, b)
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-")[:40]
+    return stem or "bild"
+
+
+def store_image(data: bytes, filename: str) -> dict:
+    """Bild prüfen, für Claude verkleinern und das Original ablegen."""
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except (UnidentifiedImageError, OSError) as err:
+        raise ValueError("Kein lesbares Bild (JPG, PNG, WebP oder GIF)") from err
+    fmt = (img.format or "").upper()
+    img = ImageOps.exif_transpose(img)
+    has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+    img.thumbnail((MAX_EDGE, MAX_EDGE))
+    out = io.BytesIO()
+    if has_alpha:
+        img.convert("RGBA").save(out, "PNG", optimize=True)
+        media_type, ext = "image/png", "png"
+    if not has_alpha or out.tell() > 3_500_000:
+        out = io.BytesIO()
+        img.convert("RGB").save(out, "JPEG", quality=85)
+        media_type, ext = "image/jpeg", "jpg"
+    image_id = uuid.uuid4().hex
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    (UPLOAD_DIR / f"{image_id}.{ext}").write_bytes(out.getvalue())
+    original = ""
+    try:
+        ORIGINAL_DIR.mkdir(parents=True, exist_ok=True)
+        orig_ext = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "GIF": "gif"}.get(fmt, ext)
+        base = f"{datetime.now():%Y%m%d-%H%M%S}-{_safe_name(filename)}"
+        target = ORIGINAL_DIR / f"{base}.{orig_ext}"
+        n = 2
+        while target.exists():
+            target = ORIGINAL_DIR / f"{base}-{n}.{orig_ext}"
+            n += 1
+        target.write_bytes(data)
+        original = target.as_posix()
+    except OSError:
+        log.exception("Original nicht gespeichert")
+    meta = {"file": f"{image_id}.{ext}", "media_type": media_type, "original": original,
+            "name": filename, "width": img.width, "height": img.height}
+    _image_meta(image_id).write_text(json.dumps(meta))
+    return {"id": image_id, **meta}
+
+
+def cleanup_uploads():
+    """Fassungen für Claude nach 2 Tagen, Originale nach 30 Tagen löschen."""
+    now = time.time()
+    for folder, days in ((UPLOAD_DIR, 2), (ORIGINAL_DIR, 30)):
+        if not folder.is_dir():
+            continue
+        for f in folder.iterdir():
+            try:
+                if f.is_file() and now - f.stat().st_mtime > days * 86400:
+                    f.unlink()
+            except OSError:
+                pass
+
+
 # --------------------------------------------------------------------------- Verlauf
-def _user_text(content) -> str | None:
+def _user_parts(content) -> tuple[str | None, list[int]]:
+    """Text (ohne Hinweis auf die Originale) und Positionen der Bilder einer Benutzer-Nachricht.
+
+    Text None = keine eigene Nachricht (z. B. Werkzeug-Ergebnisse)."""
     if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
-        return "\n".join(parts) if parts else None
-    return None
+        return content, []
+    if not isinstance(content, list):
+        return None, []
+    if any(isinstance(c, dict) and c.get("type") == "tool_result" for c in content):
+        return None, []
+    texts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
+    images = [i for i, c in enumerate(content) if isinstance(c, dict) and c.get("type") == "image"]
+    if not texts and not images:
+        return None, []
+    text = ATTACH_NOTE.sub("", "\n".join(texts))
+    if images and text == "Siehe Bild.":
+        text = ""
+    return text, images
+
+
+def _user_text(content) -> str | None:
+    text, images = _user_parts(content)
+    if text is None:
+        return None
+    return text or ("Bild" if images else text)
 
 
 def read_history(session_id: str) -> list[dict]:
@@ -269,7 +400,7 @@ def read_history(session_id: str) -> list[dict]:
     out = []
     if not f.is_file():
         return out
-    for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+    for n, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines()):
         try:
             o = json.loads(line)
         except ValueError:
@@ -278,11 +409,12 @@ def read_history(session_id: str) -> list[dict]:
             continue
         t, msg = o.get("type"), o.get("message") or {}
         if t == "user":
-            txt = _user_text(msg.get("content"))
+            txt, images = _user_parts(msg.get("content"))
             if txt is not None:
                 if txt.lstrip().startswith("<") or txt.startswith("[Request interrupted"):
                     continue
-                out.append({"t": "user_text", "text": txt})
+                out.append({"t": "user_text", "text": txt,
+                            "images": [f"api/sessions/{session_id}/image/{n}/{i}" for i in images]})
             else:
                 out.append({"t": "user", "message": msg})
         elif t == "assistant":
@@ -471,7 +603,68 @@ class RemoteControl:
 
 # --------------------------------------------------------------------------- HTTP
 async def index(_req):
-    return web.FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+    # ?v= an Skripte und Stylesheets: die HA-App hält statische Dateien sonst stundenlang im Cache
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    html = re.sub(r'(static/[\w.-]+\.(?:js|css))"', lambda m: f'{m.group(1)}?v={VERSION_TAG}"', html)
+    return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
+@web.middleware
+async def static_no_cache(request, handler):
+    response = await handler(request)
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+async def api_upload(req):
+    data = await req.read()
+    if not data:
+        raise web.HTTPBadRequest(text="Leere Datei")
+    if len(data) > MAX_UPLOAD:
+        raise web.HTTPRequestEntityTooLarge(max_size=MAX_UPLOAD, actual_size=len(data),
+                                            text="Bild größer als 15 MB")
+    try:
+        name = unquote(req.headers.get("X-Filename") or "bild")
+        info = await asyncio.to_thread(store_image, data, name)
+    except ValueError as err:
+        raise web.HTTPBadRequest(text=str(err))
+    log.info("Bild angehängt: %s (%sx%s)", info["name"], info["width"], info["height"])
+    return web.json_response({"id": info["id"], "url": f"api/upload/{info['id']}", "name": info["name"],
+                              "original": info["original"]})
+
+
+async def api_upload_get(req):
+    try:
+        info = uploaded_image(req.match_info["id"])
+    except ValueError:
+        raise web.HTTPNotFound()
+    return web.FileResponse(info["path"], headers={"Content-Type": info["media_type"],
+                                                   "Cache-Control": "private, max-age=86400"})
+
+
+async def api_session_image(req):
+    """Bild aus dem gespeicherten Verlauf (Zeile der JSONL-Datei, Position in der Nachricht)."""
+    sid = req.match_info["sid"]
+    if not re.fullmatch(r"[0-9a-f-]{36}", sid):
+        raise web.HTTPBadRequest()
+    line_no, idx = int(req.match_info["line"]), int(req.match_info["idx"])
+    f = projects_dir() / f"{sid}.jsonl"
+    try:
+        block = None
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            for n, line in enumerate(fh):
+                if n == line_no:
+                    block = json.loads(line)["message"]["content"][idx]
+                    break
+        if not block:
+            raise web.HTTPNotFound()
+        src = block["source"]
+        data = base64.b64decode(src["data"])
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        raise web.HTTPNotFound()
+    return web.Response(body=data, content_type=src.get("media_type") or "image/jpeg",
+                        headers={"Cache-Control": "private, max-age=86400"})
 
 
 async def api_status(_req):
@@ -532,8 +725,11 @@ async def ws_handler(req):
             t = d.get("t")
             try:
                 if t == "send":
+                    images = [i for i in (d.get("images") or []) if isinstance(i, str)][:MAX_IMAGES]
+                    for image_id in images:
+                        uploaded_image(image_id)  # vor dem Start prüfen
                     r = await ensure_runner(d.get("session"))
-                    await r.send(d.get("text", ""))
+                    await r.send(d.get("text", ""), images)
                 elif t == "perm" and runner:
                     await runner.answer(d["id"], bool(d.get("allow")), bool(d.get("always")), d.get("answers"))
                 elif t == "auto":
@@ -554,13 +750,17 @@ async def ws_handler(req):
 
 
 async def on_startup(app):
+    await asyncio.to_thread(cleanup_uploads)
     app["rc"] = asyncio.create_task(RemoteControl.loop())
 
 
 def main():
-    app = web.Application()
+    app = web.Application(middlewares=[static_no_cache], client_max_size=MAX_UPLOAD + 1024 * 1024)
     app.add_routes([
         web.get("/", index),
+        web.post("/api/upload", api_upload),
+        web.get("/api/upload/{id}", api_upload_get),
+        web.get(r"/api/sessions/{sid}/image/{line:\d+}/{idx:\d+}", api_session_image),
         web.get("/ws", ws_handler),
         web.get("/api/status", api_status),
         web.get("/api/sessions", api_sessions),

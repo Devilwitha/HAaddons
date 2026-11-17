@@ -79,14 +79,18 @@
 
     <div class="composer-wrap">
       <form id="composer" class="composer">
+        <div id="attachments" class="attachments hidden"></div>
         <textarea id="input" rows="1" placeholder="Schreib Claude, was geändert werden soll …"></textarea>
         <div class="composer-row">
+          <button id="btn-attach" class="icon-btn attach" type="button" title="Bild anhängen (auch einfügen oder hierher ziehen)" aria-label="Bild anhängen">
+            <svg viewBox="0 0 24 24"><path d="M20.5 11.5l-8.1 8.1a5 5 0 01-7.1-7.1l8.5-8.5a3.3 3.3 0 014.7 4.7l-8.5 8.5a1.7 1.7 0 01-2.4-2.4l7.8-7.8"/></svg></button>
+          <input id="file" type="file" accept="image/*" multiple hidden>
           <button id="btn-auto" class="auto-toggle" type="button" role="switch" aria-checked="false"
                   title="Automatisch: Claude führt Änderungen ohne Rückfrage aus">
             <span class="switch"><span class="knob"></span></span>
             <span class="auto-label">Nachfragen</span>
           </button>
-          <span class="muted small hint only-desktop">Enter senden · Shift+Enter neue Zeile</span>
+          <span class="muted small hint only-desktop">Enter senden · Shift+Enter neue Zeile · Bilder einfügen mit Strg+V</span>
           <button id="btn-send" class="send" type="submit" aria-label="Senden" disabled>
             <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
           <button id="btn-stop" class="send stop hidden" type="button" aria-label="Stoppen">
@@ -94,8 +98,11 @@
         </div>
       </form>
     </div>
+    <div id="drop" class="drop hidden"><div>Bild hier ablegen</div></div>
   </main>
 </div>
+
+<div id="lightbox" class="lightbox hidden" role="dialog" aria-label="Bild"><img alt=""></div>
 
 <script src="static/marked.min.js"></script>
 <script src="static/purify.min.js"></script>

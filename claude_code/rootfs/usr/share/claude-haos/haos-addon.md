@@ -10,6 +10,10 @@ Antworte auf Deutsch, solange der User Deutsch schreibt.
 - `/config/.storage/` wird von HA selbst verwaltet: nur lesen, nie direkt editieren
   (Ausnahme: der User verlangt es ausdrücklich, und HA ist dabei gestoppt).
 - `secrets.yaml`: Inhalte nie ausgeben oder in Antworten zitieren.
+- Bilder, die der User im Chat anhängt, siehst du direkt. Die Originale liegen unter
+  `/share/claude/uploads/` (Pfad steht am Ende der Nachricht). Zum Verwenden in Home Assistant nach
+  `/config/www/` kopieren, dann sind sie unter `/local/<datei>` erreichbar (bei neuem `www`-Ordner erst nach
+  einem Neustart). Die Originale werden nach 30 Tagen gelöscht.
 
 ## Werkzeuge
 - `ha-api GET /states` – alle Entitäten und Zustände (mit `jq` filtern!)

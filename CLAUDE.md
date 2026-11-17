@@ -14,6 +14,16 @@ im Add-on-Container laufen, liegen ebenfalls im Hauptordner (`pc_agent/`, `retro
 - Python 4 Leerzeichen; YAML/JSON/JS/HTML/CSS 2 Leerzeichen. Keine Platzhalter/TODOs.
 - Oberflächen laufen hinter Ingress: nur relative URLs, keine externen CDNs, Zugriff nur von 172.30.32.2.
 
+## Claude Code (`claude_code/`)
+Chat-Oberfläche (`rootfs/app/server.py` + `static/`), startet `claude` im stream-json-Modus, Erlaubnis-Abfragen
+über `--permission-prompt-tool stdio`, Verlauf aus den JSONL-Dateien unter `~/.claude/projects/-config/`.
+- Bilder: Upload per HTTP `/api/upload` (Ingress-WebSockets nur ~4 MB pro Nachricht), Pillow verkleinert auf
+  1568 px nach `/data/uploads` (2 Tage), Original nach `/share/claude/uploads` (30 Tage). Gesendet als
+  `image`-Blöcke plus Text mit `[Angehängte Bilder (Originale): …]` (wird in der Anzeige entfernt). Verlauf liefert
+  Bilder über `/api/sessions/<id>/image/<zeile>/<block>` aus der JSONL.
+- Lokal testen: `CC_CLAUDE` auf ein Ersatz-`claude` (antwortet auf `auth status --json`, stream-json, schreibt JSONL
+  nach `CLAUDE_CONFIG_DIR`), dazu `CC_CWD`, `CC_UPLOADS`, `CC_ORIGINALS`, `CC_OPTIONS`, `CC_UI_SETTINGS`, `CC_PORT`.
+
 ## Sensoren (`ha_sensors.py`)
 - Identische Datei in `gba_emulator/`, `n64_emulator/` und `switch2_remote_play/app/`: MQTT-Discovery
   (Gerät „BolliSoft“, Topics `bollisoft/<node>/…`) oder REST-API über den Supervisor, Option `use_mqtt`.

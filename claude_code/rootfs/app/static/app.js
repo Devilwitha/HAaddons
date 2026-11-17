@@ -70,7 +70,29 @@ function showThinking() {
 function hideThinking() { if (S.thinkingEl) { S.thinkingEl.remove(); S.thinkingEl = null; } }
 
 // ------------------------------------------------------------------ Rendering
-function renderUser(text) { add(el("div", "msg-user", esc(text)), true); }
+function renderUser(text, images = []) {
+  const box = el("div", "msg-user" + (images.length ? " with-images" : ""));
+  if (images.length) {
+    const grid = el("div", "msg-images" + (images.length === 1 ? " one" : ""));
+    for (const src of images) {
+      const img = el("img");
+      img.src = src; img.alt = "Angehängtes Bild"; img.loading = "lazy";
+      img.onclick = () => openLightbox(src);
+      grid.append(img);
+    }
+    box.append(grid);
+  }
+  if (text) box.append(el("div", "mt", esc(text)));
+  add(box, true);
+}
+
+function openLightbox(src) {
+  const lb = $("#lightbox");
+  lb.querySelector("img").src = src;
+  lb.classList.remove("hidden");
+}
+$("#lightbox").onclick = () => $("#lightbox").classList.add("hidden");
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#lightbox").classList.add("hidden"); });
 
 let renderPending = false;
 function onDelta(text) {
@@ -276,7 +298,7 @@ async function openSession(id, notify = true) {
   S.session = id; clearChat(); permCards.clear();
   const hist = await (await fetch(`api/sessions/${id}`)).json();
   for (const h of hist) {
-    if (h.t === "user_text") renderUser(h.text);
+    if (h.t === "user_text") renderUser(h.text, h.images || []);
     else if (h.t === "assistant") renderAssistant(h.message);
     else if (h.t === "user") renderToolResults(h.message);
   }
@@ -288,7 +310,7 @@ function newChat() { closeSide(); send({ t: "new" }); S.session = null; clearCha
 
 // ------------------------------------------------------------------ Eingabe
 const input = $("#input");
-function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 220) + "px"; $("#btn-send").disabled = !input.value.trim(); }
+function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 220) + "px"; updateSend(); }
 input.addEventListener("input", autosize);
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing && matchMedia("(min-width: 821px)").matches) { e.preventDefault(); $("#composer").requestSubmit(); }
@@ -296,11 +318,112 @@ input.addEventListener("keydown", (e) => {
 $("#composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
-  if (!text || S.busy) return;
-  renderUser(text);
-  send({ t: "send", text, session: S.session });
+  const ready = S.att.filter((a) => a.status === "ok");
+  if ((!text && !ready.length) || S.busy || S.att.some((a) => a.status === "up")) return;
+  renderUser(text, ready.map((a) => a.url));
+  send({ t: "send", text, images: ready.map((a) => a.id), session: S.session });
   setBusy(true);
-  input.value = ""; autosize();
+  input.value = ""; clearAttachments(); autosize();
+});
+
+// ------------------------------------------------------------------ Bilder anhängen
+const MAX_ATT = 10, MAX_BYTES = 15 * 1024 * 1024;
+S.att = [];
+
+function updateSend() {
+  const ready = S.att.some((a) => a.status === "ok");
+  const uploading = S.att.some((a) => a.status === "up");
+  $("#btn-send").disabled = uploading || (!input.value.trim() && !ready);
+}
+
+function renderAttachments() {
+  const box = $("#attachments");
+  box.innerHTML = "";
+  box.classList.toggle("hidden", !S.att.length);
+  for (const a of S.att) {
+    const item = el("div", `att ${a.status}`);
+    item.title = a.error || a.name;
+    const img = el("img"); img.src = a.preview; img.alt = a.name;
+    img.onclick = () => openLightbox(a.preview);
+    const x = el("button", "att-x", "×");
+    x.type = "button"; x.setAttribute("aria-label", "Entfernen");
+    x.onclick = () => { URL.revokeObjectURL(a.preview); S.att = S.att.filter((b) => b !== a); renderAttachments(); };
+    item.append(img, x);
+    if (a.status === "up") item.append(el("span", "att-spin"));
+    if (a.status === "err") item.append(el("span", "att-err", "!"));
+    box.append(item);
+  }
+  const err = S.att.find((a) => a.status === "err");
+  if (err) box.append(el("div", "att-msg", esc(err.error)));
+  updateSend();
+}
+
+function clearAttachments() {
+  for (const a of S.att) URL.revokeObjectURL(a.preview);
+  S.att = [];
+  renderAttachments();
+}
+
+/** Sehr große Bilder vor dem Hochladen verkleinern (Ingress nimmt höchstens 16 MB an). */
+async function shrink(file) {
+  if (file.size <= MAX_BYTES) return file;
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 4096 / Math.max(bmp.width, bmp.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+  canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.9));
+  return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+}
+
+async function uploadAttachment(a, file) {
+  try {
+    const body = await shrink(file);
+    const res = await fetch("api/upload", {
+      method: "POST", body,
+      headers: { "Content-Type": body.type || "application/octet-stream", "X-Filename": encodeURIComponent(file.name || "bild") },
+    });
+    if (!res.ok) throw new Error((await res.text()) || `Fehler ${res.status}`);
+    const r = await res.json();
+    Object.assign(a, { status: "ok", id: r.id, url: r.url });
+  } catch (e) {
+    Object.assign(a, { status: "err", error: `${a.name}: ${e.message || "Hochladen fehlgeschlagen"}` });
+  }
+  renderAttachments();
+}
+
+function addFiles(files) {
+  const images = [...files].filter((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|gif|heic)$/i.test(f.name));
+  if (!images.length) return;
+  for (const file of images) {
+    if (S.att.length >= MAX_ATT) { alert(`Höchstens ${MAX_ATT} Bilder pro Nachricht.`); break; }
+    const a = { status: "up", name: file.name || "Bild", preview: URL.createObjectURL(file) };
+    S.att.push(a);
+    uploadAttachment(a, file);
+  }
+  renderAttachments();
+  input.focus();
+}
+
+$("#btn-attach").onclick = () => $("#file").click();
+$("#file").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
+document.addEventListener("paste", (e) => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.some((f) => f.type.startsWith("image/")) && !$("#app").classList.contains("hidden")) {
+    e.preventDefault();
+    addFiles(files);
+  }
+});
+let dragDepth = 0;
+const mainEl = document.querySelector(".main");
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+mainEl.addEventListener("dragenter", (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; $("#drop").classList.remove("hidden"); });
+mainEl.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+mainEl.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("#drop").classList.add("hidden"); } });
+mainEl.addEventListener("drop", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; $("#drop").classList.add("hidden");
+  addFiles(e.dataTransfer.files);
 });
 $("#btn-stop").onclick = () => send({ t: "stop" });
 

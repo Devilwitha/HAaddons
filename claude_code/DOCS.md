@@ -24,6 +24,19 @@ aus. Das gilt auch für Remote Control in der Claude App. Nur wenn Claude dir ei
 echte Frage stellt (Auswahl), wartet es auf deine Antwort. Die Einstellung bleibt
 gespeichert.
 
+## Bilder anhängen
+Mit der **Büroklammer** im Eingabefeld hängst du Bilder an, am Handy auch direkt mit der Kamera. Am PC geht
+es auch mit **Strg+V** (z. B. ein Screenshot) oder per Ziehen und Ablegen. Bis zu 10 Bilder pro Nachricht,
+JPG, PNG, WebP oder GIF.
+
+Claude sieht die Bilder und kann sie beschreiben oder auswerten. Beispiele: „Was bedeutet diese
+Fehlermeldung?“ mit einem Screenshot, „Baue mir eine Karte wie auf dem Bild“ oder „Nimm das Foto als
+Hintergrund fürs Dashboard“.
+
+Für Claude wird jedes Bild auf höchstens 1568 Pixel verkleinert. Das Original liegt unter
+`/share/claude/uploads/`, damit Claude es auch weiterverwenden kann, z. B. nach `/config/www` kopieren.
+Originale werden nach 30 Tagen gelöscht.
+
 ## Optionen
 | Option | Bedeutung |
 |---|---|
