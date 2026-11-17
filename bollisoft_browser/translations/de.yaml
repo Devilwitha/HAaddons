@@ -1,0 +1,16 @@
+configuration:
+  start_url:
+    name: Startseite
+    description: >-
+      Optional eine Adresse, die ein neuer Browser öffnet und die der Haus-Knopf lädt, z. B. http://192.168.178.1.
+      Leer = eigene Startseite mit Lesezeichen und den Geräten aus Home Assistant.
+  ignore_certificate_errors:
+    name: Zertifikatsfehler ignorieren
+    description: >-
+      Geräte im Heimnetz (Router, Drucker, NAS) haben meist selbst signierte Zertifikate. Eingeschaltet öffnen
+      sich solche HTTPS-Seiten ohne Warnung.
+  idle_minutes:
+    name: Pausieren nach (Minuten)
+    description: >-
+      Chromium wird beendet, wenn so lange niemand den Browser offen hat, und spart so Arbeitsspeicher. Offene Tabs
+      kommen beim nächsten Öffnen wieder. 0 = immer laufen lassen.

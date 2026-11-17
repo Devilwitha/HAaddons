@@ -151,6 +151,32 @@ bleibt draußen).
   THEMES_PORT=… python bollisoft_themes/app/server.py` gegen einen Ersatz-Supervisor (Dienste, `check_config`,
   WebSocket mit `frontend/get_themes` und `lovelace/resources*`).
 
+## BolliSoft Browser (`bollisoft_browser/`)
+Chromium (headless, Alpine-Paket) im Add-on, bedient über Ingress. `app/browser.py` (Prozess, DevTools-Protokoll über
+WebSocket auf 127.0.0.1 mit `--remote-debugging-port=0` + `DevToolsActivePort`, Tabs, Bild, Eingaben, Dialoge,
+Downloads), `server.py` (Ingress, `/ws`, Startseite, Lesezeichen, Upload, Downloads), `hass.py` (Geräte mit
+`configuration_url` über `config/device_registry/list`).
+- Bild: `Page.startScreencast` (JPEG) des aktiven Tabs → binär an den Browser (4 Byte Länge + JSON-Kopf + JPEG).
+  Der Browser schickt nach dem Zeichnen `ack`; erst dann bekommt er das nächste Bild, und erst dann bestätigt der
+  Server Chromium das Bild (spätestens nach 1 s) – so viele Bilder, wie der schnellste Zuschauer schafft.
+- Größe: `Emulation.setDeviceMetricsOverride` aus Fenstergröße, Zoom und Pixeldichte (höchstens 2560 px); Ansicht
+  „Handy“ = `mobile` + Android-User-Agent. Bestimmt vom zuletzt geöffneten Fenster bzw. von dem, das zuletzt etwas
+  eingegeben hat. „HeadlessChrome“ wird aus dem User-Agent entfernt.
+- `<select>`-Popups fehlen im Screencast: vor jedem Linksklick prüft `PICK_JS` per `Runtime.evaluate` das Element
+  (auch Iframes gleicher Herkunft, Shadow DOM), die Oberfläche zeigt die Liste, `CHOOSE_JS` setzt den Wert.
+- Basic Auth über `Fetch.enable` mit `handleAuthRequests`, nur für `resourceType: Document` (sonst würde jede Anfrage
+  angehalten). Gemerkte Anmeldungen in `/data/logins.json` (0600). Dateiauswahl über
+  `Page.setInterceptFileChooserDialog` + Upload in 8-MB-Teilen + `DOM.setFileInputFiles`. Downloads per
+  `Browser.setDownloadBehavior` (`allowAndName`) nach `/share/browser/downloads/.laden`, danach umbenannt.
+- Chromium läuft als Benutzer `browser` (ohne Root, `--no-sandbox` nötig im Container) mit eigener, leerer Umgebung
+  ohne `SUPERVISOR_TOKEN`. `file:`, `chrome:` usw. sind in der Adresszeile gesperrt.
+- Ohne Zuschauer nach `idle_minutes` beendet; Tabs in `/data/session.json`, beim Start wiederhergestellt.
+- Lokal testen: `BROWSER_CHROMIUM=<msedge.exe oder chromium> BROWSER_DATA=… BROWSER_OPTIONS=… BROWSER_DOWNLOADS=…
+  BROWSER_NO_GUARD=1 BROWSER_PORT=… SUPERVISOR_TOKEN=x BROWSER_SUPERVISOR_URL=… python bollisoft_browser/app/server.py`
+  (Ersatz-Supervisor mit WebSocket `config/device_registry/list` und `config/area_registry/list`). Ein zweiter
+  DevTools-Client (z. B. Playwright `connect_over_cdp`) schließt Dialoge selbst und leitet Downloads um – im Test
+  `page.on("dialog", …)` setzen und Downloads vorher prüfen.
+
 ## BolliSoft Kamera (`esp32cam/`)
 ESP32-CAM-Firmware (PlatformIO, Arduino-Core 2.x über espressif32@6.9.0) für WerWarDas und Vorrat.
 - `/capture` (`?led=0..255`, `?flash=1`, `?settle=`), Livestream auf **eigenem** `esp_http_server` Port 81

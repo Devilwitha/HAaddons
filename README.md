@@ -53,6 +53,12 @@ zusammenklicken lassen (Farben, Hell/Dunkel, Hintergrund mit Leuchten oder Bild,
 Dazu drei Karten fürs Dashboard: Glow-Karte (Sensor mit leuchtendem Rand und Verlauf), Raum-Karte (Temperatur,
 Luftfeuchte, Schaltknöpfe) und Personen-Karte (wer ist da, Akku des Handys). Details: [DOCS.md](bollisoft_themes/DOCS.md)
 
+### [BolliSoft Browser](bollisoft_browser/)
+Ein Webbrowser in der HA-Seitenleiste: öffnet Router, Drucker, NAS, ESPHome und andere Geräte im Heimnetz auch
+von unterwegs, ohne VPN. Im Add-on läuft ein echter Chromium, die Seitenleiste zeigt das Bild und gibt Maus, Touch
+und Tastatur weiter. Mit Tabs, Lesezeichen, den Geräten aus Home Assistant auf der Startseite, Passwortabfragen,
+Datei-Upload (Firmware) und Downloads. Details: [DOCS.md](bollisoft_browser/DOCS.md)
+
 ### [BolliSoft Kamera](esp32cam/) (ESP32-CAM-Firmware)
 Macht aus einer ESP32-CAM eine WLAN-Kamera für Vorrat und WerWarDas: Foto mit dimmbarer LED, Livestream,
 Einrichtung über einen eigenen Hotspot und automatische Updates von GitHub. Details: [README](esp32cam/README.md)

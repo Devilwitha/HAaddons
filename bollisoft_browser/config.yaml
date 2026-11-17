@@ -1,0 +1,35 @@
+name: BolliSoft Browser
+version: "1.0.0"
+slug: bollisoft_browser
+description: Webbrowser in der HA-Seitenleiste – öffnet Router, Drucker, ESP und andere Geräte im Heimnetz auch von unterwegs (von BolliSoft)
+url: https://github.com/Devilwitha/HAaddons/tree/main/bollisoft_browser
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+
+# Browser in der HA-Seitenleiste (nur für Administratoren)
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:web
+panel_title: Browser
+panel_admin: true
+
+# Geräte mit Weboberfläche aus der HA-Geräteliste (configuration_url) auf der Startseite
+homeassistant_api: true
+
+# Downloads nach /share/browser/downloads (auch über Samba erreichbar)
+map:
+  - type: share
+    read_only: false
+
+options:
+  start_url: ""
+  ignore_certificate_errors: true
+  idle_minutes: 30
+schema:
+  start_url: str?
+  ignore_certificate_errors: bool
+  idle_minutes: int(0,1440)
