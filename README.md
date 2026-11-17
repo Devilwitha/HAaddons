@@ -47,6 +47,12 @@ Vision-Modell über Ollama und führt die Liste je Ort von selbst: zwei Dosen in
 heraus – noch eine da. Mit Verlauf, Korrektur von Hand, Mindestbestand mit Einkaufsliste und Sensoren je
 Vorrat. Details: [DOCS.md](vorrat/DOCS.md)
 
+### [BolliSoft Themes](bollisoft_themes/)
+14 fertige Designs für Home Assistant und ein Editor mit Live-Vorschau, mit dem sich eigene Themes ohne YAML
+zusammenklicken lassen (Farben, Hell/Dunkel, Hintergrund mit Leuchten oder Bild, Rundung, Schatten, Schrift).
+Dazu drei Karten fürs Dashboard: Glow-Karte (Sensor mit leuchtendem Rand und Verlauf), Raum-Karte (Temperatur,
+Luftfeuchte, Schaltknöpfe) und Personen-Karte (wer ist da, Akku des Handys). Details: [DOCS.md](bollisoft_themes/DOCS.md)
+
 ### [BolliSoft Kamera](esp32cam/) (ESP32-CAM-Firmware)
 Macht aus einer ESP32-CAM eine WLAN-Kamera für Vorrat und WerWarDas: Foto mit dimmbarer LED, Livestream,
 Einrichtung über einen eigenen Hotspot und automatische Updates von GitHub. Details: [README](esp32cam/README.md)

@@ -1,0 +1,212 @@
+# ------------------------------------------------------------------
+#  PicoDesk – Home Assistant Theme
+#  Nachempfunden der "Pico Steuerung" (http://192.168.1.100)
+#  Dunkles Glass-Design · Akzent Cyan #38bdf8 → Lila #a855f7
+# ------------------------------------------------------------------
+PicoDesk:
+  # Nur Dark-Mode -> HA nutzt intern die dunklen Standardwerte
+  modes:
+    dark:
+      # ---------- Palette ----------
+      pico-bg-1: "#0b1120"
+      pico-bg-2: "#1e293b"
+      pico-accent: "#38bdf8"
+      pico-accent-rgb: "56, 189, 248"
+      pico-accent-2: "#a855f7"
+      pico-accent-2-rgb: "168, 85, 247"
+      pico-gruen: "#4ade80"
+      pico-rot: "#f87171"
+      pico-card: "rgba(30, 41, 59, 0.72)"
+      pico-card-border: "rgba(255, 255, 255, 0.12)"
+      pico-text: "#f1f5f9"
+      pico-text-dim: "#b4c0d3"
+
+      # ---------- Grundfarben ----------
+      primary-color: "var(--pico-accent)"
+      accent-color: "var(--pico-accent-2)"
+      dark-primary-color: "#0ea5e9"
+      light-primary-color: "#7dd3fc"
+      primary-text-color: "var(--pico-text)"
+      secondary-text-color: "var(--pico-text-dim)"
+      text-primary-color: "#0b1120"
+      text-light-primary-color: "var(--pico-text)"
+      disabled-text-color: "#8291a8"
+      divider-color: "var(--pico-card-border)"
+      outline-color: "var(--pico-card-border)"
+      rgb-primary-color: "var(--pico-accent-rgb)"
+      rgb-accent-color: "var(--pico-accent-2-rgb)"
+      rgb-primary-text-color: "241, 245, 249"
+      rgb-secondary-text-color: "180, 192, 211"
+      rgb-text-primary-color: "11, 17, 32"
+      rgb-white-color: "255, 255, 255"
+      rgb-black-color: "0, 0, 0"
+
+      # ---------- Hintergrund (Leuchtflecken wie im Original) ----------
+      primary-background-color: "var(--pico-bg-1)"
+      secondary-background-color: "var(--pico-bg-2)"
+      card-background-color: "var(--pico-bg-2)"
+      lovelace-background: >-
+        radial-gradient(60vmax circle at 0% 0%, rgba(56, 189, 248, 0.22), transparent 60%),
+        radial-gradient(60vmax circle at 100% 100%, rgba(168, 85, 247, 0.22), transparent 60%),
+        #0b1120 fixed
+
+      # ---------- Karten ----------
+      ha-card-background: "var(--pico-card)"
+      ha-card-border-radius: "26px"
+      ha-card-border-width: "1px"
+      ha-card-border-color: "var(--pico-card-border)"
+      ha-card-box-shadow: "0 20px 60px rgba(0, 0, 0, 0.45)"
+      ha-card-header-color: "var(--pico-text)"
+      ha-card-header-font-size: "21px"
+      ha-dialog-border-radius: "26px"
+      mdc-theme-surface: "#131c2f"
+      dialog-backdrop-filter: "blur(8px)"
+      ha-dialog-surface-background: "#131c2f"
+      ha-dialog-scrim-backdrop-filter: "blur(8px)"
+
+      # ---------- Kopfzeile ----------
+      app-header-background-color: "rgba(11, 17, 32, 0.6)"
+      app-header-text-color: "var(--pico-text)"
+      app-header-selection-bar-color: "var(--pico-accent)"
+      app-header-edit-background-color: "#1e293b"
+
+      # ---------- Seitenleiste ----------
+      sidebar-background-color: "rgba(11, 17, 32, 0.85)"
+      sidebar-text-color: "var(--pico-text-dim)"
+      sidebar-icon-color: "var(--pico-text-dim)"
+      sidebar-selected-text-color: "var(--pico-accent)"
+      sidebar-selected-icon-color: "var(--pico-accent)"
+      sidebar-menu-button-text-color: "var(--pico-text)"
+      sidebar-menu-button-background-color: "transparent"
+
+      # ---------- Status-Farben ----------
+      state-icon-color: "var(--pico-text-dim)"
+      state-icon-active-color: "var(--pico-accent)"
+      state-active-color: "var(--pico-accent)"
+      state-inactive-color: "var(--pico-text-dim)"
+      state-on-color: "var(--pico-accent)"
+      state-off-color: "var(--pico-text-dim)"
+      state-unavailable-color: "rgba(148, 163, 184, 0.4)"
+      state-light-active-color: "#fbbf24"
+      state-switch-active-color: "var(--pico-accent)"
+      state-cover-active-color: "var(--pico-accent-2)"
+      state-climate-heat-color: "#fb923c"
+      state-climate-cool-color: "var(--pico-accent)"
+      state-binary_sensor-active-color: "var(--pico-accent-2)"
+      state-person-home-color: "var(--pico-gruen)"
+      state-person-not_home-color: "var(--pico-text-dim)"
+
+      success-color: "var(--pico-gruen)"
+      error-color: "var(--pico-rot)"
+      warning-color: "#fbbf24"
+      info-color: "var(--pico-accent)"
+      green-color: "var(--pico-gruen)"
+      red-color: "var(--pico-rot)"
+      blue-color: "var(--pico-accent)"
+      purple-color: "var(--pico-accent-2)"
+      cyan-color: "#22d3ee"
+
+      # ---------- Steuerelemente ----------
+      switch-checked-color: "var(--pico-accent)"
+      switch-checked-button-color: "#ffffff"
+      switch-checked-track-color: "var(--pico-accent-2)"
+      switch-unchecked-button-color: "#ffffff"
+      switch-unchecked-track-color: "rgba(255, 255, 255, 0.15)"
+      slider-color: "var(--pico-accent)"
+      slider-bar-color: "rgba(255, 255, 255, 0.12)"
+      paper-slider-knob-color: "var(--pico-accent)"
+      paper-slider-active-color: "var(--pico-accent)"
+      paper-slider-container-color: "rgba(255, 255, 255, 0.12)"
+      ha-control-border-radius: "18px"
+      control-button-border-radius: "18px"
+      tile-card-border-radius: "18px"
+      mush-control-border-radius: "14px"
+      mush-card-primary-color: "var(--pico-text)"
+      mush-card-secondary-color: "var(--pico-text-dim)"
+
+      # ---------- Eingabefelder ----------
+      input-fill-color: "rgba(255, 255, 255, 0.08)"
+      input-disabled-fill-color: "rgba(255, 255, 255, 0.02)"
+      input-ink-color: "var(--pico-text)"
+      input-label-ink-color: "var(--pico-text-dim)"
+      input-idle-line-color: "var(--pico-card-border)"
+      input-hover-line-color: "var(--pico-accent)"
+      input-dropdown-icon-color: "var(--pico-text-dim)"
+      mdc-text-field-fill-color: "rgba(255, 255, 255, 0.08)"
+      mdc-text-field-ink-color: "var(--pico-text)"
+      mdc-text-field-label-ink-color: "var(--pico-text-dim)"
+      mdc-select-fill-color: "rgba(255, 255, 255, 0.08)"
+      mdc-select-ink-color: "var(--pico-text)"
+      mdc-select-label-ink-color: "var(--pico-text-dim)"
+      mdc-theme-primary: "var(--pico-accent)"
+      mdc-theme-secondary: "var(--pico-accent-2)"
+      mdc-theme-on-primary: "#0b1120"
+      mdc-theme-text-primary-on-background: "var(--pico-text)"
+      mdc-theme-text-secondary-on-background: "var(--pico-text-dim)"
+      mdc-checkbox-unchecked-color: "var(--pico-text-dim)"
+      mdc-radio-unchecked-color: "var(--pico-text-dim)"
+      mdc-select-idle-line-color: "var(--pico-card-border)"
+      mdc-select-dropdown-icon-color: "var(--pico-text-dim)"
+      mdc-select-disabled-ink-color: "#8291a8"
+      mdc-text-field-idle-line-color: "var(--pico-card-border)"
+      mdc-text-field-disabled-ink-color: "#8291a8"
+      mdc-theme-text-hint-on-background: "var(--pico-text-dim)"
+      mdc-button-outline-color: "var(--pico-card-border)"
+      mdc-button-disabled-ink-color: "#8291a8"
+      ha-chip-background-color: "rgba(255, 255, 255, 0.08)"
+      ha-chip-text-color: "var(--pico-text)"
+      ha-assist-chip-filled-container-color: "rgba(255, 255, 255, 0.08)"
+
+      # ---------- Badges / Tabellen / Code ----------
+      label-badge-red: "var(--pico-accent-2)"
+      label-badge-background-color: "var(--pico-card)"
+      label-badge-text-color: "var(--pico-text)"
+      ha-badge-border-radius: "999px"
+      table-row-background-color: "transparent"
+      table-row-alternative-background-color: "rgba(255, 255, 255, 0.03)"
+      data-table-background-color: "transparent"
+      code-editor-background-color: "#0f172a"
+      markdown-code-background-color: "rgba(255, 255, 255, 0.06)"
+      scrollbar-thumb-color: "rgba(255, 255, 255, 0.15)"
+
+      # ---------- Schrift ----------
+      primary-font-family: '"Segoe UI", system-ui, -apple-system, sans-serif'
+      paper-font-common-base_-_font-family: '"Segoe UI", system-ui, -apple-system, sans-serif'
+      ha-font-family-body: '"Segoe UI", system-ui, -apple-system, sans-serif'
+
+      # ---------- Diagramme ----------
+      history-unavailable-color: "rgba(148, 163, 184, 0.25)"
+      graph-color-1: "#38bdf8"
+      graph-color-2: "#a855f7"
+      graph-color-3: "#4ade80"
+      graph-color-4: "#fbbf24"
+      graph-color-5: "#f87171"
+
+  # ---------- Optional: card-mod (HACS) für echten Glass-Effekt ----------
+  # Wird ignoriert, wenn card-mod nicht installiert ist.
+  card-mod-theme: PicoDesk
+  card-mod-card: |
+    ha-card {
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    ha-card.type-button:hover,
+    ha-card.type-tile:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(56, 189, 248, 0.25);
+    }
+    ha-card.type-button {
+      background: linear-gradient(160deg, rgba(56, 189, 248, 0.18), rgba(168, 85, 247, 0.12));
+      border-radius: 18px;
+    }
+    ha-card.type-button:active {
+      transform: scale(0.96);
+      background: linear-gradient(160deg, rgba(56, 189, 248, 0.35), rgba(168, 85, 247, 0.25));
+    }
+  card-mod-root-yaml: |
+    .: |
+      .header, app-toolbar, .toolbar {
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+      }

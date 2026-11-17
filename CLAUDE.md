@@ -122,6 +122,25 @@ wie WerWarDas, JSON-Schema `{"items":[{name,count}]}`), `inventory.py` (Stand in
   VORRAT_PORT=… python vorrat/app/server.py` gegen einen Ersatz für Kamera, Ollama (`/api/tags`, `/api/chat`)
   und Supervisor.
 
+## BolliSoft Themes (`bollisoft_themes/`)
+Designs, Theme-Editor und Dashboard-Karten. Bis 11/2026 lag nur PicoDesk im privaten Repository `Devilwitha/ThemeHA`
+(übernommen ist nur `themes/picodesk.yaml`, unverändert in `app/themes/`; `deploy.ps1` enthält einen Token und
+bleibt draußen).
+- `themegen.py` macht aus wenigen Parametern (Farben, Rundung, Schatten …) alle HA-Variablen je Modus; Designs
+  in `presets.py` (mit `file` wird die Datei unverändert installiert, die Parameter dienen nur als Vorlage).
+  Eigene Themes in `/data/themes.json`, Typ `editor` (Parameter) oder `yaml` (importiert).
+- Schreibt nur nach `/config/themes/bollisoft/<id>.yaml` (erste Zeile `# BolliSoft Themes`, nur solche Dateien
+  werden gelöscht), danach `frontend.reload_themes`. Ordner kommt aus `frontend: themes: !include_dir_merge_named …`
+  der configuration.yaml; fehlt die Zeile, trägt `hass.add_themes_line` sie mit Sicherung ein.
+- Ein Theme nur mit `modes: dark` erzwingt im Frontend den Dunkelmodus, ohne `dark` gilt Hell (themes-mixin.ts).
+- Geladene Themes und Standard über WebSocket `frontend/get_themes` (Supervisor-Proxy `ws://supervisor/core/websocket`).
+- Karten `app/cards/bollisoft-cards.js` (glow, room, person + Editoren mit `ha-form`, keine Abhängigkeiten): beim Start
+  nach `/config/www/bollisoft-themes/` kopiert und per `lovelace/resources/create|update` mit `?v=<sha1>` eingetragen.
+  Die Vorschau im Add-on lädt dieselbe Datei mit Ersatz-Elementen (`static/stubs.js`) und Beispieldaten (`static/demo.js`).
+- Lokal testen: `SUPERVISOR_TOKEN=x THEMES_SUPERVISOR_URL=… THEMES_CONFIG_DIR=… THEMES_DATA=… THEMES_NO_GUARD=1
+  THEMES_PORT=… python bollisoft_themes/app/server.py` gegen einen Ersatz-Supervisor (Dienste, `check_config`,
+  WebSocket mit `frontend/get_themes` und `lovelace/resources*`).
+
 ## BolliSoft Kamera (`esp32cam/`)
 ESP32-CAM-Firmware (PlatformIO, Arduino-Core 2.x über espressif32@6.9.0) für WerWarDas und Vorrat.
 - `/capture` (`?led=0..255`, `?flash=1`, `?settle=`), Livestream auf **eigenem** `esp_http_server` Port 81
