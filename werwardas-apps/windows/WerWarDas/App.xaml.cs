@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using System.Threading;
 using System.Windows;
@@ -109,6 +109,24 @@ public partial class App : Application
             StopServices();
             StartServices();
         }
+    }
+
+    private OllamaWindow? _ollamaWindow;
+
+    /// <summary>Ollama und die Bildmodelle auf diesem PC einrichten (aus dem Menü und den Einstellungen).</summary>
+    public void OpenOllama(Window? owner = null)
+    {
+        if (_controller?.State == PcState.Locked) return;
+        if (_ollamaWindow != null)
+        {
+            _ollamaWindow.Activate();
+            return;
+        }
+        if (owner == null && !PinDialog.Ask(Settings, "die KI-Einrichtung zu öffnen")) return;
+        _ollamaWindow = new OllamaWindow { Owner = owner };
+        _ollamaWindow.Closed += (_, _) => _ollamaWindow = null;
+        if (owner != null) _ollamaWindow.ShowDialog();
+        else _ollamaWindow.Show();
     }
 
     public void RequestExit()

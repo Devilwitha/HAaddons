@@ -65,6 +65,8 @@ public partial class SettingsWindow : Window
         return $"{times[0]}-{times[1]}";
     }
 
+    private void Ollama_Click(object sender, RoutedEventArgs e) => App.Current.OpenOllama(this);
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(HostBox.Text))

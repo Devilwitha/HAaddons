@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows;
 using Forms = System.Windows.Forms;
@@ -15,6 +15,7 @@ public sealed class TrayIcon : IDisposable
     private readonly Forms.ToolStripMenuItem _statusItem;
     private readonly Forms.ToolStripMenuItem _settingsItem;
     private readonly Forms.ToolStripMenuItem _exitItem;
+    private readonly Forms.ToolStripMenuItem _ollamaItem;
     private readonly Icon _green = MakeIcon(Color.FromArgb(46, 160, 90));
     private readonly Icon _yellow = MakeIcon(Color.FromArgb(240, 180, 40));
     private readonly Icon _red = MakeIcon(Color.FromArgb(220, 60, 60));
@@ -33,6 +34,8 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add("Letztes Foto anzeigen", null, (_, _) => _controller.ShowNotice());
         _settingsItem = new Forms.ToolStripMenuItem("Einstellungen …", null, (_, _) => App.Current.OpenSettings());
         menu.Items.Add(_settingsItem);
+        _ollamaItem = new Forms.ToolStripMenuItem("KI auf diesem PC (Ollama) …", null, (_, _) => App.Current.OpenOllama());
+        menu.Items.Add(_ollamaItem);
         menu.Items.Add("Logdatei öffnen", null, (_, _) => OpenLog());
         menu.Items.Add("Nach Updates suchen", null, (_, _) => App.Current.CheckForUpdates());
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -90,6 +93,7 @@ public sealed class TrayIcon : IDisposable
         _icon.Text = Truncate("WerWarDas – " + status, 127);
         var locked = _controller.State == PcState.Locked;
         _settingsItem.Enabled = !locked;
+        _ollamaItem.Enabled = !locked;
         _exitItem.Enabled = !locked;
     }
 
@@ -105,6 +109,7 @@ public sealed class TrayIcon : IDisposable
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 
+    /// <summary>Webcam mit Glanz-Sternchen (wie das App-Symbol); die Hintergrundfarbe zeigt den Zustand.</summary>
     private static Icon MakeIcon(Color color)
     {
         using var bmp = new Bitmap(32, 32);
@@ -112,14 +117,46 @@ public sealed class TrayIcon : IDisposable
         {
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             g.Clear(Color.Transparent);
-            using var fill = new SolidBrush(color);
-            g.FillEllipse(fill, 1, 1, 30, 30);
-            using var pen = new Pen(Color.White, 3.5f);
-            g.DrawLine(pen, 21, 6, 13, 19);                 // Besenstiel
-            using var head = new SolidBrush(Color.FromArgb(255, 235, 150));
-            g.FillPolygon(head, new[] { new PointF(9, 16), new PointF(17, 21), new PointF(13, 27), new PointF(5, 22) });
+            using (var bg = new SolidBrush(color))
+            using (var path = RoundedRect(new RectangleF(0.5f, 0.5f, 31, 31), 7))
+                g.FillPath(bg, path);
+            using var white = new SolidBrush(Color.White);
+            g.FillRectangle(white, 13.2f, 20, 3.6f, 6);              // Hals
+            using (var foot = RoundedRect(new RectangleF(8, 25, 14, 3.5f), 1.7f))
+                g.FillPath(white, foot);                              // Fuß
+            g.FillEllipse(white, 4.5f, 4.5f, 21, 21);                 // Kamerakopf
+            using var lens = new SolidBrush(Color.FromArgb(15, 32, 74));
+            g.FillEllipse(lens, 9, 9, 12, 12);                        // Objektiv
+            using var glass = new SolidBrush(Color.FromArgb(37, 99, 235));
+            g.FillEllipse(glass, 11.8f, 11.8f, 6.4f, 6.4f);
+            using var shine = new SolidBrush(Color.FromArgb(219, 234, 254));
+            g.FillEllipse(shine, 11.5f, 11.5f, 2.6f, 2.6f);
+            using var star = new SolidBrush(Color.FromArgb(253, 224, 71));
+            g.FillPolygon(star, Star(27, 5, 4.6f));                   // Glanz: sauber
         }
         return Icon.FromHandle(bmp.GetHicon());
+    }
+
+    private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(RectangleF r, float radius)
+    {
+        var d = radius * 2;
+        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        path.AddArc(r.X, r.Y, d, d, 180, 90);
+        path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    private static PointF[] Star(float cx, float cy, float r)
+    {
+        var k = r * 0.3f;
+        return new[]
+        {
+            new PointF(cx, cy - r), new PointF(cx + k, cy - k), new PointF(cx + r, cy), new PointF(cx + k, cy + k),
+            new PointF(cx, cy + r), new PointF(cx - k, cy + k), new PointF(cx - r, cy), new PointF(cx - k, cy - k),
+        };
     }
 
     public void Dispose()

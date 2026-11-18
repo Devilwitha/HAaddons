@@ -151,14 +151,20 @@ Am besten mehrmals zu verschiedenen Tageszeiten (Tageslicht und Lampe), das Syst
 Bereiche, die sich ständig ändern (Fenster, Monitor), lassen sich mit `reference.ignore_areas` ausblenden.
 
 **Lokale KI (`ollama`):** [Ollama](https://ollama.com) z. B. **auf deinem Windows-PC** installieren. Der ist ja
-genau dann an, wenn geprüft werden muss. Dann:
+genau dann an, wenn geprüft werden muss. Am einfachsten über die Windows-App: Rechtsklick auf das Symbol im
+Infobereich → **KI auf diesem PC (Ollama) …** (oder in den Einstellungen **Einrichten …**) → **Alles einrichten**.
+Die App installiert Ollama, lädt das passende Bildmodell (`qwen2.5vl:7b` mit Grafikkarte ab 8 GB, sonst
+`qwen2.5vl:3b`), gibt Ollama im Netzwerk frei (`OLLAMA_HOST=0.0.0.0` und eine Firewall-Regel, dafür fragt Windows
+einmal nach Admin-Rechten), testet das Modell und zeigt die **Adresse** samt fertigem Eintrag zum Kopieren an.
+
+Von Hand geht es so:
 
 ```powershell
 ollama pull qwen2.5vl:7b
 setx OLLAMA_HOST 0.0.0.0     # damit der Pi zugreifen darf, danach Ollama neu starten
 ```
 
-In der Pi-Konfiguration `ollama.url: http://<IP-des-PCs>:11434` eintragen. Mit einer Grafikkarte dauert eine Bewertung
+In der Pi-Konfiguration `ollama.url: http://<IP-des-PCs>:11434` eintragen (im HA-Add-on unter `ollama_servers`). Mit einer Grafikkarte dauert eine Bewertung
 ein paar Sekunden. Direkt auf einem Pi 5 (8 GB) läuft ein kleines Modell wie `gemma3:4b` auch, braucht aber
 1–3 Minuten pro Foto. Ist Ollama nicht erreichbar, bleibt der PC frei.
 
@@ -178,7 +184,8 @@ Mit `prompt_hint` in der `config.yaml` kannst du der KI Hinweise geben, z. B.
 
 In den Einstellungen der App lassen sich unter *Kamera-Prüfung* auch das **Prüfintervall**, der **Grenzwert** (ab wie viel % Ordnung das Zimmer als aufgeräumt gilt) und die **Prüfzeit** des Kameradienstes ändern. Das sind dieselben Werte wie in HA.
 
-Die App läuft danach im Infobereich (🟢 alles ok, 🟡 Hinweis, 🔴 gesperrt, ⚪ keine Verbindung) und startet mit Windows.
+Die App läuft danach im Infobereich (Kamera-Symbol: 🟢 alles ok, 🟡 Hinweis, 🔴 gesperrt, ⚪ keine Verbindung) und
+startet mit Windows. Über das Menü des Symbols lässt sich auch die **KI auf diesem PC (Ollama)** einrichten (siehe oben).
 
 **Ablauf im Modus „Automatisch“:**
 

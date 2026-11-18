@@ -1,0 +1,107 @@
+<Window x:Class="WerWarDas.OllamaWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WerWarDas – KI auf diesem PC (Ollama)" Width="580" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13">
+    <Window.Resources>
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Padding" Value="8" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="14,5" />
+            <Setter Property="MinWidth" Value="90" />
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="16">
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,12" Foreground="#FF444444"
+                   Text="Die Kamera kann ihre Fotos von einer KI auf diesem PC bewerten lassen. Dafür braucht es Ollama und ein Bildmodell – beides kostenlos, die Fotos bleiben im Heimnetz. „Alles einrichten“ erledigt alle Schritte auf einmal." />
+
+        <GroupBox Header="Ollama">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition /><RowDefinition />
+                </Grid.RowDefinitions>
+                <Ellipse x:Name="StatusDot" Width="12" Height="12" Fill="Gray" Margin="0,0,10,0" VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusText" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"
+                           Text="Wird geprüft …" TextWrapping="Wrap" />
+                <Button x:Name="InstallButton" Grid.Column="2" Content="Installieren" Click="Install_Click" Margin="8,0,0,0" />
+                <TextBlock x:Name="GpuText" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Foreground="Gray"
+                           Margin="0,4,0,0" TextWrapping="Wrap" />
+            </Grid>
+        </GroupBox>
+
+        <GroupBox Header="Bildmodelle">
+            <StackPanel>
+                <StackPanel x:Name="ModelList" />
+                <Button x:Name="PullButton" Content="Ausgewählte herunterladen" HorizontalAlignment="Right"
+                        Margin="0,6,0,0" Click="Pull_Click" />
+            </StackPanel>
+        </GroupBox>
+
+        <GroupBox Header="Zugriff der Kamera über das Netzwerk">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="NetworkText" TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button x:Name="NetworkButton" Grid.Column="1" Content="Freigeben" Margin="8,0,0,0" Click="Network_Click" />
+            </Grid>
+        </GroupBox>
+
+        <GroupBox x:Name="CameraGroup" Header="Eintragen in der Kamera" Visibility="Collapsed">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="70" />
+                        <ColumnDefinition />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition /><RowDefinition />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Adresse" VerticalAlignment="Center" />
+                    <TextBox x:Name="AddressBox" Grid.Column="1" IsReadOnly="True" FontFamily="Consolas" FontSize="15"
+                             FontWeight="Bold" Padding="4" Margin="0,3" BorderThickness="1" />
+                    <Button Grid.Column="2" Content="Kopieren" Margin="8,3,0,3" Click="CopyAddress_Click" />
+                    <TextBlock Grid.Row="1" Text="Modell" VerticalAlignment="Center" />
+                    <ComboBox x:Name="ModelBox" Grid.Row="1" Grid.Column="1" Margin="0,3" SelectionChanged="ModelBox_Changed" />
+                    <Button x:Name="TestButton" Grid.Row="1" Grid.Column="2" Content="Testen" Margin="8,3,0,3" Click="Test_Click" />
+                </Grid>
+                <TextBlock Margin="0,10,0,4" TextWrapping="Wrap" Foreground="#FF444444"
+                           Text="Im Home-Assistant-Add-on „WerWarDas Kamera“ unter Konfiguration → ollama_servers eintragen (oder Einstellungen kopieren und einfügen):" />
+                <TextBox x:Name="SnippetBox" IsReadOnly="True" FontFamily="Consolas" Padding="6" TextWrapping="NoWrap"
+                         Background="#FFF4F6F8" />
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="LocalHint" TextWrapping="Wrap" Foreground="Gray" VerticalAlignment="Center"
+                               Margin="0,0,8,0"
+                               Text="Läuft der Kameradienst auf diesem PC selbst, geht auch http://localhost:11434." />
+                    <Button Grid.Column="1" Content="Einstellungen kopieren" Click="CopySnippet_Click" />
+                </Grid>
+            </StackPanel>
+        </GroupBox>
+
+        <StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,10">
+            <TextBlock x:Name="ProgressText" TextWrapping="Wrap" Margin="0,0,0,4" />
+            <ProgressBar x:Name="Progress" Height="8" Maximum="1" />
+        </StackPanel>
+        <TextBlock x:Name="MessageText" TextWrapping="Wrap" Margin="0,0,0,10" Visibility="Collapsed" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="AllButton" Content="Alles einrichten" FontWeight="SemiBold" Margin="0,0,8,0" IsDefault="True"
+                    Click="All_Click" />
+            <Button Content="Schließen" IsCancel="True" />
+        </StackPanel>
+    </StackPanel>
+</Window>
