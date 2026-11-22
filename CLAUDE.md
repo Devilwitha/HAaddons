@@ -66,7 +66,8 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 
 ### Protokoll Browser ↔ Bridge (WebSocket, JSON)
 - Browser → Bridge: `{"type":"input","buttons":[...],"ls":[x,y],"rs":[x,y]}` (x/y −100…100, y oben
-  positiv), `{"type":"heartbeat","t":ms}`, `{"type":"system","action":"pair"}`
+  positiv), `{"type":"heartbeat","t":ms}`, `{"type":"system","action":"pair"|"capture_restart"}`,
+  `{"type":"system","action":"video_mode","mode":"720p60"|"1080p30"}`
 - Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"stream":{webrtc:{fps,age,convert,encode}|null,mjpeg_fps,webrtc_clients,audio:{state,detail,device,listeners}},"clients":n}`,
   `{"type":"pong","t":ms}`, `{"type":"info"|"error","message":...}`
 - Der Ingress-Server schickt zusätzlich `{"type":"proxy","status":"connected"|"unreachable"|"bridge_closed"}`.
@@ -88,6 +89,11 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   MJPEG zurück (läuft komplett über Ingress). aiortc ohne STUN-Server starten
   (`RTCConfiguration(iceServers=[])`), sonst wartet der Aufbau Sekunden auf Google-STUN.
 - **Watchdog** 2,0 s ohne Heartbeat/Eingabe → alle Tasten los, Sticks (0, 0).
+- **Bildqualität** (`MODES` in `video_streamer.py`): 720p60 oder 1080p30 (Software-VP8 auf dem Pi 5 schafft 1080p
+  nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und
+  folgt der REMB-Schätzung des Browsers → `MIN_BITRATE`/`MAX_BITRATE` von `aiortc.codecs.vpx`/`h264` werden gesetzt
+  (`webrtc_min_bitrate` 3 Mbit/s). **Capture-Card neu starten**: Karte schließen, `USBDEVFS_RESET` auf
+  `/dev/bus/usb/<bus>/<dev>` (aus `/sys/class/video4linux/videoN/device`), neu öffnen – der Dienst läuft als root.
 - **Ton** nur über WebRTC: Bridge liest die Capture-Card per `arecord` (alsa-utils, 48 kHz Stereo, 20-ms-Pakete,
   höchstens 60 ms Puffer), nur solange jemand zuhört. Die Tonspur bekommt eine **eigene Stream-ID**
   (`sender._stream_id`), sonst gleicht der Browser Bild und Ton ab und verzögert das Bild. `audio.device`:

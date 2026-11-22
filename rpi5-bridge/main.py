@@ -45,7 +45,7 @@ DEFAULTS = {
     "websocket": {"host": "0.0.0.0", "port": 8765},
     "video": {"host": "0.0.0.0", "port": 8766, "device": "/dev/video0", "width": 1280, "height": 720,
               "fps": 60, "fourcc": "MJPG", "jpeg_quality": 80, "mjpeg_fps": 30, "webrtc_fps": 60,
-              "webrtc_max_bitrate": 6000000},
+              "webrtc_max_bitrate": 6000000, "webrtc_min_bitrate": 3000000},
     "audio": {"device": "auto"},
     "controller": {"enabled": True, "watchdog_seconds": 2.0, "input_rate_hz": 120,
                    "reconnect_file": "/var/lib/switch2-bridge/switch_addresses.json"},
@@ -210,6 +210,15 @@ class Bridge:
                     await websocket.send(json.dumps({"type": "pong", "t": msg.get("t")}))
                 elif kind == "system" and msg.get("action") == "pair":
                     ok, text = await self.controller.pair()
+                    await websocket.send(json.dumps({"type": "info" if ok else "error", "message": text}))
+                    await self.broadcast_status()
+                elif kind == "system" and msg.get("action") == "capture_restart":
+                    log.info("Capture-Card wird neu gestartet (angefordert von %s)", peer)
+                    ok, text = await self.video.restart_capture()
+                    await websocket.send(json.dumps({"type": "info" if ok else "error", "message": text}))
+                    await self.broadcast_status()
+                elif kind == "system" and msg.get("action") == "video_mode":
+                    ok, text = self.video.set_mode(str(msg.get("mode") or ""))
                     await websocket.send(json.dumps({"type": "info" if ok else "error", "message": text}))
                     await self.broadcast_status()
         except ConnectionClosed:

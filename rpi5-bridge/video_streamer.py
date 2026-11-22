@@ -14,15 +14,25 @@ zugunsten der Lippensynchronität verzögert.
 Die Capture-Card wird im MJPEG-Format geöffnet (geringste USB-Latenz). Ist sie nicht da oder
 liefert sie kein Bild (Konsole im Standby), wird ein "Kein Signal"-Bild gezeigt und alle
 2 Sekunden neu verbunden. device: "test" erzeugt ein Testbild ohne Capture-Card.
+
+Bildqualität (MODES) lässt sich im Browser umschalten und wird in state_file gemerkt. „Capture-Card neu
+starten“ schließt die Karte, setzt ihren USB-Anschluss zurück (USBDEVFS_RESET) und öffnet sie neu.
 """
 import asyncio
 import collections
 import fractions
+import json
 import logging
+import os
 import threading
 import time
 import uuid
 from pathlib import Path
+
+try:
+    import fcntl                    # nur unter Linux (USB-Reset)
+except ImportError:
+    fcntl = None
 
 import cv2
 import numpy as np
@@ -44,18 +54,62 @@ NO_SIGNAL_AFTER = 1.5               # so lange ohne Bild = kein Signal
 VIDEO_CLOCK = 90000
 
 
-def set_max_bitrate(bitrate):
-    """aiortc begrenzt die Bitrate von VP8/H.264 fest; für 720p etwas mehr erlauben."""
-    if not HAVE_WEBRTC or not bitrate:
+USBDEVFS_RESET = 0x5514              # _IO('U', 20)
+
+# Bildqualität: Aufnahme (Breite, Höhe, fps der Capture-Card), gesendete Bilder pro Sekunde und höchste Bitrate.
+# 1080p kodiert der Pi 5 in Software nur mit etwa 30 Bildern pro Sekunde.
+MODES = {
+    "720p60": {"label": "720p · 60 fps (schnell)", "width": 1280, "height": 720, "fps": 60, "send": 60,
+               "bitrate": 6000000},
+    "1080p30": {"label": "1080p · 30 fps (scharf)", "width": 1920, "height": 1080, "fps": 30, "send": 30,
+                "bitrate": 10000000},
+}
+
+
+def set_bitrate(max_bitrate, min_bitrate=0):
+    """aiortc begrenzt die Bitrate von VP8/H.264 fest und startet niedrig. Die Schätzung des Browsers (REMB)
+    hält das Bild sonst lange unscharf; im Heimnetz ist eine Untergrenze von einigen Mbit/s kein Problem."""
+    if not HAVE_WEBRTC or not max_bitrate:
         return
     try:
         from aiortc.codecs import vpx, h264
-        vpx.MAX_BITRATE = int(bitrate)
-        vpx.DEFAULT_BITRATE = min(int(bitrate), max(vpx.DEFAULT_BITRATE, int(bitrate) // 2))
-        h264.MAX_BITRATE = int(bitrate)
-        h264.DEFAULT_BITRATE = min(int(bitrate), max(h264.DEFAULT_BITRATE, int(bitrate) // 2))
+        top = int(max_bitrate)
+        low = max(0, min(int(min_bitrate or 0), top))
+        for mod in (vpx, h264):
+            mod.MAX_BITRATE = top
+            if low:
+                mod.MIN_BITRATE = low
+            mod.DEFAULT_BITRATE = min(top, max(low, top // 2))
     except (ImportError, AttributeError) as err:
         log.debug("Bitrate nicht anpassbar: %s", err)
+
+
+def usb_device_dir(video_device):
+    """sysfs-Ordner des USB-Geräts zu /dev/videoN (der mit busnum/devnum)."""
+    name = os.path.basename(os.path.realpath(video_device))
+    path = os.path.realpath(f"/sys/class/video4linux/{name}/device")
+    while path not in ("/", "") and not os.path.exists(os.path.join(path, "busnum")):
+        path = os.path.dirname(path)
+    return path if os.path.exists(os.path.join(path, "busnum")) else None
+
+
+def usb_reset(usb_dir):
+    """USB-Gerät zurücksetzen (wie Aus- und Einstecken). Braucht Root-Rechte."""
+    if fcntl is None:
+        return False, "USB-Reset gibt es nur unter Linux"
+    if not usb_dir:
+        return False, "USB-Anschluss der Capture-Card nicht gefunden"
+    try:
+        bus = int(Path(usb_dir, "busnum").read_text())
+        dev = int(Path(usb_dir, "devnum").read_text())
+        fd = os.open(f"/dev/bus/usb/{bus:03d}/{dev:03d}", os.O_WRONLY)
+        try:
+            fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+        finally:
+            os.close(fd)
+    except (OSError, ValueError) as err:
+        return False, f"USB-Reset fehlgeschlagen: {err}"
+    return True, "Capture-Card neu gestartet"
 
 
 class FrameSource:
@@ -84,6 +138,45 @@ class FrameSource:
         self.placeholder = self._make_placeholder()
         # Testbild: liefert True, solange eine Taste gedrückt ist (Reaktionstest ohne Konsole)
         self.input_active = None
+        self._reopen = threading.Event()
+        self._restart_usb = None
+        self._restart_done = threading.Event()
+        self._restart_result = (False, "")
+        self._usb_dir = None
+
+    # ------------------------------------------------------------------ Format und Neustart
+    def set_format(self, width, height, fps):
+        """Andere Auflösung: Capture-Card schließen und mit dem neuen Format öffnen."""
+        self.width, self.height, self.fps = int(width), int(height), int(fps)
+        self.placeholder = self._make_placeholder()
+        self._reopen.set()
+
+    def restart(self, timeout=20.0):
+        """Capture-Card schließen, USB zurücksetzen, neu öffnen (blockiert – im Executor aufrufen)."""
+        if self.device == "test":
+            return True, "Testbild neu gestartet"
+        self._restart_done.clear()
+        self._restart_usb = True
+        self._reopen.set()
+        if not self._restart_done.wait(timeout):
+            return False, "Capture-Card reagiert nicht – Bridge neu starten oder USB-Stecker ziehen"
+        return self._restart_result
+
+    def _handle_reopen(self):
+        """Nach dem Schließen: angeforderten Neustart ausführen. True = sofort neu öffnen."""
+        if not self._reopen.is_set():
+            return False
+        self._reopen.clear()
+        if self._restart_usb:
+            self._restart_usb = None
+            usb_dir = self._usb_dir or usb_device_dir(self.device)
+            self._restart_result = usb_reset(usb_dir)
+            log.info("Capture-Card: %s", self._restart_result[1])
+            self.state = "unavailable"
+            self.detail = "wird neu gestartet"
+            self._restart_done.set()
+            self._stop.wait(2.5)          # Gerät meldet sich am USB neu an
+        return True
 
     # ------------------------------------------------------------------ Thread
     def start(self, loop):
@@ -124,8 +217,14 @@ class FrameSource:
                 self.state = "unavailable"
                 self.detail = f"{self.device} nicht gefunden"
                 cap.release()
-                self._stop.wait(RECONNECT_SECONDS)
+                if not self._handle_reopen():
+                    self._reopen.wait(RECONNECT_SECONDS)
+                    self._handle_reopen()
                 continue
+            try:
+                self._usb_dir = usb_device_dir(self.device) or self._usb_dir
+            except OSError:
+                pass
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.fourcc))
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
@@ -137,7 +236,7 @@ class FrameSource:
             self.state = "no_signal"
             self.detail = "warte auf Bild"
             failures = 0
-            while not self._stop.is_set():
+            while not self._stop.is_set() and not self._reopen.is_set():
                 ok, frame = cap.read()
                 if ok and frame is not None:
                     failures = 0
@@ -154,21 +253,36 @@ class FrameSource:
                     break
                 time.sleep(0.02)
             cap.release()
-            self._stop.wait(RECONNECT_SECONDS)
+            if not self._handle_reopen():
+                self._reopen.wait(RECONNECT_SECONDS)
+                self._handle_reopen()
 
-    def _run_test_pattern(self):
-        self.state = "ok"
-        self.detail = "Testbild"
+    def _test_base(self):
         self.actual = (self.width, self.height, self.fps)
-        period = 1.0 / max(1, self.fps)
         base = np.zeros((self.height, self.width, 3), np.uint8)
         colors = [(255, 255, 255), (0, 255, 255), (255, 255, 0), (0, 255, 0),
                   (255, 0, 255), (0, 0, 255), (255, 0, 0), (30, 30, 30)]
         bar = self.width // len(colors)
         for i, color in enumerate(colors):
             base[:, i * bar:(i + 1) * bar] = color
+        # feine Linien: zeigen, ob das Bild scharf ankommt
+        for x in range(0, self.width, 4):
+            base[self.height - 140:self.height - 100, x] = (0, 0, 0)
+        return base, 1.0 / max(1, self.fps)
+
+    def _run_test_pattern(self):
+        self.state = "ok"
+        self.detail = "Testbild"
+        base, period = self._test_base()
         n = 0
         while not self._stop.is_set():
+            if self._reopen.is_set():
+                self._reopen.clear()
+                base, period = self._test_base()
+                if self._restart_usb:
+                    self._restart_usb = None
+                    self._restart_result = (True, "Testbild neu gestartet")
+                    self._restart_done.set()
             frame = base.copy()
             x = int((n * 8) % self.width)
             cv2.rectangle(frame, (x, self.height // 2 - 40), (x + 80, self.height // 2 + 40), (0, 0, 0), -1)
@@ -223,7 +337,7 @@ class FrameSource:
         w, h, f = self.actual
         return {"state": self.state, "detail": self.detail, "device": self.device,
                 "width": w, "height": h, "fps": round(self._measured_fps) if self.state == "ok" else 0,
-                "webrtc": HAVE_WEBRTC}
+                "webrtc": HAVE_WEBRTC, "can_restart": True, "target_fps": self.fps}
 
 
 class CaptureTrack(MediaStreamTrack):
@@ -234,7 +348,8 @@ class CaptureTrack(MediaStreamTrack):
     def __init__(self, source, max_fps, stats):
         super().__init__()
         self.source = source
-        self.period = 1.0 / max(1, max_fps)
+        # Zahl oder Funktion (Bildqualität lässt sich während des Streams umschalten)
+        self.max_fps = max_fps if callable(max_fps) else (lambda: max_fps)
         self.last_id = None
         self.start = None
         self.next_at = 0.0
@@ -256,7 +371,7 @@ class CaptureTrack(MediaStreamTrack):
         picked = time.monotonic()
         if frame_id != -1 and self.source.frame_time:
             self.stats.add("age", picked - self.source.frame_time)
-        self.next_at = picked + self.period
+        self.next_at = picked + 1.0 / max(1, self.max_fps())
         # Farbumrechnung mit OpenCV (NEON-optimiert) statt im Encoder: spart pro Bild einige Millisekunden
         if frame.shape[0] % 2 == 0 and frame.shape[1] % 2 == 0:
             yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
@@ -458,7 +573,11 @@ class VideoStreamer:
         self.port = int(cfg.get("port", 8766))
         self.mjpeg_fps = int(cfg.get("mjpeg_fps", 30))
         self.webrtc_fps = int(cfg.get("webrtc_fps", 60))
+        self.max_bitrate = int(cfg.get("webrtc_max_bitrate", 6000000))
+        self.min_bitrate = int(cfg.get("webrtc_min_bitrate", 3000000))
+        self.state_file = Path(cfg.get("state_file", "/var/lib/switch2-bridge/video_mode.json"))
         self.source = FrameSource(cfg)
+        self.mode = self._initial_mode(cfg)
         self.audio = AudioSource(audio_cfg, test_pattern=self.source.device == "test")
         self.pcs = set()
         # Wird von der Bridge gesetzt: on_channel(channel, pc) für den Eingabe-Datenkanal
@@ -466,7 +585,57 @@ class VideoStreamer:
         self.webrtc_stats = StreamStats()
         self.mjpeg_stats = StreamStats()
         self.runner = None
-        set_max_bitrate(cfg.get("webrtc_max_bitrate", 6000000))
+        set_bitrate(self.max_bitrate, self.min_bitrate)
+        if self.mode in MODES:
+            self._apply_mode(self.mode, reopen=False)
+
+    # ------------------------------------------------------------------ Bildqualität
+    def _initial_mode(self, cfg):
+        try:
+            saved = json.loads(self.state_file.read_text()).get("mode")
+            if saved in MODES:
+                return saved
+        except (OSError, ValueError, AttributeError):
+            pass
+        for key, mode in MODES.items():
+            if (mode["width"], mode["height"], mode["send"]) == (self.source.width, self.source.height, self.webrtc_fps):
+                return key
+        return "config"
+
+    def _apply_mode(self, key, reopen=True):
+        mode = MODES[key]
+        self.mode = key
+        self.webrtc_fps = mode["send"]
+        set_bitrate(max(mode["bitrate"], self.max_bitrate if key == "720p60" else 0), self.min_bitrate)
+        if reopen:
+            self.source.set_format(mode["width"], mode["height"], mode["fps"])
+        else:
+            self.source.width, self.source.height, self.source.fps = mode["width"], mode["height"], mode["fps"]
+            self.source.placeholder = self.source._make_placeholder()
+
+    def set_mode(self, key):
+        if key not in MODES:
+            return False, "Unbekannte Bildqualität"
+        if key == self.mode:
+            return True, f"Bildqualität: {MODES[key]['label']}"
+        self._apply_mode(key)
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            self.state_file.write_text(json.dumps({"mode": key}))
+        except OSError as err:
+            log.debug("Bildqualität nicht gespeichert: %s", err)
+        log.info("Bildqualität: %s", MODES[key]["label"])
+        return True, f"Bildqualität: {MODES[key]['label']}"
+
+    async def restart_capture(self):
+        return await asyncio.get_running_loop().run_in_executor(None, self.source.restart)
+
+    def modes(self):
+        items = [{"id": k, "label": m["label"]} for k, m in MODES.items()]
+        if self.mode == "config":
+            items.insert(0, {"id": "config", "label": f"{self.source.width}×{self.source.height} · "
+                                                      f"{self.webrtc_fps} fps (config.yaml)"})
+        return items
 
     # ------------------------------------------------------------------ HTTP
     async def handle_offer(self, request):
@@ -498,7 +667,7 @@ class VideoStreamer:
             if channel.label == "input" and self.on_channel is not None:
                 self.on_channel(channel, pc)
 
-        tracks.append(CaptureTrack(self.source, self.webrtc_fps, self.webrtc_stats))
+        tracks.append(CaptureTrack(self.source, lambda: self.webrtc_fps, self.webrtc_stats))
         pc.addTrack(tracks[-1])
         if self.audio.enabled and "m=audio" in offer.sdp:
             tracks.append(AudioTrack(self.audio))
@@ -544,7 +713,8 @@ class VideoStreamer:
         return {"webrtc": self.webrtc_stats.snapshot() if self.pcs else None,
                 "mjpeg_fps": self.mjpeg_stats.fps(),
                 "webrtc_clients": len(self.pcs),
-                "audio": self.audio.status()}
+                "audio": self.audio.status(),
+                "mode": self.mode, "modes": self.modes(), "target_fps": self.webrtc_fps}
 
     async def handle_snapshot(self, _request):
         data = await asyncio.get_running_loop().run_in_executor(None, self.source.jpeg)

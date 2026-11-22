@@ -11,6 +11,8 @@
  *   {"type":"input","buttons":["A","DPAD_UP",...],"ls":[x,y],"rs":[x,y]}   x/y: -100..100, y oben positiv
  *   {"type":"heartbeat","t":<ms>}                                          Antwort: {"type":"pong","t":<ms>}
  *   {"type":"system","action":"pair"}
+ *   {"type":"system","action":"capture_restart"}            Capture-Card per USB-Reset neu starten
+ *   {"type":"system","action":"video_mode","mode":"1080p30"} Bildqualität umschalten
  */
 (function () {
   "use strict";
@@ -613,6 +615,42 @@
     setTimeout(() => { $("pair-btn").disabled = false; }, 5000);
   });
 
+  // ------------------------------------------------------------------ Bildqualität und Capture-Card
+  $("video-mode").addEventListener("change", (ev) => {
+    send({ type: "system", action: "video_mode", mode: ev.target.value });
+    toast("Bildqualität wird umgestellt …");
+  });
+
+  $("cap-restart").addEventListener("click", () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      toast("Keine Verbindung zur Bridge.", true);
+      return;
+    }
+    send({ type: "system", action: "capture_restart" });
+    toast("Capture-Card wird neu gestartet …");
+    $("cap-restart").disabled = true;
+    setTimeout(() => { $("cap-restart").disabled = false; }, 8000);
+  });
+
+  function renderVideoControls(stream, cap) {
+    const modes = Array.isArray(stream.modes) ? stream.modes : [];
+    const select = $("video-mode");
+    const key = modes.map((m) => m.id).join(",");
+    if (select.dataset.key !== key) {
+      select.dataset.key = key;
+      select.replaceChildren(...modes.map((m) => {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.label;
+        return opt;
+      }));
+    }
+    if (document.activeElement !== select && stream.mode) select.value = stream.mode;
+    $("video-mode-field").hidden = modes.length === 0;
+    $("cap-restart").hidden = !cap.can_restart;
+    $("stats-actions").hidden = modes.length === 0 && !cap.can_restart;
+  }
+
   $("fs-btn").addEventListener("click", async () => {
     try {
       if (document.fullscreenElement) {
@@ -687,10 +725,14 @@
     const stream = st.stream || {};
     const rtc = stream.webrtc || null;
     const wanted = cap.fps || 0;
+    renderVideoControls(stream, cap);
+    // Ampel nach der gewählten Bildqualität (60 oder 30 fps), ältere Bridges ohne Angabe: 60
+    const capTarget = cap.target_fps || 60;
+    const sendTarget = stream.target_fps || 60;
     setVal("sv-capture", cap.state === "ok" ? (cap.width + "×" + cap.height + " · " + cap.fps + " fps") : (cap.detail || cap.state || "–"),
-      cap.state === "ok" ? grade(-cap.fps, -55, -28) : "bad");
+      cap.state === "ok" ? grade(-cap.fps, -(capTarget - 5), -(capTarget / 2 - 2)) : "bad");
     if (mode === "webrtc" && rtc) {
-      setVal("sv-sent", rtc.fps + " fps (WebRTC)", grade(-rtc.fps, -Math.min(55, wanted - 5), -25));
+      setVal("sv-sent", rtc.fps + " fps (WebRTC)", grade(-rtc.fps, -Math.min(sendTarget - 5, wanted - 5), -(sendTarget / 2 - 5)));
       setVal("sv-age", ms(rtc.age), grade(rtc.age, 20, 40));
       setVal("sv-convert", ms(rtc.convert), grade(rtc.convert, 5, 10));
       setVal("sv-encode", ms(rtc.encode), grade(rtc.encode, 16, 33));
@@ -718,26 +760,29 @@
           const cur = {
             t: inbound.timestamp, frames: inbound.framesDecoded || 0, decode: inbound.totalDecodeTime || 0,
             jitter: inbound.jitterBufferDelay || 0, emitted: inbound.jitterBufferEmittedCount || 0,
-            dropped: inbound.framesDropped || 0,
+            dropped: inbound.framesDropped || 0, bytes: inbound.bytesReceived || 0,
           };
           if (prevRtc) {
             const frames = cur.frames - prevRtc.frames;
             const seconds = (cur.t - prevRtc.t) / 1000;
             const fps = seconds > 0 ? frames / seconds : 0;
             const emitted = cur.emitted - prevRtc.emitted;
-            setVal("sv-fps", Math.round(inbound.framesPerSecond || fps) + " fps", grade(-(inbound.framesPerSecond || fps), -50, -25));
+            setVal("sv-fps", Math.round(inbound.framesPerSecond || fps) + " fps",
+              grade(-(inbound.framesPerSecond || fps), -(sendTarget * 5 / 6), -(sendTarget / 2 - 5)));
             setVal("sv-decode", frames > 0 ? ms(((cur.decode - prevRtc.decode) / frames) * 1000) : "–",
               frames > 0 ? grade(((cur.decode - prevRtc.decode) / frames) * 1000, 8, 16) : "");
             const jitter = emitted > 0 ? ((cur.jitter - prevRtc.jitter) / emitted) * 1000 : null;
             setVal("sv-jitter", ms(jitter), grade(jitter, 20, 50));
             setVal("sv-dropped", String(cur.dropped), cur.dropped - prevRtc.dropped > 0 ? "warn" : "good");
+            const mbit = seconds > 0 ? ((cur.bytes - prevRtc.bytes) * 8) / seconds / 1e6 : 0;
+            setVal("sv-rate", mbit.toFixed(1).replace(".", ",") + " Mbit/s", grade(-mbit, -2.5, -1));
           }
           prevRtc = cur;
         }
       } catch (err) { /* Verbindung gerade weg */ }
     } else {
       prevRtc = null;
-      ["sv-fps", "sv-jitter", "sv-decode", "sv-dropped"].forEach((id) => setVal(id, "–"));
+      ["sv-fps", "sv-jitter", "sv-decode", "sv-dropped", "sv-rate"].forEach((id) => setVal(id, "–"));
     }
   }
 

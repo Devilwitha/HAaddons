@@ -1,5 +1,15 @@
 # Änderungen
 
+## 1.0.7
+
+- Schärferes Bild: Unter **Messwerte** lässt sich die **Bildqualität** umschalten – *720p · 60 fps* (schnell) oder
+  *1080p · 30 fps* (scharf). Die Wahl merkt sich der Pi
+- WebRTC startet nicht mehr mit niedriger Datenrate: Untergrenze 3 Mbit/s (`webrtc_min_bitrate`), vorher blieb das
+  Bild oft lange matschig. Neue Zeile **Datenrate** in den Messwerten
+- Neu: **Capture-Card neu starten** (unter Messwerte) – setzt den USB-Anschluss der Karte zurück, wie Aus- und
+  Einstecken, auch wenn Game Remote über Home Assistant geöffnet ist
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.6
 
 - Ton: Der Ton der Capture-Card kommt bei WebRTC mit (Schalter **Ton** in der Leiste, startet nach dem ersten

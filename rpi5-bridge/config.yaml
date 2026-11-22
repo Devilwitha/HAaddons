@@ -21,6 +21,9 @@ video:
   webrtc_fps: 60              # Bilder pro Sekunde über WebRTC (mehr = weniger Verzögerung; schafft die CPU
                               # weniger, sinkt die Rate von selbst, ohne dass sich Bilder stauen)
   webrtc_max_bitrate: 6000000 # höchste WebRTC-Bitrate in Bit/s
+  webrtc_min_bitrate: 3000000 # niedrigste WebRTC-Bitrate (sonst startet das Bild lange unscharf)
+                              # Die Bildqualität (720p · 60 fps / 1080p · 30 fps) lässt sich in Game Remote
+                              # unter „Messwerte“ umschalten und wird in /var/lib/switch2-bridge gemerkt.
 
 audio:
   device: "auto"              # Ton der Capture-Card (nur über WebRTC): "auto" = erste USB-Soundkarte mit

@@ -75,6 +75,13 @@
       <h2>Messwerte</h2>
       <button class="icon-btn" id="stats-close" type="button" aria-label="Schließen">&#10005;</button>
     </div>
+    <div class="stats-actions" id="stats-actions" hidden>
+      <label class="field" id="video-mode-field" hidden>Bildqualität
+        <select id="video-mode"></select>
+      </label>
+      <button class="btn" id="cap-restart" type="button" hidden
+              title="Schließt die Capture-Card, setzt ihren USB-Anschluss zurück (wie Aus- und Einstecken) und öffnet sie neu">Capture-Card neu starten</button>
+    </div>
     <table class="map stats" id="stats-table">
       <tbody>
         <tr class="group"><th colspan="2">Raspberry Pi</th></tr>
@@ -89,6 +96,7 @@
         <tr><td>Eingaben über</td><td id="sv-input">–</td></tr>
         <tr class="group"><th colspan="2">Browser</th></tr>
         <tr><td>Video</td><td id="sv-video">–</td></tr>
+        <tr><td title="Empfangene Videodaten pro Sekunde – mehr bedeutet ein schärferes Bild">Datenrate</td><td id="sv-rate">–</td></tr>
         <tr><td>Ton</td><td id="sv-audio">–</td></tr>
         <tr><td>Angezeigt</td><td id="sv-fps">–</td></tr>
         <tr><td title="Wie lange Bilder vor dem Anzeigen gesammelt werden">Puffer</td><td id="sv-jitter">–</td></tr>

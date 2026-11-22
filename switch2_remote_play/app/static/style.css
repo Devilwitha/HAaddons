@@ -348,6 +348,23 @@ body {
   cursor: pointer;
 }
 
+.stats-actions {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.stats-actions .field {
+  flex: 1 1 180px;
+  margin: 0;
+}
+
+.stats-actions .btn {
+  flex: 0 0 auto;
+}
+
 .panel-foot {
   display: flex;
   align-items: center;
