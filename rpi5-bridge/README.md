@@ -12,7 +12,8 @@ Am Ende zeigt das Skript die IP des Pi und die Ports 8765/8766 für die Add-on-K
 
 ## Einstellungen
 `/etc/switch2-bridge/config.yaml` (Gerät, Auflösung, Bildraten, Watchdog), danach
-`sudo systemctl restart switch2-bridge`. Mit `device: "test"` gibt es ein Testbild ohne Capture-Card.
+`sudo systemctl restart switch2-bridge`. Mit `device: "test"` gibt es ein Testbild ohne Capture-Card. `device: "auto"` (Standard) sucht die
+Capture-Card selbst – die Nummer `/dev/videoN` ändert sich nach Umstecken oder Neustart.
 
 ## Protokoll und Status
 ```bash

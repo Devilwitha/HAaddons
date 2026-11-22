@@ -11,7 +11,8 @@ websocket:
 video:
   host: "0.0.0.0"
   port: 8766                  # in Home Assistant: pi_video_port
-  device: "/dev/video0"       # "test" = Testbild ohne Capture-Card
+  device: "auto"              # "auto" = erste USB-Capture-Card (findet sie auch unter neuer Nummer),
+                              # fester Pfad wie "/dev/v4l/by-id/usb-…-video-index0", "test" = Testbild
   width: 1280
   height: 720
   fps: 60                     # Aufnahme von der Capture-Card

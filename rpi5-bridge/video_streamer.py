@@ -21,6 +21,7 @@ starten“ schließt die Karte, setzt ihren USB-Anschluss zurück (USBDEVFS_RESE
 import asyncio
 import collections
 import fractions
+import glob
 import json
 import logging
 import os
@@ -84,6 +85,32 @@ def set_bitrate(max_bitrate, min_bitrate=0):
         log.debug("Bitrate nicht anpassbar: %s", err)
 
 
+def _is_usb_video(node):
+    """/sys/class/video4linux/videoN gehört zu einem USB-Gerät und ist dessen erster Videoeingang."""
+    try:
+        if "/usb" not in os.path.realpath(os.path.join(node, "device")).replace(os.sep, "/"):
+            return False
+        index = Path(node, "index")
+        return not index.exists() or index.read_text().strip() == "0"
+    except OSError:
+        return False
+
+
+def find_capture_device(dev_root="/dev", sys_root="/sys"):
+    """Erste USB-Capture-Card (UVC). Die Nummer /dev/videoN ändert sich nach Umstecken, Neustart oder
+    USB-Reset; der Pi 5 legt außerdem eigene Videogeräte an. Darum: fester Name unter /dev/v4l/by-id,
+    sonst das erste USB-Videogerät in /sys/class/video4linux."""
+    by_id = sorted(glob.glob(os.path.join(dev_root, "v4l", "by-id", "usb-*-video-index0")))
+    if by_id:
+        return by_id[0]
+    nodes = glob.glob(os.path.join(sys_root, "class", "video4linux", "video*"))
+    nodes.sort(key=lambda n: int("".join(ch for ch in os.path.basename(n) if ch.isdigit()) or 0))
+    for node in nodes:
+        if _is_usb_video(node):
+            return dev_root.rstrip("/\\") + "/" + os.path.basename(node)
+    return None
+
+
 def usb_device_dir(video_device):
     """sysfs-Ordner des USB-Geräts zu /dev/videoN (der mit busnum/devnum)."""
     name = os.path.basename(os.path.realpath(video_device))
@@ -116,7 +143,9 @@ class FrameSource:
     """Liest Bilder in einem eigenen Thread und hält das jeweils neueste bereit."""
 
     def __init__(self, cfg):
-        self.device = str(cfg.get("device", "/dev/video0"))
+        self.device = str(cfg.get("device", "auto"))
+        self.current_device = self.device       # tatsächlich geöffnetes Gerät
+        self._fallback_logged = None
         self.width = int(cfg.get("width", 1280))
         self.height = int(cfg.get("height", 720))
         self.fps = int(cfg.get("fps", 60))
@@ -144,6 +173,23 @@ class FrameSource:
         self._restart_result = (False, "")
         self._usb_dir = None
 
+    def _resolve_device(self):
+        """Gerät für den nächsten Öffnungsversuch: „auto“ sucht die Karte; ein eingetragenes /dev/videoN, das
+        fehlt oder keine USB-Karte ist, wird durch die gefundene Karte ersetzt (Nummer hat sich geändert)."""
+        if self.device == "auto":
+            return find_capture_device()
+        if not os.path.exists("/sys/class/video4linux"):
+            return self.device                    # kein Linux (lokaler Test)
+        node = "/sys/class/video4linux/" + os.path.basename(os.path.realpath(self.device))
+        if os.path.exists(self.device) and _is_usb_video(node):
+            return self.device
+        found = find_capture_device()
+        if found and found != self._fallback_logged:
+            self._fallback_logged = found
+            log.warning("%s ist keine Capture-Card (mehr) - nehme %s. Tipp: device: \"auto\" in der config.yaml",
+                        self.device, found)
+        return found or self.device
+
     # ------------------------------------------------------------------ Format und Neustart
     def set_format(self, width, height, fps):
         """Andere Auflösung: Capture-Card schließen und mit dem neuen Format öffnen."""
@@ -169,7 +215,7 @@ class FrameSource:
         self._reopen.clear()
         if self._restart_usb:
             self._restart_usb = None
-            usb_dir = self._usb_dir or usb_device_dir(self.device)
+            usb_dir = self._usb_dir or usb_device_dir(self.current_device)
             self._restart_result = usb_reset(usb_dir)
             log.info("Capture-Card: %s", self._restart_result[1])
             self.state = "unavailable"
@@ -212,17 +258,26 @@ class FrameSource:
             self._run_test_pattern()
             return
         while not self._stop.is_set():
-            cap = cv2.VideoCapture(self.device, cv2.CAP_V4L2)
+            device = self._resolve_device()
+            if device is None:
+                self.state = "unavailable"
+                self.detail = "keine Capture-Card gefunden (USB prüfen)"
+                if not self._handle_reopen():
+                    self._reopen.wait(RECONNECT_SECONDS)
+                    self._handle_reopen()
+                continue
+            self.current_device = device
+            cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
             if not cap.isOpened():
                 self.state = "unavailable"
-                self.detail = f"{self.device} nicht gefunden"
+                self.detail = f"{device} nicht gefunden"
                 cap.release()
                 if not self._handle_reopen():
                     self._reopen.wait(RECONNECT_SECONDS)
                     self._handle_reopen()
                 continue
             try:
-                self._usb_dir = usb_device_dir(self.device) or self._usb_dir
+                self._usb_dir = usb_device_dir(device) or self._usb_dir
             except OSError:
                 pass
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.fourcc))
@@ -232,7 +287,7 @@ class FrameSource:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             self.actual = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
                            int(round(cap.get(cv2.CAP_PROP_FPS))))
-            log.info("Capture-Card %s geöffnet: %dx%d @ %d fps", self.device, *self.actual)
+            log.info("Capture-Card %s geöffnet: %dx%d @ %d fps", device, *self.actual)
             self.state = "no_signal"
             self.detail = "warte auf Bild"
             failures = 0
@@ -335,7 +390,7 @@ class FrameSource:
 
     def status(self):
         w, h, f = self.actual
-        return {"state": self.state, "detail": self.detail, "device": self.device,
+        return {"state": self.state, "detail": self.detail, "device": self.current_device,
                 "width": w, "height": h, "fps": round(self._measured_fps) if self.state == "ok" else 0,
                 "webrtc": HAVE_WEBRTC, "can_restart": True, "target_fps": self.fps}
 

@@ -141,7 +141,7 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
 | **Konsole** gelb | Warte auf Kopplung: auf der Konsole *Griffweise/Reihenfolge ändern* öffnen |
 | **Konsole** rot | nxbt läuft nicht: `journalctl -u switch2-bridge -n 50` |
 | **Capture** gelb | Karte gefunden, aber kein Bild: Konsole im Standby oder HDMI-Kabel prüfen |
-| **Capture** rot | Keine Capture-Card: `v4l2-ctl --list-devices`, ggf. `device` in der config.yaml anpassen |
+| **Capture** rot | Keine Capture-Card: USB-Kabel prüfen, `v4l2-ctl --list-devices`. Die Bridge sucht die Karte selbst (`device: "auto"`) |
 | Ruckelt | Messwerte → Bildqualität *720p · 60 fps*; sonst `webrtc_fps`/`mjpeg_fps` in der config.yaml senken |
 | Bild unscharf | Messwerte → Bildqualität *1080p · 30 fps*; **Datenrate** sollte bei Bewegung über 2,5 Mbit/s liegen (`webrtc_min_bitrate`/`webrtc_max_bitrate` in der config.yaml) |
 | Bild hängt / Capture rot | Messwerte → **Capture-Card neu starten** |

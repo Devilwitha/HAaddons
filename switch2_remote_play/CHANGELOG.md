@@ -1,5 +1,12 @@
 # Änderungen
 
+## 1.0.8
+
+- Bridge findet die Capture-Card selbst (`device: "auto"`), auch wenn sie nach Umstecken, Neustart oder
+  „Capture-Card neu starten“ eine andere Nummer bekommt (z. B. `/dev/video1` statt `/dev/video0`). Ein eingetragenes
+  `/dev/videoN`, unter dem keine Capture-Card mehr hängt, wird automatisch durch die gefundene Karte ersetzt
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.7
 
 - Schärferes Bild: Unter **Messwerte** lässt sich die **Bildqualität** umschalten – *720p · 60 fps* (schnell) oder

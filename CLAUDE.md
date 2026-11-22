@@ -92,7 +92,10 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 - **Bildqualität** (`MODES` in `video_streamer.py`): 720p60 oder 1080p30 (Software-VP8 auf dem Pi 5 schafft 1080p
   nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und
   folgt der REMB-Schätzung des Browsers → `MIN_BITRATE`/`MAX_BITRATE` von `aiortc.codecs.vpx`/`h264` werden gesetzt
-  (`webrtc_min_bitrate` 3 Mbit/s). **Capture-Card neu starten**: Karte schließen, `USBDEVFS_RESET` auf
+  (`webrtc_min_bitrate` 3 Mbit/s). **Gerät** `device: "auto"`: `/dev/v4l/by-id/usb-*-video-index0`, sonst erstes
+  USB-Videogerät mit `index` 0 in `/sys/class/video4linux` (der Pi 5 hat eigene Videogeräte, die Nummer der Karte
+  wechselt). Ein eingetragenes `/dev/videoN` ohne USB-Karte dahinter wird ebenfalls durch die Suche ersetzt.
+  **Capture-Card neu starten**: Karte schließen, `USBDEVFS_RESET` auf
   `/dev/bus/usb/<bus>/<dev>` (aus `/sys/class/video4linux/videoN/device`), neu öffnen – der Dienst läuft als root.
 - **Ton** nur über WebRTC: Bridge liest die Capture-Card per `arecord` (alsa-utils, 48 kHz Stereo, 20-ms-Pakete,
   höchstens 60 ms Puffer), nur solange jemand zuhört. Die Tonspur bekommt eine **eigene Stream-ID**
