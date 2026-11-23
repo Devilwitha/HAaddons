@@ -61,6 +61,11 @@ WS_MAX_MESSAGE = 256 * 1024
 FRAME_MAX_MESSAGE = 8 * 1024 * 1024
 STREAM_MODES = ("webrtc", "jpeg")
 OFFER_MAX_BODY = 256 * 1024
+# Aufzeichnungen (Messwerte → Aufzeichnung): zusätzlich zum Download im Browser auf dem HA-Server abgelegt
+RECORD_DIR = Path(os.environ.get("SWITCH2_RECORDINGS", "/share/game_remote/aufzeichnungen"))
+RECORD_MAX_BODY = 8 * 1024 * 1024
+RECORD_KEEP = 30
+RECORD_NAME = re.compile(r"^game-remote-aufzeichnung-\d{8}-\d{6}\.txt$")
 
 log = logging.getLogger("switch2")
 
@@ -217,7 +222,39 @@ async def api_config(request):
         "stream_mode": options["stream_mode"],
         "default_touch_overlay": options["default_touch_overlay"],
         "haptic_feedback": options["haptic_feedback"],
+        "version": VERSION,
     }))
+
+
+def save_recording(name, data):
+    RECORD_DIR.mkdir(parents=True, exist_ok=True)
+    (RECORD_DIR / name).write_bytes(data)
+    old = sorted(RECORD_DIR.glob("game-remote-aufzeichnung-*.txt"))
+    for path in old[:-RECORD_KEEP]:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return str(RECORD_DIR / name)
+
+
+async def api_recording(request):
+    """Speichert eine Aufzeichnung (Text) unter /share/game_remote/aufzeichnungen, die letzten 30 bleiben."""
+    name = request.query.get("name", "")
+    if not RECORD_NAME.match(name):
+        return web.json_response({"error": "Ungültiger Name"}, status=400)
+    data = bytearray()
+    async for chunk in request.content.iter_chunked(64 * 1024):
+        data.extend(chunk)
+        if len(data) > RECORD_MAX_BODY:
+            return web.json_response({"error": "Aufzeichnung zu groß"}, status=413)
+    try:
+        path = await asyncio.get_running_loop().run_in_executor(None, save_recording, name, bytes(data))
+    except OSError as err:
+        log.warning("Aufzeichnung nicht gespeichert: %s", err)
+        return web.json_response({"error": str(err)}, status=500)
+    log.info("Aufzeichnung gespeichert: %s (%d KB)", path, len(data) // 1024)
+    return no_cache(web.json_response({"path": path}))
 
 
 async def ws_proxy(request):
@@ -449,6 +486,7 @@ def make_app(options, ingress_only=True, stats=None, hub=None):
     app.on_cleanup.append(on_cleanup)
     app.router.add_get("/", index)
     app.router.add_get("/api/config", api_config)
+    app.router.add_post("/api/recording", api_recording)
     app.router.add_get("/ws", ws_proxy)
     app.router.add_get("/video/frames", frames_proxy)
     app.router.add_route("*", "/video/{path:.*}", video_proxy)

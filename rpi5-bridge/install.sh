@@ -110,6 +110,7 @@ Type=simple
 ExecStart=/usr/bin/bt-agent --capability=NoInputNoOutput
 Restart=always
 RestartSec=2
+TimeoutStopSec=10
 
 [Install]
 WantedBy=bluetooth.target

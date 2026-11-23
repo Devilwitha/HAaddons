@@ -99,6 +99,12 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   des HDMI-Signals (1080p60): die Bridge liest NV12 roh (`nv12`, sonst Rückfall wie bei JPEG), baut daraus das I420
   für aiortc (`nv12_to_i420`) und verkleinert auf die Größe der Bildqualität (`_scale_size`). Umrechnungen pro Bild
   einmal für alle Zuschauer (`_cached`: bgr, i420, jpeg).
+- **Aufzeichnung** (Messwerte → Aufzeichnung): `rpi5-bridge/recorder.py` (`REC`, Fenster zu 250 ms: `count`, `sample`
+  = max/Summe/Anzahl, `event`, Log-Handler), Messpunkte in Capture, `_Vp8Codec.encode`, `CaptureTrack.recv`, `lag_watch`,
+  nxbt-Aufrufen, Eingaben. WebSocket `{"type":"system","action":"record","state":"start"|"stop"}`; Antwort
+  `{"type":"record","state":"started"}` bzw. in Teilen zu 100 KB `{"type":"record","part","parts","data"}` (Proxy-Grenze
+  256 KB). Browser misst parallel (`getStats`, `requestVideoFrameCallback`, Long Tasks), `buildReport` wertet aus,
+  Download + `POST api/recording` nach `/share/game_remote/aufzeichnungen` (`map: share:rw`).
 - **Watchdog** 2,0 s ohne Heartbeat/Eingabe → alle Tasten los, Sticks (0, 0).
 - **Bildqualität** (`MODES` in `video_streamer.py`): 720p60 oder 1080p30 (Software-VP8 auf dem Pi 5 schafft 1080p
   nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und
@@ -122,6 +128,8 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   ohne `_on_exit`, das BlueZ neu starten würde) und legt `nxbt.Nxbt()` mit mehreren Versuchen neu an.
   Koppeln während eines laufenden Versuchs (`connecting`, < 90 s) wird abgelehnt.
   Der nxbt-Start läuft im Hintergrund (`controller_main`): WebSocket und Video sind sofort da, Koppeln wartet.
+  Beenden: `_shutdown_nxbt` mit Zeitlimit, danach `os._exit(0)` (kein atexit von nxbt, kein Warten auf den
+  Thread-Pool wie bei `asyncio.run`); `TimeoutStopSec=15` in der Dienstdatei.
 - **Konfiguration der Bridge** liegt nach der Installation in `/etc/switch2-bridge/config.yaml`
   (bei Updates nicht überschrieben); `rpi5-bridge/config.yaml` ist nur die Vorlage.
 - Eingaben mehrerer Clients: Tasten ODER-verknüpft, Sticks nach größtem Ausschlag.

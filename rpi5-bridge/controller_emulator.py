@@ -19,6 +19,8 @@ import logging
 import time
 from pathlib import Path
 
+from recorder import REC
+
 log = logging.getLogger("bridge.controller")
 
 BUTTON_KEYS = {
@@ -34,6 +36,7 @@ SWITCH_ALIAS_PREFIX = "NINTENDO SWITCH"
 PAIR_BUSY_SECONDS = 90              # so lange gilt ein Kopplungsversuch als laufend
 RECOVER_AFTER = 3.0                 # nach einem Absturz so lange warten, dann nxbt neu starten
 RECOVER_MIN_GAP = 30.0              # höchstens alle 30 s automatisch neu starten
+STOP_SECONDS = 6                    # höchstens so lange auf nxbt warten beim Beenden
 RESTART_ATTEMPTS = 6                # Versuche beim Neustart (der Bluetooth-Dienst startet dabei neu)
 
 
@@ -341,13 +344,19 @@ class ControllerEmulator:
                     # Verbindungszustand nur alle 250 ms abfragen (jede Abfrage geht an einen anderen Prozess)
                     if started - self._connected_checked > 0.25:
                         state = self._state()
+                        REC.sample("nxbt", (time.monotonic() - started) * 1000.0)
                         self._connected = state == "connected"
                         self._connected_checked = started
                         self._check_crash(state, started)
                     if self._connected:
                         # Änderungen sofort, sonst den gleichen Zustand alle 50 ms erneut setzen
                         if current != last_sent or started - last_time > 0.05:
+                            sent_at = time.monotonic()
                             self.nx.set_controller_input(self.index, self._packet())
+                            spent = (time.monotonic() - sent_at) * 1000.0
+                            REC.sample("nxbt", spent)
+                            if spent > 15:
+                                REC.event("nxbt", f"Eingabe an nxbt dauerte {spent:.0f} ms (blockiert die Bridge)")
                             last_sent = current
                             last_time = started
                 except Exception as err:
@@ -360,10 +369,15 @@ class ControllerEmulator:
                 pass
 
     async def stop(self):
+        """nxbt-Prozesse beenden, ohne dessen atexit-Handler: der startet BlueZ neu, wirft dabei Fehler
+        (reset_address, TypeError) und hielt das Beenden auf, bis systemd nach 90 s hart abbrach."""
         self.release_all()
-        if self.nx is not None and self.index is not None:
-            loop = asyncio.get_running_loop()
-            try:
-                await loop.run_in_executor(None, self.nx.remove_controller, self.index)
-            except Exception as err:
-                log.debug("Controller entfernen: %s", err)
+        if self.nx is None:
+            return
+        loop = asyncio.get_running_loop()
+        try:
+            await asyncio.wait_for(loop.run_in_executor(None, self._shutdown_nxbt), STOP_SECONDS)
+        except asyncio.TimeoutError:
+            log.warning("nxbt hat sich nicht in %d s beendet - wird mit dem Dienst beendet", STOP_SECONDS)
+        except Exception as err:
+            log.debug("nxbt beenden: %s", err)

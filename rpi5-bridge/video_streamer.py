@@ -41,6 +41,8 @@ import time
 import uuid
 from pathlib import Path
 
+from recorder import REC
+
 try:
     import fcntl                    # nur unter Linux (USB-Reset)
 except ImportError:
@@ -134,6 +136,21 @@ class _Vp8Codec:
             value = dict(value, **{"cpu-used": str(self._speed)})
         setattr(self._codec, name, value)
 
+    def encode(self, frame=None):
+        start = time.perf_counter()
+        packets = self._codec.encode(frame)
+        if REC.active:
+            ms = (time.perf_counter() - start) * 1000.0
+            size = sum(p.size for p in packets)
+            REC.sample("enc", ms)
+            REC.count("bytes", size)
+            if any(p.is_keyframe for p in packets):
+                REC.count("kf")
+                REC.event("keyframe", f"Schlüsselbild: {size / 1024:.0f} KB, {ms:.0f} ms kodiert")
+            elif ms > 25:
+                REC.event("encode", f"langsames Bild: {ms:.0f} ms kodiert ({size / 1024:.0f} KB)")
+        return packets
+
 
 class _Vp8Av:
     """Ersatz für das Modul "av" in aiortc.codecs.vpx: alles wie av, nur CodecContext.create liefert die Hülle."""
@@ -146,7 +163,10 @@ class _Vp8Av:
             @staticmethod
             def create(name, mode=None):
                 codec = real_ctx.create(name, mode)
-                return _Vp8Codec(codec, speed) if name == "libvpx" and mode == "w" else codec
+                if name == "libvpx" and mode == "w":
+                    REC.event("encoder", f"VP8-Encoder angelegt (cpu-used {speed}) - beginnt mit Schlüsselbild")
+                    return _Vp8Codec(codec, speed)
+                return codec
 
         self.CodecContext = CodecContext
 
@@ -378,6 +398,13 @@ class FrameSource:
             dt = now - self.frame_time
             if dt > 0:
                 self._measured_fps = self._measured_fps * 0.9 + (1.0 / dt) * 0.1
+            if REC.active:
+                REC.sample("cap_gap", dt * 1000.0)
+                period = 1.0 / max(1, self.actual[2] or self.fps)
+                if dt > max(0.025, period * 1.6):
+                    REC.event("capture", f"Capture-Card: {dt * 1000:.0f} ms kein Bild "
+                                         f"(erwartet alle {period * 1000:.0f} ms)")
+        REC.count("cap")
         self.frame_time = now
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._wake)
@@ -672,14 +699,22 @@ class CaptureTrack(MediaStreamTrack):
         if self.returned_at is not None:
             # Zeit seit der Rückgabe des letzten Bildes = Kodieren + Senden in aiortc
             self.stats.add("encode", now - self.returned_at)
+            if REC.active:
+                spent = (now - self.returned_at) * 1000.0
+                REC.sample("encsend", spent)
+                if spent > 2000.0 / max(1, self.max_fps()):
+                    REC.event("send", f"Kodieren + Senden: {spent:.0f} ms (aiortc)")
         if now < self.next_at - 0.004:            # 4 ms Spielraum: Bilder der Karte schwanken etwas
             await asyncio.sleep(self.next_at - 0.004 - now)
         await self.source.wait_frame(self.last_id, 0.5)
         picked = time.monotonic()
         frame, frame_id, fmt = await asyncio.get_running_loop().run_in_executor(None, self.source.i420_frame)
+        if frame_id == self.last_id and frame_id != -1:
+            REC.count("repeat")                   # kein neues Bild der Karte innerhalb von 0,5 s
         self.last_id = frame_id
         if frame_id != -1 and self.source.frame_time:
             self.stats.add("age", picked - self.source.frame_time)
+            REC.sample("age", (picked - self.source.frame_time) * 1000.0)
         self.next_at = pace(self.next_at, picked, 1.0 / max(1, self.max_fps()))
         video_frame = av.VideoFrame.from_ndarray(frame, format=fmt)
         video_frame.pts = int((time.monotonic() - self.start) * VIDEO_CLOCK)
@@ -687,6 +722,8 @@ class CaptureTrack(MediaStreamTrack):
         done = time.monotonic()
         self.stats.add("convert", done - picked)
         self.stats.frame(done)
+        REC.count("sent")
+        REC.sample("conv", (done - picked) * 1000.0)
         self.returned_at = done
         return video_frame
 
@@ -911,6 +948,26 @@ class VideoStreamer:
         if self.mode in MODES:
             self._apply_mode(self.mode, reopen=False)
 
+    def record_info(self):
+        """Einstellungen und Zustand für den Kopf einer Aufzeichnung."""
+        src = self.source
+        info = {
+            "mode": self.mode, "webrtc_fps": self.webrtc_fps, "bitrate": self.max_bitrate,
+            "fixed_bitrate": self.fixed_bitrate, "threads": self.cfg.get("webrtc_threads", 4),
+            "speed": self.cfg.get("webrtc_speed", -12), "device": src.current_device, "format": src.format,
+            "actual": list(src.actual), "scaled": src._scale_size(*src.actual[:2]), "raw": src.raw_mode,
+            "buffers": src.buffers, "webrtc_clients": len(self.pcs), "jpeg_clients": self.jpeg_clients,
+            "audio": self.audio.active_device or self.audio.state,
+        }
+        try:
+            import aiortc
+            info["aiortc"] = aiortc.__version__
+            info["av"] = av.__version__
+        except (ImportError, AttributeError, NameError):
+            pass
+        info["opencv"] = cv2.__version__
+        return info
+
     # ------------------------------------------------------------------ Bildqualität
     def _initial_mode(self, cfg):
         try:
@@ -1081,6 +1138,8 @@ class VideoStreamer:
                     self.jpeg_stats.add("age", sent - taken)
                     self.jpeg_stats.add("encode", enc)
                     self.jpeg_stats.frame(sent)
+                    REC.count("jpeg")
+                    REC.sample("jpeg_enc", enc * 1000.0)
                 raw_head = json.dumps(head).encode()
                 await ws.send_bytes(len(raw_head).to_bytes(4, "big") + raw_head + data)
                 inflight[0] += 1

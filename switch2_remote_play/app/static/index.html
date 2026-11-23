@@ -28,6 +28,8 @@
         <span class="pill" id="st-ping" data-state="off" title="Antwortzeit der Bridge"><i></i>Ping <b id="ping-value">–</b></span>
       </div>
       <div class="actions">
+        <button class="btn rec-mark" id="rec-mark" type="button" hidden
+                title="Aufzeichnung läuft – tippen, wenn es ruckelt (setzt eine Markierung)">&#9679; <span id="rec-time">0:00</span> Ruckler!</button>
         <label class="toggle" title="Virtuelles Gamepad ein- oder ausblenden">
           <input type="checkbox" id="touch-toggle">
           <span class="track"><span class="thumb"></span></span>
@@ -120,6 +122,19 @@
       <button class="btn" id="rt-btn" type="button">Test starten</button>
     </div>
     <p class="hint" id="rt-hint" hidden></p>
+    <h3 class="sub">Aufzeichnung</h3>
+    <p class="hint">Zeichnet alles auf, was Browser und Pi messen (alle 250 ms), dazu Lücken, Hänger, Schlüsselbilder,
+      verlorene Pakete und das Protokoll der Bridge. Starten, spielen bis es ruckelt, oben auf „Ruckler!“ tippen, beenden –
+      es entsteht eine Textdatei mit Auswertung zum Weitergeben.</p>
+    <div class="panel-foot">
+      <span id="rec-result" class="rt-result">–</span>
+      <span class="rec-buttons">
+        <button class="btn" id="rec-copy" type="button" hidden>Kopieren</button>
+        <button class="btn" id="rec-save" type="button" hidden>Speichern</button>
+        <button class="btn" id="rec-btn" type="button">Aufzeichnung starten</button>
+      </span>
+    </div>
+    <p class="hint" id="rec-hint" hidden></p>
   </section>
 
   <div id="gamepad" hidden></div>

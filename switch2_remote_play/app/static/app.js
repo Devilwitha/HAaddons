@@ -83,6 +83,7 @@
       handleMessage(msg);
     };
     ws.onclose = () => {
+      recEvent("bridge", "WebSocket zur Bridge getrennt");
       setPill("st-bridge", "err", "Keine Verbindung zur Bridge – neuer Versuch …");
       setPill("st-switch", "off");
       setPill("st-capture", capturePlaying ? "ok" : "off");
@@ -110,6 +111,7 @@
 
   function sendInput(msg) {
     lastInput = msg;
+    if (rec) rec.acc[channelOpen() ? "inDc" : "inWs"] += 1;
     if (channelOpen()) {
       inputSeq += 1;
       try {
@@ -139,6 +141,7 @@
       if (msg.status === "connected") {
         setPill("st-bridge", "ok", "Mit der Bridge verbunden");
       } else if (msg.status === "unreachable") {
+        recEvent("bridge", "Bridge nicht erreichbar: " + (msg.error || ""));
         setPill("st-bridge", "err", "Bridge nicht erreichbar: " + (msg.error || ""));
         $("novideo-text").textContent = "Raspberry Pi 5 Bridge nicht erreichbar – IP und Ports in der Add-on-Konfiguration prüfen.";
       }
@@ -162,8 +165,11 @@
       lastPong = performance.now();
       const ms = Math.max(0, Math.round(lastPong - msg.t));
       wsPing = ms;
+      if (rec) rec.acc.ws.push(ms);
       $("ping-value").textContent = ms + " ms";
       setPill("st-ping", ms < 60 ? "ok" : ms < 150 ? "busy" : "err", "Antwortzeit Browser ↔ Bridge");
+    } else if (msg.type === "record") {
+      recBridgeMessage(msg);
     } else if (msg.type === "info") {
       toast(msg.message);
     } else if (msg.type === "error") {
@@ -258,7 +264,10 @@
     channel.onmessage = (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch (err) { return; }
-      if (msg.type === "pong" && typeof msg.t === "number") dcPing = Math.max(0, Math.round(performance.now() - msg.t));
+      if (msg.type === "pong" && typeof msg.t === "number") {
+        dcPing = Math.max(0, Math.round(performance.now() - msg.t));
+        if (rec) rec.acc.dc.push(dcPing);
+      }
     };
     channel.onclose = () => {
       if (inputChannel !== channel) return;
@@ -281,6 +290,7 @@
     };
     conn.onconnectionstatechange = () => {
       if (conn !== pc) return;
+      recEvent("webrtc", "WebRTC-Verbindung: " + conn.connectionState);
       if (conn.connectionState === "connected") {
         clearTimeout(webrtcTimer);
         showVideo("webrtc");
@@ -357,6 +367,7 @@
           framesCtx.drawImage(img, 0, 0);
           fstat.last = id;
           fstat.frames += 1;
+          recShown(performance.now());
           fstat.bytes += ev.data.byteLength;
           fstat.decode += performance.now() - t0;
           fstat.info = head;
@@ -1039,6 +1050,549 @@
     $("rt-hint").hidden = false;
     $("rt-hint").textContent = "Jetzt eine Taste drücken – jeder Druck ist eine Messung. Am Touch-Gamepad eine Taste links nehmen (L, Steuerkreuz), rechts liegt dieses Feld darüber.";
     showReaction("Warte auf Tastendruck …");
+  });
+
+  // ------------------------------------------------------------------ Aufzeichnung
+  // Zeichnet die Messwerte von Browser und Pi in Fenstern zu 250 ms auf, dazu Ereignisse (Lücken, Hänger,
+  // Schlüsselbilder, verlorene Pakete, Markierungen). Beim Beenden schickt die Bridge ihre Daten, der Browser wertet
+  // beides aus und speichert eine Textdatei (Download und auf dem HA-Server unter /share/game_remote/aufzeichnungen).
+  const REC_WINDOW_MS = 250;
+  const REC_MAX_MS = 15 * 60 * 1000;
+  const REC_MAX_EVENTS = 5000;
+  let rec = null;
+  let recBridge = null;            // wartet auf die Teile der Bridge: { parts, got, resolve }
+  let recReport = null;            // letzte Auswertung: { name, text }
+
+  function recAcc() {
+    return { shown: 0, gap: 0, inDc: 0, inWs: 0, dc: [], ws: [], long: 0 };
+  }
+
+  function recEvent(kind, text) {
+    if (!rec || rec.events.length >= REC_MAX_EVENTS) return;
+    rec.events.push([(performance.now() - rec.t0) / 1000, kind, text]);
+  }
+
+  // Ein Bild wurde wirklich angezeigt (WebRTC: requestVideoFrameCallback, Einzelbilder: gezeichnet)
+  function recShown(now) {
+    if (!rec) return;
+    if (rec.lastShown !== null) {
+      const gap = now - rec.lastShown;
+      if (gap > rec.acc.gap) rec.acc.gap = gap;
+      if (gap > 100) recEvent("anzeige", Math.round(gap) + " ms kein neues Bild angezeigt");
+    }
+    rec.lastShown = now;
+    rec.acc.shown += 1;
+  }
+
+  function recWatchVideo(r) {
+    if (!video.requestVideoFrameCallback) return;
+    const step = (now) => {
+      if (rec !== r) return;
+      if (mode === "webrtc") recShown(now);
+      video.requestVideoFrameCallback(step);
+    };
+    video.requestVideoFrameCallback(step);
+  }
+
+  // Blockaden der Browser-Seite: ein Takt alle 50 ms, der später kommt, zeigt, wie lange die Seite nichts tun konnte
+  // (auch Zeichnen und Eingaben warten dann). Im Hintergrund drosselt der Browser Takte – dort nicht zählen.
+  function recWatchPage(r) {
+    let last = performance.now();
+    r.beat = setInterval(() => {
+      const now = performance.now();
+      const late = now - last - 50;
+      last = now;
+      if (rec !== r || document.hidden || late < 0) return;
+      if (late > r.acc.long) r.acc.long = late;
+      if (late >= 100) recEvent("browser", "Seite " + Math.round(late) + " ms blockiert (Zeichnen und Eingaben warten)");
+    }, 50);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    recEvent("browser", document.hidden ? "Seite im Hintergrund (Browser drosselt)" : "Seite wieder sichtbar");
+  });
+
+  function clock(ms) {
+    const s = Math.floor(ms / 1000);
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+
+  async function recTick(r) {
+    if (rec !== r || r.busy) return;
+    r.busy = true;
+    const now = performance.now();
+    const acc = r.acc;
+    r.acc = recAcc();
+    const row = {
+      i: Math.max(0, Math.round((now - r.t0) / REC_WINDOW_MS) - 1),
+      shown: acc.shown, gap: Math.round(acc.gap), inDc: acc.inDc, inWs: acc.inWs, long: Math.round(acc.long),
+      dc: acc.dc.length ? Math.max(...acc.dc) : null, ws: acc.ws.length ? Math.max(...acc.ws) : null, mode,
+    };
+    if (channelOpen()) {
+      try { inputChannel.send(JSON.stringify({ type: "heartbeat", t: performance.now() })); } catch (err) { /* zu */ }
+    }
+    if (mode === "webrtc" && pc) {
+      try {
+        const report = await pc.getStats();
+        const byId = {};
+        let v = null;
+        let a = null;
+        let pairId = null;
+        report.forEach((s) => {
+          byId[s.id] = s;
+          if (s.type === "inbound-rtp" && s.kind === "video") v = s;
+          if (s.type === "inbound-rtp" && s.kind === "audio") a = s;
+          if (s.type === "transport" && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId;
+        });
+        let cp = pairId ? byId[pairId] : null;
+        if (!cp) report.forEach((s) => { if (s.type === "candidate-pair" && s.nominated && s.state === "succeeded") cp = s; });
+        const cur = v ? {
+          recv: v.framesReceived || 0, dec: v.framesDecoded || 0, drop: v.framesDropped || 0, kf: v.keyFramesDecoded || 0,
+          pkts: v.packetsReceived || 0, lost: v.packetsLost || 0, nack: v.nackCount || 0, pli: v.pliCount || 0,
+          jb: v.jitterBufferDelay || 0, jbn: v.jitterBufferEmittedCount || 0, dect: v.totalDecodeTime || 0,
+          frz: v.freezeCount || 0, frzt: v.totalFreezesDuration || 0, bytes: v.bytesReceived || 0,
+          alost: a ? a.packetsLost || 0 : 0, conceal: a ? a.concealedSamples || 0 : 0,
+        } : null;
+        if (cur && r.prev) {
+          const p = r.prev;
+          row.recv = cur.recv - p.recv;
+          row.dec = cur.dec - p.dec;
+          row.drop = cur.drop - p.drop;
+          row.kf = cur.kf - p.kf;
+          row.pkts = cur.pkts - p.pkts;
+          row.lost = Math.max(0, cur.lost - p.lost);
+          row.nack = cur.nack - p.nack;
+          row.pli = cur.pli - p.pli;
+          const jbn = cur.jbn - p.jbn;
+          row.jb = jbn > 0 ? Math.round(((cur.jb - p.jb) / jbn) * 1000) : null;
+          row.decms = row.dec > 0 ? ((cur.dect - p.dect) / row.dec) * 1000 : null;
+          row.frz = cur.frz - p.frz;
+          row.frzt = Math.round((cur.frzt - p.frzt) * 1000);
+          row.kbit = Math.round(((cur.bytes - p.bytes) * 8) / REC_WINDOW_MS);
+          row.alost = cur.alost - p.alost;
+          row.conceal = cur.conceal - p.conceal;
+          if (row.frz > 0) recEvent("anzeige", "Browser meldet eingefrorenes Video (" + row.frzt + " ms)");
+          if (row.lost > 0) recEvent("netz", row.lost + " Videopakete verloren");
+          if (row.pli > 0) recEvent("netz", "Browser fordert ein Schlüsselbild an (PLI)");
+        }
+        if (cur) r.prev = cur;
+        if (cp) {
+          if (cp.currentRoundTripTime != null) row.rtt = Math.round(cp.currentRoundTripTime * 1000);
+          const l = byId[cp.localCandidateId];
+          const rm = byId[cp.remoteCandidateId];
+          if (!r.path && l && rm) {
+            r.path = (l.candidateType || "?") + "/" + (l.protocol || "?") + (l.networkType ? " (" + l.networkType + ")" : "")
+              + " → " + (rm.address || rm.ip || "?") + ":" + (rm.port || "?") + " " + (rm.candidateType || "");
+          }
+        }
+        if (v && v.frameWidth) r.size = v.frameWidth + "×" + v.frameHeight;
+      } catch (err) { /* Verbindung gerade weg */ }
+    } else if (mode === "jpeg") {
+      const cur = { recv: fstat.frames, bytes: fstat.bytes, decode: fstat.decode, skipped: fstat.skipped };
+      if (r.prevJ) {
+        row.recv = cur.recv - r.prevJ.recv;
+        row.kbit = Math.round(((cur.bytes - r.prevJ.bytes) * 8) / REC_WINDOW_MS);
+        row.decms = row.recv > 0 ? (cur.decode - r.prevJ.decode) / row.recv : null;
+        row.drop = cur.skipped - r.prevJ.skipped;
+      }
+      r.prevJ = cur;
+      r.size = frames.width + "×" + frames.height;
+    }
+    r.rows.push(row);
+    $("rec-time").textContent = clock(now - r.t0);
+    r.busy = false;
+    if (now - r.t0 > REC_MAX_MS) stopRecording("Höchstdauer von 15 Minuten erreicht");
+  }
+
+  function startRecording() {
+    if (rec) return;
+    const st = lastStatus || {};
+    const r = {
+      t0: performance.now(), started: new Date(), rows: [], events: [], acc: recAcc(), prev: null, prevJ: null,
+      lastShown: null, busy: false, marks: 0, path: null, size: null, bridgeOk: false,
+      info: {
+        version: config.version || "?", ua: navigator.userAgent, host: location.hostname,
+        screen: screen.width + "×" + screen.height + " @" + (window.devicePixelRatio || 1),
+        view: innerWidth + "×" + innerHeight, mode, touch: $("touch-toggle").checked,
+        net: navigator.connection ? [navigator.connection.type, navigator.connection.effectiveType].filter(Boolean).join("/") : "",
+        pads: navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean).map((p) => p.id) : [],
+        console: (st.switch || {}).state || "?",
+      },
+    };
+    rec = r;
+    r.timer = setInterval(() => recTick(r), REC_WINDOW_MS);
+    recWatchVideo(r);
+    recWatchPage(r);
+    recEvent("start", "Aufzeichnung gestartet (" + (mode === "webrtc" ? "Video/WebRTC" : "Einzelbilder") + ")");
+    if (ws && ws.readyState === WebSocket.OPEN) send({ type: "system", action: "record", state: "start" });
+    else recEvent("bridge", "keine Verbindung zur Bridge beim Start – nur Browser-Werte");
+    updateRecUi();
+  }
+
+  function recBridgeMessage(msg) {
+    if (msg.state === "started") {
+      if (rec) rec.bridgeOk = true;
+      return;
+    }
+    if (!recBridge || typeof msg.parts !== "number") return;
+    recBridge.parts[msg.part] = msg.data || "";
+    recBridge.got += 1;
+    if (recBridge.got >= msg.parts) {
+      const done = recBridge;
+      recBridge = null;
+      try { done.resolve(JSON.parse(done.parts.join(""))); } catch (err) { done.resolve(null); }
+    }
+  }
+
+  function stamp(date) {
+    const p = (n) => String(n).padStart(2, "0");
+    return date.getFullYear() + p(date.getMonth() + 1) + p(date.getDate()) + "-" + p(date.getHours()) + p(date.getMinutes()) + p(date.getSeconds());
+  }
+
+  function downloadText(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+  }
+
+  async function stopRecording(reason) {
+    const r = rec;
+    if (!r) return;
+    rec = null;
+    clearInterval(r.timer);
+    clearInterval(r.beat);
+    r.ended = performance.now();
+    if (reason) r.events.push([(r.ended - r.t0) / 1000, "ende", reason]);
+    updateRecUi("Wird ausgewertet …");
+    let bridge = null;
+    let note = "";
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      bridge = await new Promise((resolve) => {
+        recBridge = { parts: [], got: 0, resolve };
+        send({ type: "system", action: "record", state: "stop" });
+        setTimeout(() => resolve(null), 15000);
+      });
+      recBridge = null;
+      if (!bridge) {
+        note = r.bridgeOk ? "Die Bridge hat ihre Daten nicht rechtzeitig geschickt."
+          : "Die Bridge kennt die Aufzeichnung nicht (älter als 1.0.18 – install.sh am Pi ausführen). Nur Browser-Werte.";
+      }
+    } else {
+      note = "Keine Verbindung zur Bridge – nur Browser-Werte.";
+    }
+    let text;
+    try {
+      text = buildReport(r, bridge, note);
+    } catch (err) {
+      text = "Auswertung fehlgeschlagen: " + err + "\n\nRohdaten:\n" + JSON.stringify({ browser: r.rows, events: r.events, bridge }, null, 1);
+    }
+    const name = "game-remote-aufzeichnung-" + stamp(r.started) + ".txt";
+    recReport = { name, text, saved: "" };
+    downloadText(name, text);
+    try {
+      const res = await fetch("api/recording?name=" + encodeURIComponent(name), {
+        method: "POST", body: text, headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+      if (res.ok) recReport.saved = (await res.json()).path || "";
+    } catch (err) { /* nur Download */ }
+    updateRecUi();
+  }
+
+  function markStutter() {
+    if (!rec) return;
+    rec.marks += 1;
+    recEvent("markierung", "★ Markierung " + rec.marks + " – Ruckler bemerkt");
+    toast("Markierung " + rec.marks + " gesetzt");
+  }
+
+  function updateRecUi(busyText) {
+    const running = !!rec;
+    $("rec-btn").textContent = running ? "Aufzeichnung beenden" : "Aufzeichnung starten";
+    $("rec-btn").disabled = !!busyText;
+    $("rec-mark").hidden = !running;
+    $("rec-copy").hidden = running || !recReport || !!busyText;
+    $("rec-save").hidden = running || !recReport || !!busyText;
+    const result = $("rec-result");
+    const hint = $("rec-hint");
+    if (busyText) {
+      result.textContent = busyText;
+      hint.hidden = true;
+    } else if (running) {
+      result.textContent = "läuft …";
+      hint.hidden = false;
+      hint.textContent = "Spiel weiter, bis es ruckelt, und tippe dann oben auf „Ruckler!“. Das Fenster hier darf zu sein.";
+    } else if (recReport) {
+      const first = recReport.text.split("\n").find((line) => line.startsWith("Ergebnis:")) || "";
+      result.textContent = "fertig";
+      hint.hidden = false;
+      hint.textContent = (first ? first + " " : "") + "Gespeichert als " + recReport.name
+        + (recReport.saved ? " (auch auf dem HA-Server: " + recReport.saved + ")" : "") + ".";
+    } else {
+      result.textContent = "–";
+      hint.hidden = true;
+    }
+  }
+
+  // ------------------------------------------------------------------ Auswertung
+  function buildReport(r, bridge, note) {
+    const W = REC_WINDOW_MS / 1000;
+    const info = (bridge && bridge.info) || {};
+    const target = info.webrtc_fps || (lastStatus && lastStatus.stream && lastStatus.stream.target_fps) || 60;
+    const cardFps = (Array.isArray(info.actual) && info.actual[2]) || 60;
+    const budget = 1000 / target;
+    const pi = new Map();
+    if (bridge) bridge.windows.forEach((w) => pi.set(w[0], w[1]));
+    const br = new Map();
+    r.rows.forEach((row) => br.set(row.i, row));
+    const lastPi = bridge && bridge.windows.length ? bridge.windows[bridge.windows.length - 1][0] : -1;
+    const lastBr = r.rows.length ? r.rows[r.rows.length - 1].i : -1;
+    const count = Math.max(lastPi, lastBr) + 1;
+    const fps = (n) => (n == null ? null : Math.round(n / W));
+    const num = (v) => (typeof v === "number" && !Number.isNaN(v) ? v : null);
+    const avg = (list) => { const l = list.filter((x) => x != null); return l.length ? l.reduce((a, b) => a + b, 0) / l.length : null; };
+    const max = (list) => { const l = list.filter((x) => x != null); return l.length ? Math.max(...l) : null; };
+    const min = (list) => { const l = list.filter((x) => x != null); return l.length ? Math.min(...l) : null; };
+    const sum = (list) => list.filter((x) => x != null).reduce((a, b) => a + b, 0);
+    const f = (v, digits) => (v == null ? "·" : digits ? v.toFixed(digits).replace(".", ",") : String(Math.round(v)));
+    const ms = (v) => (v == null ? "–" : Math.round(v) + " ms");
+    const sec = (t) => t.toFixed(2).replace(".", ",") + " s";
+    // Fenster ohne Rand (erstes und letztes sind unvollständig)
+    const inner = [];
+    for (let i = 1; i < count - 1; i += 1) inner.push(i);
+    const piVals = (key) => inner.map((i) => (pi.has(i) ? num(pi.get(i)[key]) : null));
+    const piCounts = (key) => inner.filter((i) => pi.has(i)).map((i) => pi.get(i)[key] || 0);
+    const brVals = (key) => inner.map((i) => (br.has(i) ? num(br.get(i)[key]) : null));
+    const piMean = (key) => {
+      let s = 0;
+      let n = 0;
+      pi.forEach((v) => { s += v[key + "_s"] || 0; n += v[key + "_n"] || 0; });
+      return n ? s / n : null;
+    };
+    const sentKey = r.info.mode === "jpeg" ? "jpeg" : "sent";
+
+    // Ereignisse beider Seiten nach Fenster
+    const events = new Map();
+    const addEvent = (t, who, kind, text) => {
+      const i = Math.max(0, Math.floor(t / W));
+      if (!events.has(i)) events.set(i, []);
+      events.get(i).push({ t, who, kind, text });
+    };
+    r.events.forEach((e) => addEvent(e[0], "Browser", e[1], e[2]));
+    if (bridge) bridge.events.forEach((e) => addEvent(e[0], "Pi", e[1], e[2]));
+    const allEvents = [];
+    events.forEach((list) => list.forEach((e) => allEvents.push(e)));
+    allEvents.sort((a, b) => a.t - b.t);
+    const countKind = (who, kind) => allEvents.filter((e) => e.who === who && e.kind === kind).length;
+
+    // Ursachen für einen Zeitraum (Pi-Fenster etwas weiter, die Uhren laufen nicht exakt gleich)
+    function causes(from, to) {
+      const list = [];
+      const cats = [];
+      const piRange = [];
+      for (let i = from - 2; i <= to + 1; i += 1) if (pi.has(i)) piRange.push(pi.get(i));
+      const brRange = [];
+      for (let i = from; i <= to; i += 1) if (br.has(i)) brRange.push(br.get(i));
+      const capMin = min(piRange.map((v) => fps(v.cap || 0)));
+      const gapMax = max(piRange.map((v) => num(v.cap_gap)));
+      const lag = max(piRange.map((v) => num(v.lag)));
+      const nx = max(piRange.map((v) => num(v.nxbt)));
+      const enc = max(piRange.map((v) => num(v.enc)));
+      const es = max(piRange.map((v) => num(v.encsend)));
+      const kf = sum(piRange.map((v) => v.kf || 0));
+      const sent = min(piRange.map((v) => fps(v[sentKey] || 0)));
+      const lost = sum(brRange.map((v) => v.lost || 0));
+      const nack = sum(brRange.map((v) => v.nack || 0));
+      const rtt = max(brRange.map((v) => num(v.rtt)));
+      // Mittel über den Zeitraum: nach einer Blockade kommen die gestauten Bilder gebündelt im nächsten Fenster an
+      const recv = avg(brRange.map((v) => fps(num(v.recv))));
+      const shown = avg(brRange.map((v) => fps(v.shown)));
+      const sentAvg = avg(piRange.map((v) => fps(v[sentKey] || 0)));
+      const long = max(brRange.map((v) => num(v.long)));
+      const frz = sum(brRange.map((v) => v.frz || 0));
+      if (bridge && piRange.length) {
+        if (capMin != null && capMin < cardFps * 0.85) { list.push("Capture-Card lieferte nur " + capMin + " fps (Lücke " + ms(gapMax) + ")"); cats.push("Capture-Card"); }
+        if (lag != null && lag > 17) { list.push("Bridge hing " + ms(lag)); cats.push("Bridge-Hänger"); }
+        if (nx != null && nx > 15) { list.push("nxbt-Aufruf blockierte " + ms(nx)); cats.push("nxbt"); }
+        if (enc != null && enc > budget) { list.push("Kodieren dauerte " + ms(enc) + " (Zeit pro Bild " + ms(budget) + ")"); cats.push("Kodieren"); }
+        if (kf > 0) { list.push(kf + "× Schlüsselbild"); cats.push("Schlüsselbild"); }
+        if (es != null && es > budget * 2 && !(enc != null && enc > budget)) { list.push("Kodieren + Senden " + ms(es) + " (Warten in aiortc/Bridge)"); cats.push("Senden"); }
+        if (!list.length && sent != null && sent < target * 0.85) { list.push("Pi sendete nur " + sent + " fps"); cats.push("Pi sendet zu wenig"); }
+      } else if (!bridge) {
+        list.push("keine Pi-Daten");
+      }
+      if (lost > 0 || nack > 0) { list.push("Netz: " + lost + " Pakete verloren, " + nack + " nachgefordert"); cats.push("Netz/WLAN"); }
+      if (rtt != null && rtt > 30) { list.push("Netz langsam: " + ms(rtt) + " Antwortzeit"); cats.push("Netz/WLAN"); }
+      if (recv != null && sentAvg != null && sentAvg >= target * 0.85 && recv < sentAvg * 0.85 && lost === 0) {
+        list.push("Netz: weniger angekommen als gesendet (" + Math.round(recv) + " von " + Math.round(sentAvg) + " fps, verspätet)");
+        cats.push("Netz/WLAN");
+      }
+      if (recv != null && shown != null && recv >= target * 0.85 && shown < recv * 0.85) { list.push("Browser zeigte weniger an, als ankam (" + Math.round(shown) + " von " + Math.round(recv) + " fps)"); cats.push("Browser/Anzeige"); }
+      if (long != null && long >= 50) { list.push("Browser-Seite " + ms(long) + " beschäftigt"); cats.push("Browser/Anzeige"); }
+      if (frz > 0) list.push("Browser meldet Einfrieren");
+      if (!list.length) { list.push("keine Ursache in den Messwerten erkannt"); cats.push("unklar"); }
+      return { list, cats };
+    }
+
+    // Schlechte Fenster: weniger angezeigt als erwartet oder lange Lücke in der Anzeige
+    const bad = [];
+    inner.forEach((i) => {
+      const row = br.get(i);
+      if (!row || i < 3) return;
+      const shownFps = fps(row.shown);
+      if (shownFps < target * 0.85 || row.gap > Math.max(50, budget * 2.5)) bad.push(i);
+    });
+    const moments = [];
+    bad.forEach((i) => {
+      const last = moments[moments.length - 1];
+      if (last && i - last.to <= 2) last.to = i;
+      else moments.push({ from: i, to: i });
+    });
+    const catCount = {};
+    moments.forEach((m) => {
+      m.info = causes(m.from, m.to);
+      const rows = [];
+      for (let i = m.from; i <= m.to; i += 1) if (br.has(i)) rows.push(br.get(i));
+      m.shown = min(rows.map((v) => fps(v.shown)));
+      m.gap = max(rows.map((v) => v.gap));
+      Array.from(new Set(m.info.cats)).forEach((c) => { catCount[c] = (catCount[c] || 0) + 1; });
+    });
+    const topCats = Object.keys(catCount).sort((a, b) => catCount[b] - catCount[a]);
+
+    const L = [];
+    const dur = (r.ended - r.t0) / 1000;
+    L.push("Game Remote – Aufzeichnung");
+    L.push("==========================");
+    L.push("Start: " + r.started.toLocaleString("de-DE") + "   Dauer: " + sec(dur) + "   Fenster: 250 ms (" + Math.round(target * W) + " Bilder = " + target + " fps)");
+    if (note) L.push("Hinweis: " + note);
+    L.push("Ergebnis: " + (moments.length
+      ? moments.length + " Einbrüche, häufigste Ursache: " + topCats.slice(0, 3).map((c) => c + " (" + catCount[c] + "×)").join(", ")
+      : "keine Einbrüche (angezeigt durchgehend über " + Math.round(target * 0.85) + " fps)"));
+    L.push("");
+    L.push("UMGEBUNG");
+    L.push("  Add-on " + r.info.version + ", Bridge-Stand " + (info.bridge || "?") + ", Konsole: " + (info.console || r.info.console));
+    L.push("  Browser: " + r.info.ua);
+    L.push("  Bildschirm " + r.info.screen + ", Fenster " + r.info.view + ", Seite über " + r.info.host
+      + (/nabu\.casa$/.test(r.info.host) ? " (Nabu Casa – Status/Messwerte über das Internet)" : "")
+      + (r.info.net ? ", Netz " + r.info.net : ""));
+    L.push("  Übertragung " + (r.info.mode === "webrtc" ? "Video (WebRTC)" : "Einzelbilder (JPEG)") + ", Bild " + (r.size || "?")
+      + (r.path ? ", Weg " + r.path : "") + ", Controller: " + (r.info.pads.length ? r.info.pads.join("; ") : "keiner") + (r.info.touch ? ", Touch an" : ""));
+    if (bridge) {
+      L.push("  Pi: Bildqualität " + (info.mode || "?") + " (" + target + " fps), Karte " + (info.device || "?") + " " + (info.format || "")
+        + " " + (Array.isArray(info.actual) ? info.actual[0] + "×" + info.actual[1] + "@" + info.actual[2] : "")
+        + (info.scaled ? " → " + info.scaled.join("×") : "") + ", " + (info.buffers || "?") + " Puffer");
+      L.push("  Encoder: VP8 cpu-used " + info.speed + ", " + info.threads + " Threads, " + Math.round((info.bitrate || 0) / 1e6) + " Mbit/s"
+        + (info.fixed_bitrate ? " fest" : "") + "; nice " + (info.nice != null ? info.nice : "?") + ", Regler " + (info.governor || "?")
+        + ", " + (info.temp != null ? info.temp + " °C" : "") + "; aiortc " + (info.aiortc || "?") + ", av " + (info.av || "?") + ", OpenCV " + (info.opencv || "?"));
+      L.push("  Zuschauer: " + info.webrtc_clients + " WebRTC, " + info.jpeg_clients + " Einzelbilder; Ton " + (info.audio || "?"));
+      L.push("  Uhren: Pi-Zeit beginnt beim Eintreffen des Starts (über Home Assistant), Abweichung meist unter 0,1 s.");
+    }
+    L.push("");
+    L.push("ZUSAMMENFASSUNG");
+    if (bridge) {
+      L.push("  Pi   Capture-Card   Ø " + f(avg(piCounts("cap").map(fps))) + " fps, schlechtestes Fenster " + f(min(piCounts("cap").map(fps))) + " fps, längste Lücke " + ms(max(piVals("cap_gap"))) + ", Lücken: " + countKind("Pi", "capture"));
+      L.push("       Gesendet       Ø " + f(avg(piCounts(sentKey).map(fps))) + " fps, schlechtestes Fenster " + f(min(piCounts(sentKey).map(fps))) + " fps");
+      if (r.info.mode === "webrtc") {
+        L.push("       Kodieren       Ø " + ms(piMean("enc")) + ", max " + ms(max(piVals("enc"))) + " (Zeit pro Bild " + ms(budget) + "), Schlüsselbilder " + sum(piCounts("kf")) + ", Encoder neu angelegt " + countKind("Pi", "encoder"));
+        L.push("       Kodieren+Senden Ø " + ms(piMean("encsend")) + ", max " + ms(max(piVals("encsend"))) + "; Umrechnung Ø " + ms(piMean("conv")) + ", Bildalter Ø " + ms(piMean("age")));
+      } else {
+        L.push("       JPEG           Ø " + ms(piMean("jpeg_enc")) + ", max " + ms(max(piVals("jpeg_enc"))));
+      }
+      L.push("       Hänger         max " + ms(max(piVals("lag"))) + ", über 15 ms: " + countKind("Pi", "lag") + "×");
+      L.push("       nxbt           Ø " + ms(piMean("nxbt")) + ", max " + ms(max(piVals("nxbt"))) + ", über 15 ms: " + countKind("Pi", "nxbt") + "×");
+      L.push("       Eingaben       " + sum(piCounts("in_dc")) + " über Datenkanal, " + sum(piCounts("in_ws")) + " über WebSocket, längste Lücke im Datenkanal " + ms(max(piVals("in_gap"))));
+      L.push("       System         CPU max " + f(max(piVals("cpu"))) + " %, Temperatur max " + f(max(piVals("temp")), 1) + " °C");
+    }
+    const pkts = sum(brVals("pkts"));
+    const lost = sum(brVals("lost"));
+    L.push("  Browser Empfangen   Ø " + f(avg(brVals("recv").map(fps))) + " fps, schlechtestes Fenster " + f(min(brVals("recv").map(fps))) + " fps");
+    L.push("       Angezeigt      Ø " + f(avg(brVals("shown").map(fps))) + " fps, schlechtestes Fenster " + f(min(brVals("shown").map(fps))) + " fps, längste Lücke " + ms(max(brVals("gap"))));
+    L.push("       Netz           " + lost + " von " + pkts + " Paketen verloren (" + f(pkts ? (lost / (pkts + lost)) * 100 : 0, 2) + " %), nachgefordert " + sum(brVals("nack")) + ", Schlüsselbild angefordert " + sum(brVals("pli")) + "×");
+    L.push("       Antwortzeit    direkt Ø " + ms(avg(brVals("dc"))) + " / max " + ms(max(brVals("dc"))) + ", WebRTC-Weg Ø " + ms(avg(brVals("rtt"))) + ", über Home Assistant Ø " + ms(avg(brVals("ws"))));
+    L.push("       Puffer Ø " + ms(avg(brVals("jb"))) + ", Dekodieren Ø " + ms(avg(brVals("decms"))) + ", verworfen " + sum(brVals("drop")) + ", eingefroren " + sum(brVals("frz")) + "× (" + ms(sum(brVals("frzt"))) + "), Seite beschäftigt max " + ms(max(brVals("long"))));
+    L.push("");
+
+    const marks = allEvents.filter((e) => e.kind === "markierung");
+    if (marks.length) {
+      L.push("MARKIERUNGEN (Ruckler bemerkt – ausgewertet werden die 3 s davor)");
+      marks.forEach((m) => {
+        const to = Math.floor(m.t / W);
+        const from = Math.max(0, to - 12);
+        const near = moments.filter((mo) => mo.to >= from && mo.from <= to + 1);
+        L.push("  " + sec(m.t) + "  " + m.text.replace("★ ", ""));
+        if (near.length) near.forEach((mo) => L.push("     Einbruch bei " + sec(mo.from * W) + ": angezeigt " + mo.shown + " fps, Lücke " + ms(mo.gap) + " – " + mo.info.list.join("; ")));
+        else L.push("     kein Einbruch gemessen – " + causes(from, to).list.join("; "));
+      });
+      L.push("");
+    }
+
+    L.push("EINBRÜCHE (angezeigt unter " + Math.round(target * 0.85) + " fps oder Lücke über " + Math.round(Math.max(50, budget * 2.5)) + " ms)");
+    if (!moments.length) L.push("  keine");
+    moments.slice(0, 200).forEach((m) => {
+      L.push("  " + sec(m.from * W) + (m.to > m.from ? " – " + sec((m.to + 1) * W) : "") + ": angezeigt " + m.shown + " fps, Lücke " + ms(m.gap) + " – " + m.info.list.join("; "));
+    });
+    if (moments.length > 200) L.push("  … " + (moments.length - 200) + " weitere");
+    L.push("");
+
+    L.push("VERLAUF (je 250 ms, fps hochgerechnet; ! = Einbruch)");
+    const head = ["Zeit", "Karte", "Gesen", "Kod", "K+S", "Häng", "nxbt", "|", "Empf", "Anz", "Lücke", "Verl", "NACK", "PLI", "Puff", "RTT", "Dek", "Seite"];
+    const widths = [8, 6, 6, 5, 5, 5, 5, 2, 5, 5, 6, 5, 5, 4, 5, 5, 5, 6];
+    const line = (cells) => cells.map((c, k) => String(c).padStart(widths[k])).join("");
+    L.push("   " + line(head) + "  Ereignisse");
+    const badSet = new Set(bad);
+    for (let i = 0; i < count; i += 1) {
+      const p = pi.get(i);
+      const b = br.get(i);
+      if (!p && !b && !events.has(i)) continue;
+      const cells = [
+        (i * W).toFixed(2).replace(".", ","),
+        p ? fps(p.cap || 0) : "·", p ? fps(p[sentKey] || 0) : "·", p ? f(num(p.enc)) : "·", p ? f(num(p.encsend)) : "·",
+        p ? f(num(p.lag)) : "·", p ? f(num(p.nxbt)) : "·", "|",
+        b && b.recv != null ? fps(b.recv) : "·", b ? fps(b.shown) : "·", b ? f(b.gap) : "·", b ? f(num(b.lost)) : "·",
+        b ? f(num(b.nack)) : "·", b ? f(num(b.pli)) : "·", b ? f(num(b.jb)) : "·", b ? f(num(b.rtt)) : "·",
+        b ? f(num(b.decms)) : "·", b ? f(num(b.long)) : "·",
+      ];
+      const ev = (events.get(i) || []).map((e) => e.who + ": " + e.text).join("; ");
+      L.push((badSet.has(i) ? " ! " : "   ") + line(cells) + (ev ? "  " + ev : ""));
+    }
+    L.push("");
+    L.push("Spalten: Karte = Bilder der Capture-Card, Gesen = vom Pi gesendet, Kod = längstes Kodieren eines Bildes (ms),");
+    L.push("K+S = längstes Kodieren + Senden in aiortc (ms), Häng = längster Hänger der Bridge (ms), nxbt = längster Aufruf an nxbt (ms),");
+    L.push("Empf = im Browser angekommen, Anz = wirklich angezeigt, Lücke = längste Zeit ohne neues Bild (ms), Verl/NACK/PLI = verlorene,");
+    L.push("nachgeforderte Pakete und angeforderte Schlüsselbilder, Puff = Puffer (ms), RTT = Antwortzeit direkt (ms), Dek = Dekodieren (ms),");
+    L.push("Seite = längste Blockade der Browser-Seite (ms).");
+    if (bridge && bridge.logs.length) {
+      L.push("");
+      L.push("PROTOKOLL DER BRIDGE");
+      bridge.logs.forEach((entry) => L.push("  " + sec(entry[0]) + "  " + entry[1]));
+    }
+    if (bridge && bridge.lost) L.push("(" + bridge.lost + " Ereignisse/Zeilen der Bridge nicht mehr aufgenommen – Speichergrenze)");
+    return L.join("\n") + "\n";
+  }
+
+  $("rec-btn").addEventListener("click", () => {
+    if (rec) stopRecording();
+    else startRecording();
+  });
+  $("rec-mark").addEventListener("click", markStutter);
+  $("rec-save").addEventListener("click", () => { if (recReport) downloadText(recReport.name, recReport.text); });
+  $("rec-copy").addEventListener("click", async () => {
+    if (!recReport) return;
+    try {
+      await navigator.clipboard.writeText(recReport.text);
+      toast("Aufzeichnung in die Zwischenablage kopiert");
+    } catch (err) {
+      const area = document.createElement("textarea");
+      area.value = recReport.text;
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      area.remove();
+      toast(ok ? "Aufzeichnung in die Zwischenablage kopiert" : "Kopieren nicht möglich – „Speichern“ nehmen", !ok);
+    }
   });
 
   // ------------------------------------------------------------------ Ton

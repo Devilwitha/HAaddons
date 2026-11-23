@@ -13,6 +13,8 @@ ExecStart=/opt/switch2-bridge/venv/bin/python /opt/switch2-remote-play/rpi5-brid
 Environment=PYTHONUNBUFFERED=1
 Restart=always
 RestartSec=3
+# Beenden dauert normal 1-2 s; hängt nxbt, nicht 90 s warten (Updates per install.sh unterbrechen sonst lange)
+TimeoutStopSec=15
 StateDirectory=switch2-bridge
 
 [Install]

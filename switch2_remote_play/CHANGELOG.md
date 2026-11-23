@@ -1,5 +1,24 @@
 # Änderungen
 
+## 1.0.18
+
+- Messwerte → **Aufzeichnung**: zeichnet alles auf, was Browser und Pi messen (alle 250 ms) – Bilder der
+  Capture-Card, gesendet, empfangen und wirklich angezeigt, Kodierzeit, Hänger der Bridge, Aufrufe an nxbt,
+  verlorene Pakete, Antwortzeiten, Puffer – dazu einzelne Ereignisse (Lücken, Schlüsselbilder, Einfrieren) und das
+  Protokoll der Bridge. Während der Aufzeichnung setzt **Ruckler!** oben in der Leiste eine Markierung
+- Beim Beenden entsteht eine Textdatei mit Auswertung: Einbrüche mit vermuteter Ursache (Capture-Card, Kodieren,
+  Bridge-Hänger, nxbt, Netz/WLAN, Browser), Zusammenfassung und Verlauf. Download im Browser, Kopieren in die
+  Zwischenablage, dazu auf dem HA-Server unter `/share/game_remote/aufzeichnungen` (die letzten 30)
+- Bridge mit `install.sh` aktualisieren (sonst enthält die Aufzeichnung nur die Werte des Browsers)
+
+## 1.0.17
+
+- Updates der Bridge unterbrechen nur noch wenige Sekunden statt fast 2 Minuten: Beim Beenden lief der
+  Aufräum-Handler von nxbt, startete Bluetooth neu, warf Fehler (`reset_address`) und hielt den Dienst auf, bis
+  systemd ihn nach 90 s hart beendete. Die Bridge beendet nxbt jetzt selbst (höchstens 6 s) und wartet nicht mehr
+  auf hängende Hintergrundaufrufe; systemd bricht spätestens nach 15 s ab
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.16
 
 - Die Bridge hat Vorrang auf dem Pi (`priority: -10` im Abschnitt `system`): Einlesen, Kodieren und Eingaben warten
