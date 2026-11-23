@@ -53,7 +53,7 @@ import numpy as np
 from aiohttp import web
 
 try:
-    from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
+    from aiortc import RTCConfiguration, RTCPeerConnection, RTCRtpSender, RTCSessionDescription
     from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
     import av
     HAVE_WEBRTC = True
@@ -160,19 +160,32 @@ def _restore_thread_priority(old):
         pass
 
 
-class _Vp8Codec:
-    """Hülle um den libvpx-Encoder von aiortc, die beim Setzen der Optionen "cpu-used" ersetzt."""
+class _EncoderCodec:
+    """Hülle um den Encoder von aiortc (libvpx/libx264): ergänzt beim Setzen der Optionen eigene Werte, kodiert mit
+    niedrigerer Priorität (ENCODE_NICE) und misst für die Aufzeichnung."""
 
-    def __init__(self, codec, speed):
+    def __init__(self, codec, kind):
         object.__setattr__(self, "_codec", codec)
-        object.__setattr__(self, "_speed", speed)
+        object.__setattr__(self, "_kind", kind)
 
     def __getattr__(self, name):
         return getattr(self._codec, name)
 
     def __setattr__(self, name, value):
         if name == "options" and isinstance(value, dict):
-            value = dict(value, **{"cpu-used": str(self._speed)})
+            value = dict(value)
+            if self._kind == "vp8" and VP8_SPEED is not None:
+                value["cpu-used"] = str(VP8_SPEED)
+            elif self._kind == "h264":
+                # aiortc nimmt x264 mit Standard-Preset "medium" - auf dem Pi viel zu langsam für Echtzeit.
+                # Level 4.2 erlaubt 1080p60 (aiortc schreibt 3.1 = höchstens 720p30). Datenrate gedeckelt
+                # (VBV), damit einzelne Bilder nicht riesig werden.
+                bitrate = int(getattr(self._codec, "bit_rate", 0) or 0)
+                # g: kein Schlüsselbild alle ~4 s von selbst (groß, kostet Zeit) - der Browser fordert bei Bedarf eins an
+                value.update({"preset": H264_PRESET, "tune": "zerolatency", "level": "42",
+                              "threads": str(H264_THREADS), "g": "3000"})
+                if bitrate:
+                    value.update({"maxrate": str(bitrate), "bufsize": str(bitrate // 2)})
         setattr(self._codec, name, value)
 
     def encode(self, frame=None):
@@ -195,10 +208,11 @@ class _Vp8Codec:
         return packets
 
 
-class _Vp8Av:
-    """Ersatz für das Modul "av" in aiortc.codecs.vpx: alles wie av, nur CodecContext.create liefert die Hülle."""
+class _CodecAv:
+    """Ersatz für das Modul "av" in aiortc.codecs.vpx/h264: alles wie av, nur CodecContext.create liefert für die
+    Encoder die Hülle _EncoderCodec."""
 
-    def __init__(self, real, speed):
+    def __init__(self, real):
         self._real = real
         real_ctx = real.CodecContext
 
@@ -206,9 +220,11 @@ class _Vp8Av:
             @staticmethod
             def create(name, mode=None):
                 codec = real_ctx.create(name, mode)
-                if name == "libvpx" and mode == "w":
-                    REC.event("encoder", f"VP8-Encoder angelegt (cpu-used {speed}) - beginnt mit Schlüsselbild")
-                    return _Vp8Codec(codec, speed)
+                if mode == "w" and name in ("libvpx", "libx264"):
+                    kind = "vp8" if name == "libvpx" else "h264"
+                    detail = f"cpu-used {VP8_SPEED}" if kind == "vp8" else f"x264 {H264_PRESET}"
+                    REC.event("encoder", f"{kind.upper()}-Encoder angelegt ({detail}) - beginnt mit Schlüsselbild")
+                    return _EncoderCodec(codec, kind)
                 return codec
 
         self.CodecContext = CodecContext
@@ -217,19 +233,88 @@ class _Vp8Av:
         return getattr(self._real, name)
 
 
+# Einstellungen der Encoder (gelten für neu angelegte Encoder)
+VP8_SPEED = None
+H264_PRESET = "superfast"
+H264_THREADS = 4
+HAVE_X264 = False
+if HAVE_WEBRTC:
+    try:
+        HAVE_X264 = "libx264" in av.codecs_available
+    except AttributeError:
+        HAVE_X264 = False
+
+
+def _install_codec_hooks():
+    if not HAVE_WEBRTC:
+        return
+    try:
+        from aiortc.codecs import h264, vpx
+        for mod in (vpx, h264):
+            if not isinstance(mod.av, _CodecAv):
+                mod.av = _CodecAv(mod.av)
+    except (ImportError, AttributeError) as err:
+        log.debug("Encoder nicht anpassbar: %s", err)
+
+
 def set_vp8_speed(speed=-12):
     """Geschwindigkeit des VP8-Encoders. aiortc nimmt fest -6 (Wert von libwebrtc für x86-PCs); libwebrtc
     selbst nutzt auf ARM-Geräten -12. Negativ = libvpx passt die Geschwindigkeit an die Zeit pro Bild an,
-    je größer der Betrag, desto weniger Rechenzeit darf ein Bild kosten. Auf dem Pi 5 hält das bei
-    bewegten Szenen (Schnee, Explosionen) 60 fps, statt immer wieder auf 30-45 fps einzubrechen."""
-    if not HAVE_WEBRTC or speed in (None, "", "aiortc"):
+    je größer der Betrag, desto weniger Rechenzeit darf ein Bild kosten."""
+    global VP8_SPEED
+    try:
+        VP8_SPEED = None if speed in (None, "", "aiortc") else int(speed)
+    except (TypeError, ValueError):
+        VP8_SPEED = None
+    _install_codec_hooks()
+
+
+def set_h264(preset="superfast", threads=4, fps=30):
+    """x264 für H.264: auf dem Pi 5 etwa doppelt so schnell wie VP8 bei gleicher Datenrate (NEON-optimiert, verteilt
+    jedes Bild auf alle Kerne). fps: Bildrate für die Ratensteuerung (aiortc nimmt fest 30)."""
+    global H264_PRESET, H264_THREADS
+    H264_PRESET = str(preset or "superfast")
+    try:
+        H264_THREADS = max(1, min(8, int(threads)))
+    except (TypeError, ValueError):
+        H264_THREADS = 4
+    set_h264_fps(fps)
+    _install_codec_hooks()
+
+
+def set_h264_fps(fps):
+    if not HAVE_WEBRTC:
         return
     try:
-        from aiortc.codecs import vpx
-        real = vpx.av._real if isinstance(vpx.av, _Vp8Av) else vpx.av
-        vpx.av = _Vp8Av(real, int(speed))
-    except (ImportError, AttributeError, ValueError) as err:
-        log.debug("VP8-Geschwindigkeit nicht anpassbar: %s", err)
+        from aiortc.codecs import h264
+        h264.MAX_FRAME_RATE = max(1, int(fps))
+    except (ImportError, AttributeError, ValueError):
+        pass
+
+
+def codec_preferences(name):
+    """Video-Codecs von aiortc mit dem gewünschten ("h264"/"vp8") zuerst. aiortc sendet mit dem ersten Codec, den
+    auch der Browser kann; kann er den gewünschten nicht, bleibt der nächste (z. B. VP8)."""
+    caps = RTCRtpSender.getCapabilities("video").codecs
+    first = [c for c in caps if c.mimeType.lower() == "video/" + name.lower()]
+    return first + [c for c in caps if c not in first]
+
+
+def answer_codec(sdp):
+    """Codec, mit dem gesendet wird: erstes Format der Video-Zeile in der Antwort."""
+    names = {}
+    first = None
+    in_video = False
+    for line in sdp.splitlines():
+        if line.startswith("m="):
+            in_video = line.startswith("m=video")
+            if in_video and first is None:
+                parts = line.split(" ")
+                first = parts[3] if len(parts) > 3 else None
+        elif in_video and line.startswith("a=rtpmap:"):
+            pt, _, rest = line[9:].partition(" ")
+            names[pt] = rest.split("/")[0]
+    return names.get(first)
 
 
 def pace(next_at, picked, period):
@@ -988,6 +1073,10 @@ class VideoStreamer:
         set_bitrate(self.max_bitrate, self.min_bitrate, self.fixed_bitrate)
         use_all_cores(cfg.get("webrtc_threads", 4))
         set_vp8_speed(cfg.get("webrtc_speed", -12))
+        # Video-Codec: der Browser wünscht ihn beim Verbindungsaufbau ("codec"), sonst gilt webrtc_codec
+        self.default_codec = str(cfg.get("webrtc_codec", "h264")).lower()
+        self.codec_in_use = None
+        set_h264(cfg.get("h264_preset", "superfast"), cfg.get("webrtc_threads", 4), self.webrtc_fps)
         set_encode_priority(cfg.get("webrtc_encode_nice", -5))
         if self.mode in MODES:
             self._apply_mode(self.mode, reopen=False)
@@ -999,6 +1088,7 @@ class VideoStreamer:
             "mode": self.mode, "webrtc_fps": self.webrtc_fps, "bitrate": self.max_bitrate,
             "fixed_bitrate": self.fixed_bitrate, "threads": self.cfg.get("webrtc_threads", 4),
             "speed": self.cfg.get("webrtc_speed", -12), "encode_nice": ENCODE_NICE,
+            "codec": self.codec_in_use, "h264": H264_PRESET if HAVE_X264 else None,
             "device": src.current_device, "format": src.format,
             "actual": list(src.actual), "scaled": src._scale_size(*src.actual[:2]), "raw": src.raw_mode,
             "buffers": src.buffers, "webrtc_clients": len(self.pcs), "jpeg_clients": self.jpeg_clients,
@@ -1030,6 +1120,7 @@ class VideoStreamer:
         mode = MODES[key]
         self.mode = key
         self.webrtc_fps = mode["send"]
+        set_h264_fps(self.webrtc_fps)
         set_bitrate(max(mode["bitrate"], self.max_bitrate if key == "720p60" else 0), self.min_bitrate,
                     self.fixed_bitrate)
         if reopen:
@@ -1068,8 +1159,11 @@ class VideoStreamer:
             return web.json_response({"error": "aiortc ist nicht installiert"}, status=503)
         try:
             params = await request.json()
+            wanted = str(params.get("codec") or self.default_codec).lower()
+            if wanted == "h264" and not HAVE_X264:
+                wanted = "vp8"                    # PyAV ohne x264: VP8
             offer = RTCSessionDescription(sdp=str(params["sdp"]), type=str(params["type"]))
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
             return web.json_response({"error": "ungültiges Angebot"}, status=400)
 
         # Ohne STUN-Server: Das Video läuft im Heimnetz direkt. Der Standard-STUN-Server von
@@ -1100,9 +1194,16 @@ class VideoStreamer:
             # Eigene Stream-ID: ohne gemeinsame Gruppe gleicht der Browser Bild und Ton nicht ab –
             # sonst würde er das Bild verzögern, bis der (etwas spätere) Ton aufholt.
             sender._stream_id = str(uuid.uuid4())
+        # Vor setRemoteDescription: dort wählt aiortc die gemeinsamen Codecs in dieser Reihenfolge
+        for transceiver in pc.getTransceivers():
+            if transceiver.kind == "video":
+                transceiver.setCodecPreferences(codec_preferences(wanted))
         await pc.setRemoteDescription(offer)
         answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
+        self.codec_in_use = answer_codec(pc.localDescription.sdp)
+        log.info("WebRTC %s: Video als %s (gewünscht: %s)", request.remote, self.codec_in_use or "?", wanted)
+        REC.event("webrtc", f"neue WebRTC-Verbindung: Video als {self.codec_in_use or '?'}")
         return web.json_response({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type})
 
     async def handle_mjpeg(self, request):
@@ -1205,7 +1306,8 @@ class VideoStreamer:
                 "mjpeg_fps": self.mjpeg_stats.fps(),
                 "webrtc_clients": len(self.pcs),
                 "audio": self.audio.status(),
-                "mode": self.mode, "modes": self.modes(), "target_fps": self.webrtc_fps}
+                "mode": self.mode, "modes": self.modes(), "target_fps": self.webrtc_fps,
+                "codec": self.codec_in_use if self.pcs else None, "codecs": ["h264", "vp8"] if HAVE_X264 else ["vp8"]}
 
     async def handle_snapshot(self, _request):
         data = await asyncio.get_running_loop().run_in_executor(None, self.source.jpeg)

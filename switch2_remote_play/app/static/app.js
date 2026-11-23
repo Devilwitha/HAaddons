@@ -312,7 +312,7 @@
       const res = await fetch("video/offer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sdp: conn.localDescription.sdp, type: conn.localDescription.type }),
+        body: JSON.stringify({ sdp: conn.localDescription.sdp, type: conn.localDescription.type, codec: preferredCodec() }),
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const answer = await res.json();
@@ -709,6 +709,22 @@
     return config.stream_mode === "webrtc" ? "webrtc" : "jpeg";
   }
 
+  // Video-Codec für WebRTC: H.264 kodiert der Pi etwa doppelt so schnell wie VP8. Ohne x264 auf dem Pi oder ohne
+  // H.264 im Browser nimmt die Bridge von selbst VP8.
+  function preferredCodec() {
+    let saved = null;
+    try { saved = localStorage.getItem("sw2-codec"); } catch (err) { /* ohne Speicher */ }
+    return saved === "vp8" ? "vp8" : "h264";
+  }
+
+  $("codec").addEventListener("change", (ev) => {
+    const value = ev.target.value === "vp8" ? "vp8" : "h264";
+    try { localStorage.setItem("sw2-codec", value); } catch (err) { /* ohne Speicher */ }
+    prevRtc = null;
+    if (mode === "webrtc") startVideo("webrtc");
+    toast("Video-Codec: " + (value === "vp8" ? "VP8" : "H.264") + " – Video wird neu verbunden");
+  });
+
   $("transport").addEventListener("change", (ev) => {
     const value = ev.target.value === "webrtc" ? "webrtc" : "jpeg";
     try { localStorage.setItem("sw2-transport", value); } catch (err) { /* ohne Speicher */ }
@@ -732,6 +748,12 @@
     }
     if (document.activeElement !== select && stream.mode) select.value = stream.mode;
     $("video-mode-field").hidden = modes.length === 0;
+    const codecs = Array.isArray(stream.codecs) ? stream.codecs : null;
+    $("codec-field").hidden = mode !== "webrtc" || !codecs;
+    if (codecs) {
+      $("codec").querySelector('option[value="h264"]').disabled = !codecs.includes("h264");
+      if (document.activeElement !== $("codec")) $("codec").value = codecs.includes("h264") ? preferredCodec() : "vp8";
+    }
     $("cap-restart").hidden = !cap.can_restart;
   }
 
@@ -881,6 +903,11 @@
         const report = await pc.getStats();
         let inbound = null;
         report.forEach((r) => { if (r.type === "inbound-rtp" && r.kind === "video") inbound = r; });
+        const codec = inbound && inbound.codecId && report.get(inbound.codecId);
+        if (codec && codec.mimeType) {
+          const name = codec.mimeType.replace(/^video\//i, "").replace("H264", "H.264");
+          setVal("sv-video", "WebRTC · " + name + (w ? " · " + w + "×" + h : ""), "good");
+        }
         if (inbound) {
           const cur = {
             t: inbound.timestamp, frames: inbound.framesDecoded || 0, decode: inbound.totalDecodeTime || 0,
@@ -1186,6 +1213,7 @@
           }
         }
         if (v && v.frameWidth) r.size = v.frameWidth + "×" + v.frameHeight;
+        if (v && v.codecId && byId[v.codecId]) r.codec = byId[v.codecId].mimeType;
       } catch (err) { /* Verbindung gerade weg */ }
     } else if (mode === "jpeg") {
       const cur = { recv: fstat.frames, bytes: fstat.bytes, decode: fstat.decode, skipped: fstat.skipped };
@@ -1518,13 +1546,13 @@
     L.push("  Bildschirm " + r.info.screen + ", Fenster " + r.info.view + ", Seite über " + r.info.host
       + (/nabu\.casa$/.test(r.info.host) ? " (Nabu Casa – Status/Messwerte über das Internet)" : "")
       + (r.info.net ? ", Netz " + r.info.net : ""));
-    L.push("  Übertragung " + (r.info.mode === "webrtc" ? "Video (WebRTC)" : "Einzelbilder (JPEG)") + ", Bild " + (r.size || "?")
+    L.push("  Übertragung " + (r.info.mode === "webrtc" ? "Video (WebRTC" + (r.codec ? ", " + r.codec : "") + ")" : "Einzelbilder (JPEG)") + ", Bild " + (r.size || "?")
       + (r.path ? ", Weg " + r.path : "") + ", Controller: " + (r.info.pads.length ? r.info.pads.join("; ") : "keiner") + (r.info.touch ? ", Touch an" : ""));
     if (bridge) {
       L.push("  Pi: Bildqualität " + (info.mode || "?") + " (" + target + " fps), Karte " + (info.device || "?") + " " + (info.format || "")
         + " " + (Array.isArray(info.actual) ? info.actual[0] + "×" + info.actual[1] + "@" + info.actual[2] : "")
         + (info.scaled ? " → " + info.scaled.join("×") : "") + ", " + (info.buffers || "?") + " Puffer");
-      L.push("  Encoder: VP8 cpu-used " + info.speed + ", " + info.threads + " Threads, " + Math.round((info.bitrate || 0) / 1e6) + " Mbit/s"
+      L.push("  Encoder: " + (info.codec || "?") + " (VP8 cpu-used " + info.speed + (info.h264 ? ", x264 " + info.h264 : ", ohne x264") + "), " + info.threads + " Threads, " + Math.round((info.bitrate || 0) / 1e6) + " Mbit/s"
         + (info.fixed_bitrate ? " fest" : "") + "; nice " + (info.nice != null ? info.nice : "?")
         + (info.encode_nice != null ? " (Kodieren " + info.encode_nice + ")" : "") + ", Regler " + (info.governor || "?")
         + ", " + (info.temp != null ? info.temp + " °C" : "") + "; aiortc " + (info.aiortc || "?") + ", av " + (info.av || "?") + ", OpenCV " + (info.opencv || "?"));

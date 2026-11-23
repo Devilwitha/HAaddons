@@ -108,6 +108,10 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   (alle 0,5 s, nur Linux): `/proc/stat`, alle `/proc/<pid>/stat` (Bridge-Prozessbaum vs. fremde Programme), Takt, PSI.
   Kodieren mit `webrtc_encode_nice` (-5, niedriger als die Bridge): `_Vp8Codec.encode` setzt den Thread kurz herab,
   libvpx-Arbeitsthreads erben den Wert beim ersten Kodieren.
+- **Video-Codec**: H.264 (x264, Vorgabe) oder VP8. Der Browser schickt `codec` mit dem Angebot an `/offer`, die Bridge
+  stellt die Formate im SDP nach vorn (`prefer_codec`, aiortc nimmt das erste gemeinsame). `_CodecAv` ersetzt `av` in
+  `aiortc.codecs.vpx` und `.h264`: x264 mit `preset` (`h264_preset`, superfast), `tune zerolatency`, Level 4.2, VBV;
+  `h264.MAX_FRAME_RATE` = Bildrate. Pi 5 schafft VP8 1080p30 nicht zuverlässig (gemessen 11/2026).
 - **Watchdog** 2,0 s ohne Heartbeat/Eingabe → alle Tasten los, Sticks (0, 0).
 - **Bildqualität** (`MODES` in `video_streamer.py`): 720p60 oder 1080p30 (Software-VP8 auf dem Pi 5 schafft 1080p
   nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und

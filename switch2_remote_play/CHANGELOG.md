@@ -1,5 +1,14 @@
 # Änderungen
 
+## 1.0.20
+
+- **H.264** als Video-Codec (Messwerte → Video-Codec, Vorgabe): Die Aufzeichnungen zeigten, dass der Pi 5 VP8 bei
+  1080p kaum schafft (28 ms pro Bild bei 33 ms Zeit, Spitzen über 100 ms, kein anderes Programm beteiligt). x264
+  kodiert bei gleicher Datenrate etwa doppelt so schnell und verteilt jedes Bild auf alle Kerne. Fehlt x264 auf dem
+  Pi oder H.264 im Browser, bleibt es automatisch bei VP8
+- Messwerte → **Video** zeigt den Codec, die Aufzeichnung ebenso
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.19
 
 - Aufzeichnung misst jetzt das ganze System des Pi (alle 0,5 s): Auslastung aller Kerne, Rechenzeit der Bridge

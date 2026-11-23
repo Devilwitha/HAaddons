@@ -84,6 +84,12 @@
           <option value="jpeg">Einzelbilder – Gerät dekodiert (JPEG)</option>
         </select>
       </label>
+      <label class="field" id="codec-field" hidden title="H.264 kodiert der Raspberry Pi etwa doppelt so schnell wie VP8 – flüssiger bei 1080p und aufwendigen Szenen. VP8 nur, falls H.264 Probleme macht.">Video-Codec
+        <select id="codec">
+          <option value="h264">H.264 – schneller (empfohlen)</option>
+          <option value="vp8">VP8</option>
+        </select>
+      </label>
       <label class="field" id="video-mode-field" hidden>Bildqualität
         <select id="video-mode"></select>
       </label>
