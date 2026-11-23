@@ -305,6 +305,11 @@ class Bridge:
         tick = 0
         while True:
             await asyncio.sleep(1.0)
+            if REC.active:                # Sollwerte je Fenster (Bildqualität kann während der Aufzeichnung wechseln)
+                REC.value("tfps", self.video.webrtc_fps)
+                REC.value("cfps", self.video.source.actual[2] or None)
+                REC.value("views", len(self.video.pcs) or None)
+                REC.value("jviews", self.video.jpeg_clients or None)
             if tick % 2 == 0:             # vcgencmd und Dateien im Thread-Pool, nie im Event-Loop
                 await loop.run_in_executor(None, self.system.refresh)
                 if REC.active:

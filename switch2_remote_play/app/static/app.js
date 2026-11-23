@@ -1416,6 +1416,28 @@
       return n ? s / n : null;
     };
     const sentKey = r.info.mode === "jpeg" ? "jpeg" : "sent";
+    // Sollwerte je Fenster: Die Bildqualität (60/30 fps) und das HDMI-Signal können während der Aufzeichnung wechseln.
+    // Die Bridge meldet sie jede Sekunde (tfps, cfps); dazwischen gilt der letzte Wert.
+    const tAt = [];
+    const cAt = [];
+    let tCur = target;
+    let cCur = cardFps;
+    // Gesendet zählt die Bilder aller Zuschauer: pro Zuschauer umrechnen (mehrere offene Fenster)
+    const viewKey = r.info.mode === "jpeg" ? "jviews" : "views";
+    let vCur = Math.max(1, (r.info.mode === "jpeg" ? info.jpeg_clients : info.webrtc_clients) || 1);
+    for (let i = 0; i < count; i += 1) {
+      const v = pi.get(i);
+      if (v && v.tfps) tCur = v.tfps;
+      if (v && v.cfps) cCur = v.cfps;
+      if (v && v[viewKey]) vCur = v[viewKey];
+      if (v) v.sentpv = (v[sentKey] || 0) / Math.max(1, vCur);
+      tAt.push(tCur);
+      cAt.push(cCur);
+    }
+    const targets = Array.from(new Set(tAt)).sort((a, b) => b - a);
+    // Grenze für „zu wenig angezeigt“ je Fenster: 15 % unter Soll, aber mindestens 1,5 Bilder – bei 30 fps fallen in
+    // ein 250-ms-Fenster 7 oder 8 Bilder, ein Bild Versatz an der Fenstergrenze ist noch kein Einbruch
+    const minShown = (t) => t * W - Math.max(1.5, t * W * 0.15);
     const mhzMax = max(Array.from(pi.values()).map((v) => num(v.p_mhz)));
     // Prozesse über die ganze Aufzeichnung: Ø und Spitze in % eines Kerns (Proben alle 0,5 s)
     const procSummary = (key) => {
@@ -1451,6 +1473,9 @@
 
     // Ursachen für einen Zeitraum (Pi-Fenster etwas weiter, die Uhren laufen nicht exakt gleich)
     function causes(from, to) {
+      const target = tAt[from] || tCur;
+      const budget = 1000 / target;
+      const cardFps = cAt[from] || cCur;
       const list = [];
       const cats = [];
       const piRange = [];
@@ -1464,16 +1489,24 @@
       const enc = max(piRange.map((v) => num(v.enc)));
       const es = max(piRange.map((v) => num(v.encsend)));
       const kf = sum(piRange.map((v) => v.kf || 0));
-      const sent = min(piRange.map((v) => fps(v[sentKey] || 0)));
+      const sent = min(piRange.map((v) => fps(v.sentpv || 0)));
       const lost = sum(brRange.map((v) => v.lost || 0));
       const nack = sum(brRange.map((v) => v.nack || 0));
       const rtt = max(brRange.map((v) => num(v.rtt)));
       // Mittel über den Zeitraum: nach einer Blockade kommen die gestauten Bilder gebündelt im nächsten Fenster an
       const recv = avg(brRange.map((v) => fps(num(v.recv))));
       const shown = avg(brRange.map((v) => fps(v.shown)));
-      const sentAvg = avg(piRange.map((v) => fps(v[sentKey] || 0)));
+      const sentAvg = avg(piRange.map((v) => fps(v.sentpv || 0)));
       const long = max(brRange.map((v) => num(v.long)));
       const frz = sum(brRange.map((v) => v.frz || 0));
+      // Umschalten der Bildqualität oder neues HDMI-Signal: kurze Lücke ist dann normal
+      const near = [];
+      for (let i = from - 4; i <= to; i += 1) (events.get(i) || []).forEach((e) => near.push(e));
+      if (near.some((e) => e.who === "Pi" && e.kind === "mode")) { list.push("Bildqualität umgeschaltet"); cats.push("Umschalten"); }
+      if (near.some((e) => e.who === "Pi" && e.kind === "capture" && /geöffnet/.test(e.text))) {
+        list.push("Capture-Card neu geöffnet (anderes HDMI-Signal oder Bildqualität)");
+        cats.push("Umschalten");
+      }
       if (bridge && piRange.length) {
         // Systemmessung der Bridge (alle 0,5 s): wer hat dem Pi in dieser Zeit die Kerne weggenommen?
         const foreign = {};
@@ -1525,8 +1558,8 @@
     inner.forEach((i) => {
       const row = br.get(i);
       if (!row || i < 3) return;
-      const shownFps = fps(row.shown);
-      if (shownFps < target * 0.85 || row.gap > Math.max(50, budget * 2.5)) bad.push(i);
+      const t = tAt[i] || target;
+      if (row.shown < minShown(t) || row.gap > Math.max(50, (1000 / t) * 2.5)) bad.push(i);
     });
     const moments = [];
     bad.forEach((i) => {
@@ -1553,7 +1586,7 @@
     if (note) L.push("Hinweis: " + note);
     L.push("Ergebnis: " + (moments.length
       ? moments.length + " Einbrüche, häufigste Ursache: " + topCats.slice(0, 3).map((c) => c + " (" + catCount[c] + "×)").join(", ")
-      : "keine Einbrüche (angezeigt durchgehend über " + Math.round(target * 0.85) + " fps)"));
+      : "keine Einbrüche (angezeigt durchgehend über 85 % der eingestellten Bildrate)"));
     L.push("");
     L.push("UMGEBUNG");
     L.push("  Add-on " + r.info.version + ", Bridge-Stand " + (info.bridge || "?") + ", Konsole: " + (info.console || r.info.console));
@@ -1580,9 +1613,9 @@
     L.push("ZUSAMMENFASSUNG");
     if (bridge) {
       L.push("  Pi   Capture-Card   Ø " + f(avg(piCounts("cap").map(fps))) + " fps, schlechtestes Fenster " + f(min(piCounts("cap").map(fps))) + " fps, längste Lücke " + ms(max(piVals("cap_gap"))) + ", Lücken: " + countKind("Pi", "capture"));
-      L.push("       Gesendet       Ø " + f(avg(piCounts(sentKey).map(fps))) + " fps, schlechtestes Fenster " + f(min(piCounts(sentKey).map(fps))) + " fps");
+      L.push("       Gesendet       Ø " + f(avg(piCounts("sentpv").map(fps))) + " fps, schlechtestes Fenster " + f(min(piCounts("sentpv").map(fps))) + " fps (je Zuschauer)");
       if (r.info.mode === "webrtc") {
-        L.push("       Kodieren       Ø " + ms(piMean("enc")) + ", max " + ms(max(piVals("enc"))) + " (Zeit pro Bild " + ms(budget) + "), Schlüsselbilder " + sum(piCounts("kf")) + ", Encoder neu angelegt " + countKind("Pi", "encoder"));
+        L.push("       Kodieren       Ø " + ms(piMean("enc")) + ", max " + ms(max(piVals("enc"))) + " (Zeit pro Bild " + targets.map((t) => ms(1000 / t)).join(" bzw. ") + "), Schlüsselbilder " + sum(piCounts("kf")) + ", Encoder neu angelegt " + countKind("Pi", "encoder"));
         L.push("       Kodieren+Senden Ø " + ms(piMean("encsend")) + ", max " + ms(max(piVals("encsend"))) + "; Umrechnung Ø " + ms(piMean("conv")) + ", Bildalter Ø " + ms(piMean("age")));
       } else {
         L.push("       JPEG           Ø " + ms(piMean("jpeg_enc")) + ", max " + ms(max(piVals("jpeg_enc"))));
@@ -1621,7 +1654,8 @@
       L.push("");
     }
 
-    L.push("EINBRÜCHE (angezeigt unter " + Math.round(target * 0.85) + " fps oder Lücke über " + Math.round(Math.max(50, budget * 2.5)) + " ms)");
+    L.push("EINBRÜCHE (angezeigt unter " + targets.map((t) => Math.round(minShown(t) / W) + " fps bei " + t + " fps").join(" bzw. ")
+      + " oder Lücke über " + targets.map((t) => Math.round(Math.max(50, (1000 / t) * 2.5)) + " ms").join(" bzw. ") + ")");
     if (!moments.length) L.push("  keine");
     moments.slice(0, 200).forEach((m) => {
       L.push("  " + sec(m.from * W) + (m.to > m.from ? " – " + sec((m.to + 1) * W) : "") + ": angezeigt " + m.shown + " fps, Lücke " + ms(m.gap) + " – " + m.info.list.join("; "));
@@ -1644,7 +1678,7 @@
       if (!p && !b && !events.has(i)) continue;
       const cells = [
         (i * W).toFixed(2).replace(".", ","),
-        p ? fps(p.cap || 0) : "·", p ? fps(p[sentKey] || 0) : "·", p ? f(num(p.enc)) : "·", p ? f(num(p.encsend)) : "·",
+        p ? fps(p.cap || 0) : "·", p ? fps(p.sentpv || 0) : "·", p ? f(num(p.enc)) : "·", p ? f(num(p.encsend)) : "·",
         p ? f(num(p.lag)) : "·", p ? f(num(p.nxbt)) : "·",
         f(num(sys.p_busy)), f(num(sys.p_self)), f(num(sys.p_mhz)), "|",
         b && b.recv != null ? fps(b.recv) : "·", b ? fps(b.shown) : "·", b ? f(b.gap) : "·", b ? f(num(b.lost)) : "·",
@@ -1657,7 +1691,7 @@
       L.push((badSet.has(i) ? " ! " : "   ") + line(cells) + (ev ? "  " + ev : ""));
     }
     L.push("");
-    L.push("Spalten: Karte = Bilder der Capture-Card, Gesen = vom Pi gesendet, Kod = längstes Kodieren eines Bildes (ms),");
+    L.push("Spalten: Karte = Bilder der Capture-Card, Gesen = vom Pi gesendet (je Zuschauer), Kod = längstes Kodieren eines Bildes (ms),");
     L.push("K+S = längstes Kodieren + Senden in aiortc (ms), Häng = längster Hänger der Bridge (ms), nxbt = längster Aufruf an nxbt (ms),");
     L.push("CPU = Auslastung aller Kerne (%), Brid = Rechenzeit der Bridge mit nxbt und Ton (100 = ein Kern, 400 = alle), MHz = Takt,");
     L.push("Empf = im Browser angekommen, Anz = wirklich angezeigt, Lücke = längste Zeit ohne neues Bild (ms), Verl/NACK/PLI = verlorene,");

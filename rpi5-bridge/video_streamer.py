@@ -214,8 +214,9 @@ class _EncoderCodec:
             if any(p.is_keyframe for p in packets):
                 REC.count("kf")
                 REC.event("keyframe", f"Schlüsselbild: {size / 1024:.0f} KB, {ms:.0f} ms kodiert")
-            elif ms > 25:
-                REC.event("encode", f"langsames Bild: {ms:.0f} ms kodiert ({size / 1024:.0f} KB)")
+            elif ms > max(25.0, FRAME_BUDGET_MS):          # länger als die Zeit pro Bild (60 fps: 17 ms, 30 fps: 33 ms)
+                REC.event("encode", f"langsames Bild: {ms:.0f} ms kodiert ({size / 1024:.0f} KB, "
+                                    f"Zeit pro Bild {FRAME_BUDGET_MS:.0f} ms)")
         return packets
 
 
@@ -248,6 +249,7 @@ class _CodecAv:
 VP8_SPEED = None
 H264_PRESET = "superfast"
 H264_THREADS = 4
+FRAME_BUDGET_MS = 1000.0 / 60       # Zeit pro Bild der gewählten Bildqualität (für „langsames Bild“)
 HAVE_X264 = False
 if HAVE_WEBRTC:
     try:
@@ -294,6 +296,11 @@ def set_h264(preset="superfast", threads=4, fps=30):
 
 
 def set_h264_fps(fps):
+    global FRAME_BUDGET_MS
+    try:
+        FRAME_BUDGET_MS = 1000.0 / max(1, int(fps))
+    except (TypeError, ValueError):
+        pass
     if not HAVE_WEBRTC:
         return
     try:
@@ -674,6 +681,7 @@ class FrameSource:
                 self.raw_mode = "nv12" if cap.set(cv2.CAP_PROP_CONVERT_RGB, 0) else None
             raw = self.raw_mode == "jpeg"
             scaled = self._scale_size(*self.actual[:2])
+            REC.event("capture", "Capture-Card geöffnet: %dx%d @ %d fps" % self.actual)
             log.info("Capture-Card %s geöffnet: %dx%d @ %d fps, Format %s%s%s, %d Puffer", device, *self.actual,
                      self.format or "?", {"jpeg": " (JPEG wird durchgereicht)", "nv12": " (roh)"}.get(self.raw_mode, ""),
                      f", verkleinert auf {scaled[0]}x{scaled[1]}" if scaled else "",
@@ -1232,6 +1240,7 @@ class VideoStreamer:
         except OSError as err:
             log.debug("Bildqualität nicht gespeichert: %s", err)
         log.info("Bildqualität: %s", MODES[key]["label"])
+        REC.event("mode", f"Bildqualität: {MODES[key]['label']}")
         return True, f"Bildqualität: {MODES[key]['label']}"
 
     async def restart_capture(self):

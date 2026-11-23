@@ -1,5 +1,15 @@
 # Änderungen
 
+## 1.0.24
+
+- Aufzeichnung bewertet jedes Zeitfenster nach der **gerade eingestellten** Bildqualität: Nach dem Umschalten auf
+  1080p · 30 fps galt bisher alles als Einbruch, weil weiter mit 60 fps gerechnet wurde. Bei 30 fps zählt ein Bild
+  Versatz an der Fenstergrenze nicht mehr als Einbruch
+- Umschalten der Bildqualität und neues HDMI-Signal stehen als Ereignis im Verlauf und als Ursache bei der Lücke
+- „Gesendet“ je Zuschauer (mit zwei offenen Fenstern stand bisher die doppelte Bildrate da)
+- „langsames Bild“ erst, wenn Kodieren länger dauert als die Zeit pro Bild (30 fps: 33 ms)
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.23
 
 - Ohne HDMI-Signal wartete die Bridge bei jedem Leseversuch 10 s auf die Capture-Card und schrieb jedes Mal
