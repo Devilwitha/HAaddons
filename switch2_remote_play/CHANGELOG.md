@@ -1,5 +1,16 @@
 # Änderungen
 
+## 1.0.14
+
+- Hält 60 fps auch in bewegten Szenen: Der Pi kodiert VP8 mit der Geschwindigkeit, die WebRTC in Browsern
+  auf ARM-Geräten nutzt (`webrtc_speed: -12`, aiortc nahm -6 wie auf PCs). libvpx begrenzt damit die
+  Rechenzeit pro Bild, statt bei Schnee oder Explosionen auf 30-45 fps einzubrechen. Das Bild ist dabei
+  minimal weicher; wer lieber schärfer will, stellt in der config.yaml der Bridge -6 ein
+- Verkleinern und Farbumrechnung laufen neben dem Kodieren des vorigen Bildes statt davor
+- Messwerte → **Kodieren + Senden** zeigt zusätzlich die Spitze der letzten Sekunden und wird gelb/rot, sobald
+  sie die Zeit pro Bild (16,7 ms bei 60 fps) erreicht
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.13
 
 - „Keine Verbindung zur Bridge“ nach einem Neustart des Pi oder der Bridge, obwohl das Video läuft: Die Bridge

@@ -119,6 +119,56 @@ def use_all_cores(limit=4):
         log.debug("Threads nicht anpassbar: %s", err)
 
 
+class _Vp8Codec:
+    """Hülle um den libvpx-Encoder von aiortc, die beim Setzen der Optionen "cpu-used" ersetzt."""
+
+    def __init__(self, codec, speed):
+        object.__setattr__(self, "_codec", codec)
+        object.__setattr__(self, "_speed", speed)
+
+    def __getattr__(self, name):
+        return getattr(self._codec, name)
+
+    def __setattr__(self, name, value):
+        if name == "options" and isinstance(value, dict):
+            value = dict(value, **{"cpu-used": str(self._speed)})
+        setattr(self._codec, name, value)
+
+
+class _Vp8Av:
+    """Ersatz für das Modul "av" in aiortc.codecs.vpx: alles wie av, nur CodecContext.create liefert die Hülle."""
+
+    def __init__(self, real, speed):
+        self._real = real
+        real_ctx = real.CodecContext
+
+        class CodecContext:
+            @staticmethod
+            def create(name, mode=None):
+                codec = real_ctx.create(name, mode)
+                return _Vp8Codec(codec, speed) if name == "libvpx" and mode == "w" else codec
+
+        self.CodecContext = CodecContext
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def set_vp8_speed(speed=-12):
+    """Geschwindigkeit des VP8-Encoders. aiortc nimmt fest -6 (Wert von libwebrtc für x86-PCs); libwebrtc
+    selbst nutzt auf ARM-Geräten -12. Negativ = libvpx passt die Geschwindigkeit an die Zeit pro Bild an,
+    je größer der Betrag, desto weniger Rechenzeit darf ein Bild kosten. Auf dem Pi 5 hält das bei
+    bewegten Szenen (Schnee, Explosionen) 60 fps, statt immer wieder auf 30-45 fps einzubrechen."""
+    if not HAVE_WEBRTC or speed in (None, "", "aiortc"):
+        return
+    try:
+        from aiortc.codecs import vpx
+        real = vpx.av._real if isinstance(vpx.av, _Vp8Av) else vpx.av
+        vpx.av = _Vp8Av(real, int(speed))
+    except (ImportError, AttributeError, ValueError) as err:
+        log.debug("VP8-Geschwindigkeit nicht anpassbar: %s", err)
+
+
 def pace(next_at, picked, period):
     """Nächster Sendezeitpunkt im festen Raster. Die Bilder der Karte kommen nicht auf die Millisekunde genau;
     ein Raster ab dem letzten Senden würde bei 60 von 60 fps immer wieder ein Bild auslassen (Ruckler)."""
@@ -625,9 +675,9 @@ class CaptureTrack(MediaStreamTrack):
         if now < self.next_at - 0.004:            # 4 ms Spielraum: Bilder der Karte schwanken etwas
             await asyncio.sleep(self.next_at - 0.004 - now)
         await self.source.wait_frame(self.last_id, 0.5)
-        frame, frame_id, fmt = self.source.i420_frame()
-        self.last_id = frame_id
         picked = time.monotonic()
+        frame, frame_id, fmt = await asyncio.get_running_loop().run_in_executor(None, self.source.i420_frame)
+        self.last_id = frame_id
         if frame_id != -1 and self.source.frame_time:
             self.stats.add("age", picked - self.source.frame_time)
         self.next_at = pace(self.next_at, picked, 1.0 / max(1, self.max_fps()))
@@ -644,14 +694,20 @@ class CaptureTrack(MediaStreamTrack):
 class StreamStats:
     """Gleitende Messwerte (Millisekunden) und Bildrate für die Messanzeige im Browser."""
 
+    PEAK_KEYS = ("encode",)
+    PEAK_SECONDS = 3.0
+
     def __init__(self):
         self.values = {}
         self.frames = collections.deque(maxlen=240)
+        self.recent = {key: collections.deque(maxlen=400) for key in self.PEAK_KEYS}
 
     def add(self, key, seconds):
         ms = seconds * 1000.0
         old = self.values.get(key)
         self.values[key] = ms if old is None else old * 0.9 + ms * 0.1
+        if key in self.recent:
+            self.recent[key].append((time.monotonic(), ms))
 
     def frame(self, now):
         self.frames.append(now)
@@ -662,6 +718,12 @@ class StreamStats:
 
     def snapshot(self):
         out = {key: round(value, 1) for key, value in self.values.items()}
+        now = time.monotonic()
+        for key, items in self.recent.items():
+            peak = [ms for t, ms in items if now - t <= self.PEAK_SECONDS]
+            if peak:
+                # zweitgrößter Wert: ein einzelner Ausreißer (z. B. Schlüsselbild) soll nicht dauernd rot zeigen
+                out[key + "_peak"] = round(sorted(peak)[-2] if len(peak) > 1 else peak[0], 1)
         out["fps"] = self.fps()
         return out
 
@@ -845,6 +907,7 @@ class VideoStreamer:
         self.runner = None
         set_bitrate(self.max_bitrate, self.min_bitrate, self.fixed_bitrate)
         use_all_cores(cfg.get("webrtc_threads", 4))
+        set_vp8_speed(cfg.get("webrtc_speed", -12))
         if self.mode in MODES:
             self._apply_mode(self.mode, reopen=False)
 

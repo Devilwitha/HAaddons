@@ -104,7 +104,8 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und
   folgt der REMB-Schätzung des Browsers → `MIN_BITRATE`/`MAX_BITRATE` von `aiortc.codecs.vpx`/`h264` werden gesetzt
   (`webrtc_min_bitrate` 3 Mbit/s). aiortc legt den Encoder bei > 10 % Bitraten-Änderung neu an (Schlüsselbild,
-  Hänger) → `webrtc_fixed_bitrate` (MIN = MAX); `vpx.number_of_threads` wird auf 4 Kerne gepatcht (`use_all_cores`).
+  Hänger) → `webrtc_fixed_bitrate` (MIN = MAX); `vpx.number_of_threads` wird auf 4 Kerne gepatcht (`use_all_cores`), `cpu-used` über einen
+  Ersatz für `vpx.av` auf -12 wie libwebrtc auf ARM (`set_vp8_speed`, `webrtc_speed`).
   `system_tune.py`: CPU-Regler performance, WLAN-Stromsparen aus, Temperatur/Last/`vcgencmd get_throttled` im Status. **Gerät** `device: "auto"`: `/dev/v4l/by-id/usb-*-video-index0`, sonst erstes
   USB-Videogerät mit `index` 0 in `/sys/class/video4linux` (der Pi 5 hat eigene Videogeräte, die Nummer der Karte
   wechselt). Ein eingetragenes `/dev/videoN` ohne USB-Karte dahinter wird ebenfalls durch die Suche ersetzt.

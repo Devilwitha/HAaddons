@@ -48,7 +48,7 @@ DEFAULTS = {
               "fps": 60, "fourcc": "MJPG", "jpeg_quality": 80, "jpeg_passthrough": True, "nv12": True,
               "capture_buffers": 3, "mjpeg_fps": 30, "webrtc_fps": 60,
               "webrtc_max_bitrate": 6000000, "webrtc_min_bitrate": 3000000, "webrtc_fixed_bitrate": True,
-              "webrtc_threads": 4},
+              "webrtc_threads": 4, "webrtc_speed": -12},
     "system": {"tune": True, "cpu_governor": "performance", "wifi_power_save_off": True},
     "audio": {"device": "auto"},
     "controller": {"enabled": True, "watchdog_seconds": 2.0, "input_rate_hz": 120,

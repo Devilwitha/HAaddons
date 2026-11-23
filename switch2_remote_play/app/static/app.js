@@ -827,7 +827,13 @@
       setVal("sv-sent", rtc.fps + " fps (WebRTC)", grade(-rtc.fps, -Math.min(sendTarget - 5, wanted - 5), -(sendTarget / 2 - 5)));
       setVal("sv-age", ms(rtc.age), grade(rtc.age, 20, 40));
       setVal("sv-convert", ms(rtc.convert), grade(rtc.convert, 5, 10));
-      setVal("sv-encode", ms(rtc.encode), grade(rtc.encode, 16, 33));
+      // Zeit pro Bild bei der Ziel-Bildrate (60 fps: 16,7 ms). Die Spitze zeigt einzelne langsame Bilder,
+      // die der Mittelwert verdeckt – liegt sie über der Zeit pro Bild, sinkt die Bildrate
+      const budget = 1000 / sendTarget;
+      const peak = rtc.encode_peak;
+      const showPeak = peak != null && peak > (rtc.encode || 0) * 1.3 && peak > 3;
+      setVal("sv-encode", ms(rtc.encode) + (showPeak ? " · Spitze " + ms(peak) : ""),
+        grade(Math.max(rtc.encode || 0, peak || 0), budget * 0.8, budget));
     } else if (mode === "jpeg" && stream.jpeg) {
       const jp = stream.jpeg;
       const through = cap.passthrough || (fstat.info && fstat.info.pt);
