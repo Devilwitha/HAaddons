@@ -1,5 +1,15 @@
 # Änderungen
 
+## 1.0.19
+
+- Aufzeichnung misst jetzt das ganze System des Pi (alle 0,5 s): Auslastung aller Kerne, Rechenzeit der Bridge
+  (mit nxbt und Ton), Takt, Kernel/Interrupts, Wartezeiten (PSI) und die Programme mit der meisten Rechenzeit.
+  Einbrüche nennen so auch „anderes Programm auf dem Pi: …“, „Bridge rechnete am Anschlag“ oder „Takt gesenkt“
+- Kodieren läuft mit niedrigerer Priorität als die übrige Bridge (`webrtc_encode_nice: -5`): Rechnet der Encoder an
+  aufwendigen Bildern mit allen Kernen, kommen Eingaben, nxbt und die Capture-Card trotzdem sofort dran – dann fehlen
+  höchstens Videobilder, die Steuerung hakt nicht
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.18
 
 - Messwerte → **Aufzeichnung**: zeichnet alles auf, was Browser und Pi messen (alle 250 ms) – Bilder der

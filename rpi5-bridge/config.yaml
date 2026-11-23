@@ -20,6 +20,7 @@ video:
   jpeg_quality: 80            # Qualität der Einzelbilder/des MJPEG-Streams (1-100)
   webrtc_fixed_bitrate: true  # feste Datenrate: aiortc legt den Encoder sonst bei jeder Änderung neu an (Hänger)
   webrtc_speed: -12           # VP8-Geschwindigkeit: -12 wie libwebrtc auf ARM (aiortc: -6 = langsamer, schärfer)
+  webrtc_encode_nice: -5      # Priorität beim Kodieren: unter der Bridge (-10), damit Eingaben nie warten
   webrtc_threads: 4           # Kerne für den VP8-Encoder (aiortc nimmt sonst nur 2)
   jpeg_passthrough: true      # liefert die Karte JPEG, Bilder unverändert weitergeben (Pi kodiert nichts)
   capture_buffers: 3          # Bildpuffer der Karte (1 = Bilder gehen verloren, ~40 statt 60 fps)

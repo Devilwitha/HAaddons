@@ -121,6 +121,45 @@ def use_all_cores(limit=4):
         log.debug("Threads nicht anpassbar: %s", err)
 
 
+# Priorität (nice) der Threads, die VP8 kodieren. Höher als die übrige Bridge (-10): bei aufwendigen Bildern rechnet
+# libvpx mit allen Kernen am Anschlag - dann sollen Eingaben, nxbt und das Einlesen der Karte trotzdem sofort drankommen
+# und nur das Video Bilder auslassen. None = unverändert.
+ENCODE_NICE = None
+
+
+def set_encode_priority(value):
+    global ENCODE_NICE
+    try:
+        ENCODE_NICE = None if value in (None, "", "off") else max(-20, min(19, int(value)))
+    except (TypeError, ValueError):
+        ENCODE_NICE = None
+
+
+def _lower_thread_priority():
+    """Setzt den aufrufenden Thread auf ENCODE_NICE, wenn er höher priorisiert ist; gibt den alten Wert zurück.
+    libvpx legt seine Arbeits-Threads beim ersten Kodieren aus diesem Thread an - sie erben den Wert dauerhaft."""
+    if ENCODE_NICE is None or not hasattr(os, "setpriority"):
+        return None
+    try:
+        tid = threading.get_native_id()
+        old = os.getpriority(os.PRIO_PROCESS, tid)
+        if old >= ENCODE_NICE:
+            return None
+        os.setpriority(os.PRIO_PROCESS, tid, ENCODE_NICE)
+        return old
+    except (OSError, AttributeError):
+        return None
+
+
+def _restore_thread_priority(old):
+    if old is None:
+        return
+    try:
+        os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), old)
+    except OSError:
+        pass
+
+
 class _Vp8Codec:
     """Hülle um den libvpx-Encoder von aiortc, die beim Setzen der Optionen "cpu-used" ersetzt."""
 
@@ -137,8 +176,12 @@ class _Vp8Codec:
         setattr(self._codec, name, value)
 
     def encode(self, frame=None):
+        old = _lower_thread_priority()
         start = time.perf_counter()
-        packets = self._codec.encode(frame)
+        try:
+            packets = self._codec.encode(frame)
+        finally:
+            _restore_thread_priority(old)
         if REC.active:
             ms = (time.perf_counter() - start) * 1000.0
             size = sum(p.size for p in packets)
@@ -945,6 +988,7 @@ class VideoStreamer:
         set_bitrate(self.max_bitrate, self.min_bitrate, self.fixed_bitrate)
         use_all_cores(cfg.get("webrtc_threads", 4))
         set_vp8_speed(cfg.get("webrtc_speed", -12))
+        set_encode_priority(cfg.get("webrtc_encode_nice", -5))
         if self.mode in MODES:
             self._apply_mode(self.mode, reopen=False)
 
@@ -954,7 +998,8 @@ class VideoStreamer:
         info = {
             "mode": self.mode, "webrtc_fps": self.webrtc_fps, "bitrate": self.max_bitrate,
             "fixed_bitrate": self.fixed_bitrate, "threads": self.cfg.get("webrtc_threads", 4),
-            "speed": self.cfg.get("webrtc_speed", -12), "device": src.current_device, "format": src.format,
+            "speed": self.cfg.get("webrtc_speed", -12), "encode_nice": ENCODE_NICE,
+            "device": src.current_device, "format": src.format,
             "actual": list(src.actual), "scaled": src._scale_size(*src.actual[:2]), "raw": src.raw_mode,
             "buffers": src.buffers, "webrtc_clients": len(self.pcs), "jpeg_clients": self.jpeg_clients,
             "audio": self.audio.active_device or self.audio.state,

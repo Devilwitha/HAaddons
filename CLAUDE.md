@@ -104,7 +104,10 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   nxbt-Aufrufen, Eingaben. WebSocket `{"type":"system","action":"record","state":"start"|"stop"}`; Antwort
   `{"type":"record","state":"started"}` bzw. in Teilen zu 100 KB `{"type":"record","part","parts","data"}` (Proxy-Grenze
   256 KB). Browser misst parallel (`getStats`, `requestVideoFrameCallback`, Long Tasks), `buildReport` wertet aus,
-  Download + `POST api/recording` nach `/share/game_remote/aufzeichnungen` (`map: share:rw`).
+  Download + `POST api/recording` nach `/share/game_remote/aufzeichnungen` (`map: share:rw`). `SystemSampler`
+  (alle 0,5 s, nur Linux): `/proc/stat`, alle `/proc/<pid>/stat` (Bridge-Prozessbaum vs. fremde Programme), Takt, PSI.
+  Kodieren mit `webrtc_encode_nice` (-5, niedriger als die Bridge): `_Vp8Codec.encode` setzt den Thread kurz herab,
+  libvpx-Arbeitsthreads erben den Wert beim ersten Kodieren.
 - **Watchdog** 2,0 s ohne Heartbeat/Eingabe → alle Tasten los, Sticks (0, 0).
 - **Bildqualität** (`MODES` in `video_streamer.py`): 720p60 oder 1080p30 (Software-VP8 auf dem Pi 5 schafft 1080p
   nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und

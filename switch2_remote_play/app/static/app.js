@@ -1373,6 +1373,24 @@
       return n ? s / n : null;
     };
     const sentKey = r.info.mode === "jpeg" ? "jpeg" : "sent";
+    const mhzMax = max(Array.from(pi.values()).map((v) => num(v.p_mhz)));
+    // Prozesse über die ganze Aufzeichnung: Ø und Spitze in % eines Kerns (Proben alle 0,5 s)
+    const procSummary = (key) => {
+      const seen = {};
+      let samples = 0;
+      pi.forEach((v) => {
+        if (!Array.isArray(v[key])) return;
+        samples += 1;
+        v[key].forEach((p) => {
+          const entry = seen[p[0]] || (seen[p[0]] = { sum: 0, peak: 0 });
+          entry.sum += p[2];
+          entry.peak = Math.max(entry.peak, p[2]);
+        });
+      });
+      return Object.keys(seen).map((name) => ({ name, avg: samples ? seen[name].sum / samples : 0, peak: seen[name].peak }))
+        .sort((a, b) => b.peak - a.peak).slice(0, 6)
+        .map((p) => "„" + p.name + "“ Ø " + Math.round(p.avg) + " % / Spitze " + p.peak + " %").join(", ");
+    };
 
     // Ereignisse beider Seiten nach Fenster
     const events = new Map();
@@ -1414,6 +1432,28 @@
       const long = max(brRange.map((v) => num(v.long)));
       const frz = sum(brRange.map((v) => v.frz || 0));
       if (bridge && piRange.length) {
+        // Systemmessung der Bridge (alle 0,5 s): wer hat dem Pi in dieser Zeit die Kerne weggenommen?
+        const foreign = {};
+        piRange.forEach((v) => (v.p_top || []).forEach((p) => {
+          if (!foreign[p[0]] || foreign[p[0]][1] < p[2]) foreign[p[0]] = [p[1], p[2]];
+        }));
+        const worst = Object.keys(foreign).sort((a, b) => foreign[b][1] - foreign[a][1])[0];
+        const selfMax = max(piRange.map((v) => num(v.p_self)));
+        const busyMax = max(piRange.map((v) => num(v.p_busy)));
+        const mhzMin = min(piRange.map((v) => num(v.p_mhz)));
+        const irqMax = max(piRange.map((v) => num(v.p_irq)));
+        const ioMax = max(piRange.map((v) => num(v.p_io)));
+        const memStall = sum(piRange.map((v) => v.p_psi_mem || 0));
+        if (worst && foreign[worst][1] >= 40) {
+          list.push("anderes Programm auf dem Pi: „" + worst + "“ (PID " + foreign[worst][0] + ") mit " + foreign[worst][1] + " % eines Kerns");
+          cats.push("anderes Programm: " + worst);
+        }
+        if (selfMax != null && selfMax >= 300) { list.push("Bridge rechnete am Anschlag (" + selfMax + " % = fast alle 4 Kerne)"); cats.push("Bridge am Anschlag"); }
+        if (mhzMin != null && mhzMax && mhzMin < mhzMax * 0.8) { list.push("Takt gesenkt auf " + mhzMin + " MHz"); cats.push("Takt gesenkt"); }
+        if (irqMax != null && irqMax >= 25) { list.push("Kernel/Interrupts " + irqMax + " %"); cats.push("Kernel/Interrupts"); }
+        if (ioMax != null && ioMax >= 20) { list.push("Warten auf Speicherkarte/USB (" + ioMax + " %)"); cats.push("I/O"); }
+        if (memStall >= 100) { list.push("Speicherdruck: " + memStall + " ms Wartezeit"); cats.push("Speicher"); }
+        if (busyMax != null && busyMax >= 95 && !(worst && foreign[worst][1] >= 40) && !(selfMax >= 300)) { list.push("alle Kerne ausgelastet (" + busyMax + " %)"); cats.push("Pi ausgelastet"); }
         if (capMin != null && capMin < cardFps * 0.85) { list.push("Capture-Card lieferte nur " + capMin + " fps (Lücke " + ms(gapMax) + ")"); cats.push("Capture-Card"); }
         if (lag != null && lag > 17) { list.push("Bridge hing " + ms(lag)); cats.push("Bridge-Hänger"); }
         if (nx != null && nx > 15) { list.push("nxbt-Aufruf blockierte " + ms(nx)); cats.push("nxbt"); }
@@ -1485,7 +1525,8 @@
         + " " + (Array.isArray(info.actual) ? info.actual[0] + "×" + info.actual[1] + "@" + info.actual[2] : "")
         + (info.scaled ? " → " + info.scaled.join("×") : "") + ", " + (info.buffers || "?") + " Puffer");
       L.push("  Encoder: VP8 cpu-used " + info.speed + ", " + info.threads + " Threads, " + Math.round((info.bitrate || 0) / 1e6) + " Mbit/s"
-        + (info.fixed_bitrate ? " fest" : "") + "; nice " + (info.nice != null ? info.nice : "?") + ", Regler " + (info.governor || "?")
+        + (info.fixed_bitrate ? " fest" : "") + "; nice " + (info.nice != null ? info.nice : "?")
+        + (info.encode_nice != null ? " (Kodieren " + info.encode_nice + ")" : "") + ", Regler " + (info.governor || "?")
         + ", " + (info.temp != null ? info.temp + " °C" : "") + "; aiortc " + (info.aiortc || "?") + ", av " + (info.av || "?") + ", OpenCV " + (info.opencv || "?"));
       L.push("  Zuschauer: " + info.webrtc_clients + " WebRTC, " + info.jpeg_clients + " Einzelbilder; Ton " + (info.audio || "?"));
       L.push("  Uhren: Pi-Zeit beginnt beim Eintreffen des Starts (über Home Assistant), Abweichung meist unter 0,1 s.");
@@ -1505,6 +1546,12 @@
       L.push("       nxbt           Ø " + ms(piMean("nxbt")) + ", max " + ms(max(piVals("nxbt"))) + ", über 15 ms: " + countKind("Pi", "nxbt") + "×");
       L.push("       Eingaben       " + sum(piCounts("in_dc")) + " über Datenkanal, " + sum(piCounts("in_ws")) + " über WebSocket, längste Lücke im Datenkanal " + ms(max(piVals("in_gap"))));
       L.push("       System         CPU max " + f(max(piVals("cpu"))) + " %, Temperatur max " + f(max(piVals("temp")), 1) + " °C");
+      if (Array.from(pi.values()).some((v) => v.p_busy != null)) {
+        L.push("       Alle Kerne     Ø " + f(avg(piVals("p_busy"))) + " %, max " + f(max(piVals("p_busy"))) + " %; Kernel/Interrupts max " + f(max(piVals("p_irq"))) + " %, I/O max " + f(max(piVals("p_io"))) + " %");
+        L.push("       Bridge         Ø " + f(avg(piVals("p_self"))) + " %, max " + f(max(piVals("p_self"))) + " % (100 % = ein Kern, 400 % = alle)" + (procSummary("p_kids") ? "; davon " + procSummary("p_kids") : ""));
+        L.push("       Takt           " + f(min(piVals("p_mhz"))) + "–" + f(mhzMax) + " MHz; Wartezeit (PSI) CPU " + ms(sum(piVals("p_psi_cpu"))) + ", Speicher " + ms(sum(piVals("p_psi_mem"))) + ", I/O " + ms(sum(piVals("p_psi_io"))));
+        L.push("       Andere Programme " + (procSummary("p_top") || "keins über 5 %"));
+      }
     }
     const pkts = sum(brVals("pkts"));
     const lost = sum(brVals("lost"));
@@ -1538,29 +1585,36 @@
     L.push("");
 
     L.push("VERLAUF (je 250 ms, fps hochgerechnet; ! = Einbruch)");
-    const head = ["Zeit", "Karte", "Gesen", "Kod", "K+S", "Häng", "nxbt", "|", "Empf", "Anz", "Lücke", "Verl", "NACK", "PLI", "Puff", "RTT", "Dek", "Seite"];
-    const widths = [8, 6, 6, 5, 5, 5, 5, 2, 5, 5, 6, 5, 5, 4, 5, 5, 5, 6];
+    const head = ["Zeit", "Karte", "Gesen", "Kod", "K+S", "Häng", "nxbt", "CPU", "Brid", "MHz", "|", "Empf", "Anz", "Lücke", "Verl", "NACK", "PLI", "Puff", "RTT", "Dek", "Seite"];
+    const widths = [8, 6, 6, 5, 5, 5, 5, 5, 5, 5, 2, 5, 5, 6, 5, 5, 4, 5, 5, 5, 6];
+    // Systemwerte kommen alle 0,5 s: im Fenster dazwischen den letzten Wert zeigen
+    let sys = {};
     const line = (cells) => cells.map((c, k) => String(c).padStart(widths[k])).join("");
     L.push("   " + line(head) + "  Ereignisse");
     const badSet = new Set(bad);
     for (let i = 0; i < count; i += 1) {
       const p = pi.get(i);
       const b = br.get(i);
+      if (p && p.p_busy != null) sys = p;
       if (!p && !b && !events.has(i)) continue;
       const cells = [
         (i * W).toFixed(2).replace(".", ","),
         p ? fps(p.cap || 0) : "·", p ? fps(p[sentKey] || 0) : "·", p ? f(num(p.enc)) : "·", p ? f(num(p.encsend)) : "·",
-        p ? f(num(p.lag)) : "·", p ? f(num(p.nxbt)) : "·", "|",
+        p ? f(num(p.lag)) : "·", p ? f(num(p.nxbt)) : "·",
+        f(num(sys.p_busy)), f(num(sys.p_self)), f(num(sys.p_mhz)), "|",
         b && b.recv != null ? fps(b.recv) : "·", b ? fps(b.shown) : "·", b ? f(b.gap) : "·", b ? f(num(b.lost)) : "·",
         b ? f(num(b.nack)) : "·", b ? f(num(b.pli)) : "·", b ? f(num(b.jb)) : "·", b ? f(num(b.rtt)) : "·",
         b ? f(num(b.decms)) : "·", b ? f(num(b.long)) : "·",
       ];
-      const ev = (events.get(i) || []).map((e) => e.who + ": " + e.text).join("; ");
+      let ev = (events.get(i) || []).map((e) => e.who + ": " + e.text).join("; ");
+      const busy = p && Array.isArray(p.p_top) ? p.p_top.filter((x) => x[2] >= 25) : [];
+      if (busy.length) ev = "Pi rechnet auch: " + busy.map((x) => x[0] + " " + x[2] + " %").join(", ") + (ev ? "; " + ev : "");
       L.push((badSet.has(i) ? " ! " : "   ") + line(cells) + (ev ? "  " + ev : ""));
     }
     L.push("");
     L.push("Spalten: Karte = Bilder der Capture-Card, Gesen = vom Pi gesendet, Kod = längstes Kodieren eines Bildes (ms),");
     L.push("K+S = längstes Kodieren + Senden in aiortc (ms), Häng = längster Hänger der Bridge (ms), nxbt = längster Aufruf an nxbt (ms),");
+    L.push("CPU = Auslastung aller Kerne (%), Brid = Rechenzeit der Bridge mit nxbt und Ton (100 = ein Kern, 400 = alle), MHz = Takt,");
     L.push("Empf = im Browser angekommen, Anz = wirklich angezeigt, Lücke = längste Zeit ohne neues Bild (ms), Verl/NACK/PLI = verlorene,");
     L.push("nachgeforderte Pakete und angeforderte Schlüsselbilder, Puff = Puffer (ms), RTT = Antwortzeit direkt (ms), Dek = Dekodieren (ms),");
     L.push("Seite = längste Blockade der Browser-Seite (ms).");
