@@ -18,7 +18,11 @@ zugunsten der Lippensynchronität verzögert.
 Die Capture-Card wird im MJPEG-Format geöffnet (geringste USB-Latenz). Liefert sie wirklich JPEG, werden
 die Bilder unverändert durchgereicht (jpeg_passthrough): für Einzelbilder kodiert der Pi dann gar nichts,
 dekodiert wird nur, wenn ein WebRTC-Zuschauer da ist. Karten ohne MJPEG (z. B. Cam Link: YUYV) werden
-umgerechnet und für Einzelbilder als JPEG kodiert (libjpeg-turbo, deutlich billiger als VP8). Ist sie nicht da oder
+umgerechnet und für Einzelbilder als JPEG kodiert (libjpeg-turbo, deutlich billiger als VP8).
+Bietet die Karte NV12 (z. B. Cam Link 4K), wird NV12 roh gelesen: halb so viele Daten wie BGR, und für WebRTC
+entsteht das I420-Bild des Encoders direkt daraus (ohne Umweg über BGR). Liefert die Karte ein größeres Bild als
+die gewählte Bildqualität (die Cam Link gibt immer das HDMI-Signal aus, z. B. 1080p), verkleinert die Bridge es
+vor dem Kodieren. Ist sie nicht da oder
 liefert sie kein Bild (Konsole im Standby), wird ein "Kein Signal"-Bild gezeigt und alle
 2 Sekunden neu verbunden. device: "test" erzeugt ein Testbild ohne Capture-Card.
 
@@ -134,6 +138,18 @@ def as_jpeg(frame):
     return flat.tobytes()
 
 
+def nv12_to_i420(y, uv):
+    """Y-Ebene + verschränkte UV-Ebene (h/2, w/2, 2) -> I420 (h*3/2, w), wie es PyAV als yuv420p erwartet."""
+    h, w = y.shape
+    out = np.empty((h * 3 // 2, w), np.uint8)
+    out[:h] = y
+    chroma = out[h:].reshape(-1)
+    quarter = (h // 2) * (w // 2)
+    chroma[:quarter] = uv[..., 0].reshape(-1)
+    chroma[quarter:] = uv[..., 1].reshape(-1)
+    return out
+
+
 def usb_device_dir(video_device):
     """sysfs-Ordner des USB-Geräts zu /dev/videoN (der mit busnum/devnum)."""
     name = os.path.basename(os.path.realpath(video_device))
@@ -175,22 +191,24 @@ class FrameSource:
         self.fourcc = str(cfg.get("fourcc", "MJPG"))[:4]
         self.jpeg_quality = int(cfg.get("jpeg_quality", 80))
         self.allow_passthrough = bool(cfg.get("jpeg_passthrough", True))
+        self.allow_nv12 = bool(cfg.get("nv12", True))
         self.format = ""                       # Bildformat, das die Karte tatsächlich liefert
         self.passthrough = False               # JPEG der Karte wird unverändert weitergegeben
+        self.raw_mode = None                   # "jpeg" / "nv12" = Rohdaten der Karte, None = OpenCV rechnet um
         self._raw_failed = set()               # Geräte, deren Rohdaten kein JPEG waren
+        self._nv12_failed = set()              # Geräte, deren NV12-Rohdaten nicht passten
         # Wird vom VideoStreamer gesetzt: True, solange jemand dekodierte Bilder braucht (WebRTC)
         self.want_decoded = None
         self.frame = None
         self.frame_id = 0
         self.frame_time = 0.0
-        self._latest = (0, None, None, 0.0)    # (id, Bild oder None, JPEG oder None, Zeitpunkt)
-        self._decoded = (-1, None)
-        self._decode_lock = threading.Lock()
+        # (id, BGR-Bild, JPEG der Karte, NV12 der Karte, Zeitpunkt) - jeweils None, wenn nicht vorhanden
+        self._latest = (0, None, None, None, 0.0)
+        self._cache = {}
+        self._cache_locks = {"bgr": threading.Lock(), "i420": threading.Lock(), "jpeg": threading.Lock()}
         self.state = "unavailable"
         self.detail = "noch nicht gestartet"
         self.actual = (0, 0, 0)
-        self._jpeg = (None, -1)
-        self._jpeg_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
         self._loop = None
@@ -267,9 +285,9 @@ class FrameSource:
         if self._thread:
             self._thread.join(timeout=3)
 
-    def _publish(self, frame, jpeg=None):
+    def _publish(self, frame=None, jpeg=None, nv12=None):
         now = time.monotonic()
-        self._latest = (self.frame_id + 1, frame, jpeg, now)
+        self._latest = (self.frame_id + 1, frame, jpeg, nv12, now)
         self.frame = frame
         self.frame_id += 1
         if self.frame_time:
@@ -313,24 +331,45 @@ class FrameSource:
                 self._usb_dir = usb_device_dir(device) or self._usb_dir
             except OSError:
                 pass
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.fourcc))
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-            cap.set(cv2.CAP_PROP_FPS, self.fps)
+            self._set_format(cap, self.fourcc)
+            self.format = fourcc_name(cap.get(cv2.CAP_PROP_FOURCC))
+            if self.format not in ("MJPG", "NV12") and self.allow_nv12 and device not in self._nv12_failed:
+                # Karten ohne MJPEG (Cam Link: YUYV/NV12): NV12 roh lesen spart die Umrechnung nach BGR
+                self._set_format(cap, "NV12")
+                self.format = fourcc_name(cap.get(cv2.CAP_PROP_FOURCC))
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             self.actual = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
                            int(round(cap.get(cv2.CAP_PROP_FPS))))
-            self.format = fourcc_name(cap.get(cv2.CAP_PROP_FOURCC))
             self.passthrough = False
-            raw = (self.allow_passthrough and self.format == "MJPG" and device not in self._raw_failed
-                   and bool(cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)))
-            log.info("Capture-Card %s geöffnet: %dx%d @ %d fps, Format %s%s", device, *self.actual,
-                     self.format or "?", " (JPEG wird durchgereicht)" if raw else "")
+            self.raw_mode = None
+            if self.allow_passthrough and self.format == "MJPG" and device not in self._raw_failed:
+                self.raw_mode = "jpeg" if cap.set(cv2.CAP_PROP_CONVERT_RGB, 0) else None
+            elif self.format == "NV12" and device not in self._nv12_failed:
+                self.raw_mode = "nv12" if cap.set(cv2.CAP_PROP_CONVERT_RGB, 0) else None
+            raw = self.raw_mode == "jpeg"
+            scaled = self._scale_size(*self.actual[:2])
+            log.info("Capture-Card %s geöffnet: %dx%d @ %d fps, Format %s%s%s", device, *self.actual,
+                     self.format or "?", {"jpeg": " (JPEG wird durchgereicht)", "nv12": " (roh)"}.get(self.raw_mode, ""),
+                     f", verkleinert auf {scaled[0]}x{scaled[1]}" if scaled else "")
             self.state = "no_signal"
             self.detail = "warte auf Bild"
             failures = 0
             while not self._stop.is_set() and not self._reopen.is_set():
                 ok, frame = cap.read()
+                if ok and frame is not None and self.raw_mode == "nv12":
+                    w, h = self.actual[0], self.actual[1]
+                    need = w * h * 3 // 2
+                    flat = frame.reshape(-1)
+                    if frame.dtype != np.uint8 or flat.size < need or w % 2 or h % 2 or not need:
+                        log.info("NV12-Rohdaten passen nicht (%d statt %d Byte) - OpenCV rechnet um", flat.size, need)
+                        self._nv12_failed.add(device)
+                        self._reopen.set()
+                        break
+                    failures = 0
+                    self.state = "ok"
+                    self.detail = ""
+                    self._publish(nv12=flat[:need].reshape(h * 3 // 2, w))
+                    continue
                 if ok and frame is not None and raw:
                     data = as_jpeg(frame)
                     if data is None:
@@ -347,7 +386,7 @@ class FrameSource:
                     self.passthrough = True
                     self.state = "ok"
                     self.detail = ""
-                    self._publish(decoded, data)
+                    self._publish(frame=decoded, jpeg=data)
                     continue
                 if ok and frame is not None:
                     failures = 0
@@ -367,6 +406,20 @@ class FrameSource:
             if not self._handle_reopen():
                 self._reopen.wait(RECONNECT_SECONDS)
                 self._handle_reopen()
+
+    def _set_format(self, cap, fourcc):
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        cap.set(cv2.CAP_PROP_FPS, self.fps)
+
+    def _scale_size(self, w, h):
+        """Zielgröße (gerade Zahlen) für die gewählte Bildqualität; None = Bild ist nicht größer."""
+        tw, th = self.width, self.height
+        if not w or not h or not tw or not th or (w <= tw and h <= th):
+            return None
+        s = min(tw / w, th / h)
+        return max(2, int(w * s) // 2 * 2), max(2, int(h * s) // 2 * 2)
 
     def _test_base(self):
         self.actual = (self.width, self.height, self.fps)
@@ -417,39 +470,76 @@ class FrameSource:
                     cv2.FONT_HERSHEY_SIMPLEX, 2.0, (200, 200, 200), 4)
         return img
 
-    def current(self):
-        """Neuestes Bild oder das "Kein Signal"-Bild."""
-        frame_id, frame, raw, _taken = self._latest
-        if frame_id > 0 and self.state == "ok":
-            if frame is None and raw is not None:
-                frame = self._decode(frame_id, raw)
-            if frame is not None:
-                return frame, frame_id
-        return self.placeholder, -1
+    def _cached(self, kind, key, make):
+        """Jedes Bild wird pro Art (BGR, I420, JPEG) höchstens einmal berechnet - mehrere Zuschauer teilen es."""
+        with self._cache_locks[kind]:
+            hit = self._cache.get(kind)
+            if hit is not None and hit[0] == key:
+                return hit[1]
+            value = make()
+            self._cache[kind] = (key, value)
+            return value
 
-    def _decode(self, frame_id, raw):
-        """Durchgereichtes JPEG bei Bedarf dekodieren (z. B. erster WebRTC-Zuschauer)."""
-        with self._decode_lock:
-            if self._decoded[0] != frame_id:
-                self._decoded = (frame_id, cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR))
-            return self._decoded[1]
+    def _nv12_planes(self, nv12):
+        """Y- und UV-Ebene, auf die gewählte Bildqualität verkleinert."""
+        h = nv12.shape[0] * 2 // 3
+        w = nv12.shape[1]
+        y = nv12[:h]
+        uv = nv12[h:].reshape(h // 2, w // 2, 2)
+        size = self._scale_size(w, h)
+        if size:
+            y = cv2.resize(y, size, interpolation=cv2.INTER_LINEAR)
+            uv = cv2.resize(uv, (size[0] // 2, size[1] // 2), interpolation=cv2.INTER_LINEAR)
+        return y, uv
+
+    def bgr_frame(self):
+        """Neuestes Bild als BGR in der gewählten Größe, sonst das "Kein Signal"-Bild."""
+        frame_id, bgr, jpeg, nv12, _taken = self._latest
+        if frame_id <= 0 or self.state != "ok":
+            return self.placeholder, -1
+
+        def make():
+            if nv12 is not None:
+                y, uv = self._nv12_planes(nv12)
+                return cv2.cvtColor(np.vstack((y, uv.reshape(y.shape[0] // 2, y.shape[1]))), cv2.COLOR_YUV2BGR_NV12)
+            img = bgr if bgr is not None else cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+            if img is None:
+                return None
+            size = self._scale_size(img.shape[1], img.shape[0])
+            return cv2.resize(img, size, interpolation=cv2.INTER_LINEAR) if size else img
+
+        frame = self._cached("bgr", frame_id, make)
+        return (frame, frame_id) if frame is not None else (self.placeholder, -1)
+
+    current = bgr_frame
+
+    def i420_frame(self):
+        """(Bild, Bild-ID, Format für PyAV): I420 für den Encoder - aus NV12 direkt, sonst aus BGR."""
+        frame_id, _bgr, _jpeg, nv12, _taken = self._latest
+        if frame_id > 0 and self.state == "ok" and nv12 is not None:
+            return self._cached("i420", frame_id, lambda: nv12_to_i420(*self._nv12_planes(nv12))), frame_id, "yuv420p"
+        frame, frame_id = self.bgr_frame()
+        if frame.shape[0] % 2 or frame.shape[1] % 2:
+            return frame, frame_id, "bgr24"
+        key = frame_id if frame_id != -1 else ("placeholder", id(frame))
+        # Farbumrechnung mit OpenCV (NEON-optimiert) statt im Encoder: spart pro Bild einige Millisekunden
+        return self._cached("i420", key, lambda: cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)), frame_id, "yuv420p"
 
     def jpeg_frame(self):
-        """(JPEG, Bild-ID, Aufnahmezeit, Sekunden fürs Kodieren). Durchgereichte Bilder kosten nichts,
-        sonst wird jedes Bild höchstens einmal kodiert (mehrere Zuschauer teilen es)."""
-        frame_id, frame, raw, taken = self._latest
-        if frame_id > 0 and self.state == "ok" and raw is not None:
-            return raw, frame_id, taken, 0.0
-        frame, frame_id = self.current()
+        """(JPEG, Bild-ID, Aufnahmezeit, Sekunden fürs Umrechnen + Kodieren). Durchgereichte Bilder kosten nichts."""
+        frame_id, _bgr, jpeg, _nv12, taken = self._latest
+        if frame_id > 0 and self.state == "ok" and jpeg is not None:
+            return jpeg, frame_id, taken, 0.0
+        started = time.monotonic()
+        frame, frame_id = self.bgr_frame()
         key = frame_id if frame_id != -1 else ("placeholder", id(frame))
-        with self._jpeg_lock:
-            if self._jpeg[1] == key:
-                return self._jpeg[0], frame_id, taken, 0.0
-            started = time.monotonic()
+
+        def make():
             ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
-            data = buf.tobytes() if ok else b""
-            self._jpeg = (data, key)
-            return data, frame_id, taken, time.monotonic() - started
+            return buf.tobytes() if ok else b""
+
+        data = self._cached("jpeg", key, make)
+        return data, frame_id, taken, time.monotonic() - started
 
     def jpeg(self):
         return self.jpeg_frame()[0]
@@ -470,7 +560,8 @@ class FrameSource:
         return {"state": self.state, "detail": self.detail, "device": self.current_device,
                 "width": w, "height": h, "fps": round(self._measured_fps) if self.state == "ok" else 0,
                 "webrtc": HAVE_WEBRTC, "can_restart": True, "target_fps": self.fps,
-                "format": self.format, "passthrough": self.passthrough and self.state == "ok"}
+                "format": self.format, "raw": self.raw_mode, "scaled": self._scale_size(w, h),
+                "passthrough": self.passthrough and self.state == "ok"}
 
 
 class CaptureTrack(MediaStreamTrack):
@@ -499,18 +590,13 @@ class CaptureTrack(MediaStreamTrack):
         if now < self.next_at:
             await asyncio.sleep(self.next_at - now)
         await self.source.wait_frame(self.last_id, 0.5)
-        frame, frame_id = self.source.current()
+        frame, frame_id, fmt = self.source.i420_frame()
         self.last_id = frame_id
         picked = time.monotonic()
         if frame_id != -1 and self.source.frame_time:
             self.stats.add("age", picked - self.source.frame_time)
         self.next_at = picked + 1.0 / max(1, self.max_fps())
-        # Farbumrechnung mit OpenCV (NEON-optimiert) statt im Encoder: spart pro Bild einige Millisekunden
-        if frame.shape[0] % 2 == 0 and frame.shape[1] % 2 == 0:
-            yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
-            video_frame = av.VideoFrame.from_ndarray(yuv, format="yuv420p")
-        else:
-            video_frame = av.VideoFrame.from_ndarray(frame, format="bgr24")
+        video_frame = av.VideoFrame.from_ndarray(frame, format=fmt)
         video_frame.pts = int((time.monotonic() - self.start) * VIDEO_CLOCK)
         video_frame.time_base = fractions.Fraction(1, VIDEO_CLOCK)
         done = time.monotonic()

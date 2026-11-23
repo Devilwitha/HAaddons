@@ -1,5 +1,15 @@
 # Änderungen
 
+## 1.0.10
+
+- *720p · 60 fps* ist jetzt wirklich 720p: Capture-Cards wie die Cam Link 4K liefern immer das HDMI-Signal der
+  Konsole (1920×1080) und ignorieren die gewünschte Größe. Die Bridge verkleinert das Bild jetzt selbst – der Pi
+  kodiert nur noch 44 % der Bildpunkte und schafft so 60 fps
+- Karten ohne MJPEG werden im NV12-Format gelesen (Cam Link 4K): weniger Daten über USB, und das Bild für WebRTC
+  entsteht direkt daraus statt über eine doppelte Farbumrechnung
+- Messwerte → **Capture-Card** zeigt Format und Verkleinerung, z. B. „1920×1080 · 60 fps · NV12 → 1280×720“
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.9
 
 - Neue Wahl unter **Messwerte → Übertragung**: *Video – Pi kodiert* (WebRTC, wenig Datenrate, mit Ton) oder

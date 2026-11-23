@@ -19,6 +19,7 @@ video:
   fourcc: "MJPG"              # USB-2.0-Karten: "MJPG"; echte USB-3.0-Karten: "YUYV" (unkomprimiert, schneller)
   jpeg_quality: 80            # Qualität der Einzelbilder/des MJPEG-Streams (1-100)
   jpeg_passthrough: true      # liefert die Karte JPEG, Bilder unverändert weitergeben (Pi kodiert nichts)
+  nv12: true                  # Karten ohne MJPEG (z. B. Cam Link 4K): NV12 roh lesen, spart Umrechnung
   mjpeg_fps: 30               # Bilder pro Sekunde im MJPEG-Stream
   webrtc_fps: 60              # Bilder pro Sekunde über WebRTC (mehr = weniger Verzögerung; schafft die CPU
                               # weniger, sinkt die Rate von selbst, ohne dass sich Bilder stauen)

@@ -94,7 +94,10 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   `{"type":"ack"}`, höchstens `JPEG_WINDOW` = 2 Bilder unbestätigt. MJPEG (multipart) über Ingress kam nicht an
   (HA komprimiert/puffert die Antwort) – `stream_mode: mjpeg` gilt als `jpeg`. Liefert die Karte MJPG, liest die
   Bridge mit `CAP_PROP_CONVERT_RGB = 0` die Roh-JPEGs (`jpeg_passthrough`), dekodiert nur für WebRTC-Zuschauer;
-  sind die Rohdaten kein JPEG, öffnet sie die Karte ohne Durchreichen neu. Die Cam Link 4K liefert kein MJPG (YUYV).
+  sind die Rohdaten kein JPEG, öffnet sie die Karte ohne Durchreichen neu. Die Cam Link 4K liefert kein MJPG, nur YUYV/NV12 und nur in der Größe
+  des HDMI-Signals (1080p60): die Bridge liest NV12 roh (`nv12`, sonst Rückfall wie bei JPEG), baut daraus das I420
+  für aiortc (`nv12_to_i420`) und verkleinert auf die Größe der Bildqualität (`_scale_size`). Umrechnungen pro Bild
+  einmal für alle Zuschauer (`_cached`: bgr, i420, jpeg).
 - **Watchdog** 2,0 s ohne Heartbeat/Eingabe → alle Tasten los, Sticks (0, 0).
 - **Bildqualität** (`MODES` in `video_streamer.py`): 720p60 oder 1080p30 (Software-VP8 auf dem Pi 5 schafft 1080p
   nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und

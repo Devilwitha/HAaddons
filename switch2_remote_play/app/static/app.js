@@ -803,7 +803,10 @@
     // Ampel nach der gewählten Bildqualität (60 oder 30 fps), ältere Bridges ohne Angabe: 60
     const capTarget = cap.target_fps || 60;
     const sendTarget = stream.target_fps || 60;
-    setVal("sv-capture", cap.state === "ok" ? (cap.width + "×" + cap.height + " · " + cap.fps + " fps") : (cap.detail || cap.state || "–"),
+    // z. B. „1920×1080 · 60 fps · NV12 → 1280×720“: die Karte liefert das HDMI-Signal, der Pi verkleinert
+    const capText = cap.width + "×" + cap.height + " · " + cap.fps + " fps" + (cap.format ? " · " + cap.format : "")
+      + (Array.isArray(cap.scaled) ? " → " + cap.scaled[0] + "×" + cap.scaled[1] : "");
+    setVal("sv-capture", cap.state === "ok" ? capText : (cap.detail || cap.state || "–"),
       cap.state === "ok" ? grade(-cap.fps, -(capTarget - 5), -(capTarget / 2 - 2)) : "bad");
     if (mode === "webrtc" && rtc) {
       setVal("sv-sent", rtc.fps + " fps (WebRTC)", grade(-rtc.fps, -Math.min(sendTarget - 5, wanted - 5), -(sendTarget / 2 - 5)));
