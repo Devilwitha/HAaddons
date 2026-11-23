@@ -118,6 +118,7 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   Die Bridge beendet dann die nxbt-Prozesse selbst (`controllers.terminate()`, `resource_manager.shutdown()`,
   ohne `_on_exit`, das BlueZ neu starten würde) und legt `nxbt.Nxbt()` mit mehreren Versuchen neu an.
   Koppeln während eines laufenden Versuchs (`connecting`, < 90 s) wird abgelehnt.
+  Der nxbt-Start läuft im Hintergrund (`controller_main`): WebSocket und Video sind sofort da, Koppeln wartet.
 - **Konfiguration der Bridge** liegt nach der Installation in `/etc/switch2-bridge/config.yaml`
   (bei Updates nicht überschrieben); `rpi5-bridge/config.yaml` ist nur die Vorlage.
 - Eingaben mehrerer Clients: Tasten ODER-verknüpft, Sticks nach größtem Ausschlag.

@@ -79,11 +79,12 @@ class ControllerEmulator:
             log.info("Controller-Emulation aus - Testmodus")
             return
         loop = asyncio.get_running_loop()
-        try:
-            await loop.run_in_executor(None, self._start_nxbt)
-        except Exception as err:          # nxbt meldet Fehler als allgemeine Exceptions
-            self.error = f"{err.__class__.__name__}: {err}"
-            log.error("nxbt konnte nicht gestartet werden: %s", self.error)
+        async with self._lock:            # Koppeln wartet, bis der Start fertig ist
+            try:
+                await loop.run_in_executor(None, self._start_nxbt)
+            except Exception as err:      # nxbt meldet Fehler als allgemeine Exceptions
+                self.error = f"{err.__class__.__name__}: {err}"
+                log.error("nxbt konnte nicht gestartet werden: %s", self.error)
 
     def _start_nxbt(self):
         import nxbt
@@ -159,10 +160,10 @@ class ControllerEmulator:
         Auf der Konsole muss dazu "Controller -> Griffweise/Reihenfolge ändern" offen sein."""
         if not self.enabled:
             return False, "Controller-Emulation ist aus (Testmodus)."
-        if self.nxbt is None:
-            return False, "nxbt läuft nicht: " + (self.error or "unbekannter Fehler")
         if self._lock.locked():
             return True, "Bluetooth wird gerade vorbereitet – bitte einen Moment warten und nicht erneut drücken."
+        if self.nxbt is None:
+            return False, "nxbt läuft nicht: " + (self.error or "unbekannter Fehler")
         state = self._state() if self.nx is not None and self.index is not None else "crashed"
         if state == "connected":
             return True, "Die Konsole ist schon verbunden."
@@ -300,7 +301,8 @@ class ControllerEmulator:
         if not self.enabled:
             return {"state": "unavailable", "detail": self.error}
         if self._recovering or self._lock.locked():
-            return {"state": "initializing", "detail": "Bluetooth wird neu gestartet …"}
+            return {"state": "initializing",
+                    "detail": "Bluetooth wird gestartet …" if self.nx is None else "Bluetooth wird neu gestartet …"}
         if self.nx is None or self.index is None:
             return {"state": "unavailable" if self.error else "initializing", "detail": self.error}
         try:

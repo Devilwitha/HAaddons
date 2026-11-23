@@ -1,5 +1,12 @@
 # Änderungen
 
+## 1.0.13
+
+- „Keine Verbindung zur Bridge“ nach einem Neustart des Pi oder der Bridge, obwohl das Video läuft: Die Bridge
+  öffnete die Steuerverbindung erst, wenn Bluetooth fertig gestartet war (mit mehreren Versuchen bis zu einer
+  Minute). Jetzt ist sie sofort da; die Konsole zeigt so lange „Controller wird gestartet …“
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.12
 
 - Capture-Card liefert wieder volle 60 fps statt immer wieder nur ~40: Die Bridge öffnete die Karte mit einem

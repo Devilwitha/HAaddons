@@ -249,14 +249,20 @@ class Bridge:
             await self.broadcast_status()
 
     # ------------------------------------------------------------------ Start / Stopp
+    async def controller_main(self):
+        await self.controller.start()
+        await self.broadcast_status()
+        await self.controller.run()
+
     async def run(self):
         ws_cfg = self.cfg["websocket"]
         self.system = SystemStats()
         if not self.dry_run:
             await asyncio.get_running_loop().run_in_executor(None, tune, self.cfg.get("system"))
         await self.video.start()
-        await self.controller.start()
-        self.tasks = [asyncio.create_task(self.controller.run()), asyncio.create_task(self.status_loop()),
+        # Bluetooth (nxbt) startet im Hintergrund: das kann mit mehreren Versuchen eine Weile dauern, die
+        # Steuerverbindung (Status, Messwerte, Koppeln) soll aber sofort erreichbar sein.
+        self.tasks = [asyncio.create_task(self.controller_main()), asyncio.create_task(self.status_loop()),
                       asyncio.create_task(self.channel_watch())]
         # Ohne Kompression: die Nachrichten sind winzig, Packen kostet nur Zeit
         async with serve(self.handle_client, ws_cfg["host"], int(ws_cfg["port"]),
