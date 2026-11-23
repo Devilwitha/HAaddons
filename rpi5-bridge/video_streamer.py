@@ -73,6 +73,8 @@ JPEG_WINDOW = 2                     # so viele Einzelbilder dürfen unbestätigt
 
 USBDEVFS_RESET = 0x5514              # _IO('U', 20)
 REAPPEAR_SECONDS = 15.0             # so lange darf sich die Karte nach dem USB-Reset neu anmelden
+BLANK_SPREAD = 12                   # Helligkeitsunterschied im Bild darunter = einfarbig (schwarz)
+BLANK_SECONDS = 5.0                 # so lange einfarbig = vermutlich kein HDMI-Signal (Konsole im Standby)
 
 # Bildqualität: Aufnahme (Breite, Höhe, fps der Capture-Card), gesendete Bilder pro Sekunde und höchste Bitrate.
 # 1080p kodiert der Pi 5 in Software nur mit etwa 30 Bildern pro Sekunde.
@@ -483,6 +485,8 @@ class FrameSource:
         self._restart_done = threading.Event()
         self._restart_result = (False, "")
         self._usb_dir = None
+        self.blank_since = 0.0                 # seit wann das Bild einfarbig ist (0 = nicht)
+        self._blank_checked = 0.0
 
     def _resolve_device(self):
         """Gerät für den nächsten Öffnungsversuch: „auto“ sucht die Karte; ein eingetragenes /dev/videoN, das
@@ -586,8 +590,33 @@ class FrameSource:
                                          f"(erwartet alle {period * 1000:.0f} ms)")
         REC.count("cap")
         self.frame_time = now
+        if now - self._blank_checked >= 0.5:
+            self._blank_checked = now
+            self._check_blank(frame, nv12, now)
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._wake)
+
+    def _check_blank(self, frame, nv12, now):
+        """Einfarbiges Bild (schwarz): Die Cam Link liefert ohne HDMI-Signal weiter Bilder – ohne diese Prüfung
+        stünde „Videosignal ok“ da, obwohl die Konsole schläft."""
+        if nv12 is not None:
+            sample = nv12[:nv12.shape[0] * 2 // 3:32, ::32]           # Helligkeit (Y-Ebene)
+        elif frame is not None:
+            sample = frame[::32, ::32]
+        else:
+            return                                                     # nur JPEG der Karte: nicht dekodieren
+        if sample.size and int(sample.max()) - int(sample.min()) < BLANK_SPREAD:
+            if not self.blank_since:
+                self.blank_since = now
+        else:
+            self.blank_since = 0.0
+
+    def blank_seconds(self):
+        """Wie lange das Bild schon einfarbig ist, 0 = Bild hat Inhalt (oder erst kurz einfarbig)."""
+        if not self.blank_since or self.state != "ok":
+            return 0
+        held = time.monotonic() - self.blank_since
+        return int(held) if held >= BLANK_SECONDS else 0
 
     def _wake(self):
         for fut in list(self._waiters):
@@ -645,6 +674,7 @@ class FrameSource:
                      int(cap.get(cv2.CAP_PROP_BUFFERSIZE) or self.buffers))
             self.state = "no_signal"
             self.detail = "warte auf Bild"
+            self.blank_since = 0.0
             failures = 0
             while not self._stop.is_set() and not self._reopen.is_set():
                 ok, frame = cap.read()
@@ -853,7 +883,7 @@ class FrameSource:
                 "width": w, "height": h, "fps": round(self._measured_fps) if self.state == "ok" else 0,
                 "webrtc": HAVE_WEBRTC, "can_restart": True, "target_fps": self.fps,
                 "format": self.format, "raw": self.raw_mode, "scaled": self._scale_size(w, h),
-                "passthrough": self.passthrough and self.state == "ok"}
+                "passthrough": self.passthrough and self.state == "ok", "blank": self.blank_seconds()}
 
 
 class CaptureTrack(MediaStreamTrack):
@@ -1144,6 +1174,7 @@ class VideoStreamer:
             "device": src.current_device, "format": src.format,
             "actual": list(src.actual), "scaled": src._scale_size(*src.actual[:2]), "raw": src.raw_mode,
             "buffers": src.buffers, "webrtc_clients": len(self.pcs), "jpeg_clients": self.jpeg_clients,
+            "blank": src.blank_seconds(),
             "audio": self.audio.active_device or self.audio.state,
         }
         try:

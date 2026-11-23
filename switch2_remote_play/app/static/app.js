@@ -129,7 +129,7 @@
   const SWITCH_TEXT = {
     connected: ["ok", "Mit der Konsole verbunden"],
     connecting: ["busy", "Warte auf die Konsole – dort „Controller → Griffweise/Reihenfolge ändern“ öffnen"],
-    reconnecting: ["busy", "Verbinde erneut mit der zuletzt gekoppelten Konsole …"],
+    reconnecting: ["busy", "Verbinde mit der gekoppelten Konsole … – Konsole einschalten bzw. aufwecken (andere Konsole: „Konsole koppeln“)"],
     initializing: ["busy", "Controller wird gestartet …"],
     disconnected: ["off", "Nicht gekoppelt – auf „Konsole koppeln“ tippen"],
     crashed: ["err", "Controller-Emulation abgestürzt"],
@@ -151,7 +151,9 @@
       const t = SWITCH_TEXT[sw.state] || ["off", sw.state || "unbekannt"];
       setPill("st-switch", t[0], t[1] + (sw.detail ? " (" + sw.detail + ")" : ""));
       const cap = msg.capture || {};
-      if (cap.state === "ok") {
+      if (cap.state === "ok" && cap.blank) {
+        setPill("st-capture", "busy", "Bild seit " + cap.blank + " s schwarz – Konsole im Standby? Sonst HDMI-Kabel prüfen");
+      } else if (cap.state === "ok") {
         setPill("st-capture", "ok", "Videosignal " + (cap.width || "") + "×" + (cap.height || "") + " @ " + (cap.fps || "?") + " fps");
       } else if (cap.state === "no_signal") {
         setPill("st-capture", "busy", "Capture-Card gefunden, aber kein Bild – Konsole an? " + (cap.detail || ""));
@@ -857,8 +859,14 @@
     // z. B. „1920×1080 · 60 fps · NV12 → 1280×720“: die Karte liefert das HDMI-Signal, der Pi verkleinert
     const capText = cap.width + "×" + cap.height + " · " + cap.fps + " fps" + (cap.format ? " · " + cap.format : "")
       + (Array.isArray(cap.scaled) ? " → " + cap.scaled[0] + "×" + cap.scaled[1] : "");
-    setVal("sv-capture", cap.state === "ok" ? capText : (cap.detail || cap.state || "–"),
-      cap.state === "ok" ? grade(-cap.fps, -(capTarget - 5), -(capTarget / 2 - 2)) : "bad");
+    // 4K-Signal: Die Cam Link schafft 3840×2160 über USB nur mit etwa 20 fps – Konsole auf 1080p stellen
+    const uhd = cap.state === "ok" && (cap.height || 0) > 1080;
+    if (cap.state === "ok" && cap.blank) {
+      setVal("sv-capture", "Bild schwarz seit " + cap.blank + " s (Konsole im Standby?) · " + capText, "warn");
+    } else {
+      setVal("sv-capture", cap.state === "ok" ? capText + (uhd ? " · Konsole auf 1080p stellen" : "") : (cap.detail || cap.state || "–"),
+        cap.state === "ok" ? (uhd ? "bad" : grade(-cap.fps, -(capTarget - 5), -(capTarget / 2 - 2))) : "bad");
+    }
     if (mode === "webrtc" && rtc) {
       setVal("sv-sent", rtc.fps + " fps (WebRTC)", grade(-rtc.fps, -Math.min(sendTarget - 5, wanted - 5), -(sendTarget / 2 - 5)));
       setVal("sv-age", ms(rtc.age), grade(rtc.age, 20, 40));
@@ -1180,6 +1188,10 @@
           frz: v.freezeCount || 0, frzt: v.totalFreezesDuration || 0, bytes: v.bytesReceived || 0,
           alost: a ? a.packetsLost || 0 : 0, conceal: a ? a.concealedSamples || 0 : 0,
         } : null;
+        // Neue WebRTC-Verbindung (z. B. nach Codec-Wechsel): Zähler beginnen bei 0
+        if (cur && r.prev && (r.prevPc !== pc || cur.recv < r.prev.recv || cur.pkts < r.prev.pkts)) {
+          r.prev = Object.fromEntries(Object.keys(cur).map((k) => [k, 0]));
+        }
         if (cur && r.prev) {
           const p = r.prev;
           row.recv = cur.recv - p.recv;
@@ -1202,7 +1214,10 @@
           if (row.lost > 0) recEvent("netz", row.lost + " Videopakete verloren");
           if (row.pli > 0) recEvent("netz", "Browser fordert ein Schlüsselbild an (PLI)");
         }
-        if (cur) r.prev = cur;
+        if (cur) {
+          r.prev = cur;
+          r.prevPc = pc;
+        }
         if (cp) {
           if (cp.currentRoundTripTime != null) row.rtt = Math.round(cp.currentRoundTripTime * 1000);
           const l = byId[cp.localCandidateId];
@@ -1551,7 +1566,9 @@
     if (bridge) {
       L.push("  Pi: Bildqualität " + (info.mode || "?") + " (" + target + " fps), Karte " + (info.device || "?") + " " + (info.format || "")
         + " " + (Array.isArray(info.actual) ? info.actual[0] + "×" + info.actual[1] + "@" + info.actual[2] : "")
-        + (info.scaled ? " → " + info.scaled.join("×") : "") + ", " + (info.buffers || "?") + " Puffer");
+        + (info.scaled ? " → " + info.scaled.join("×") : "") + ", " + (info.buffers || "?") + " Puffer"
+        + (info.blank ? ", Bild schwarz seit " + info.blank + " s (kein HDMI-Signal? Konsole im Standby?)" : "")
+        + (Array.isArray(info.actual) && info.actual[1] > 1080 ? ", 4K-Signal (Konsole auf 1080p stellen)" : ""));
       L.push("  Encoder: " + (info.codec || "?") + " (VP8 cpu-used " + info.speed + (info.h264 ? ", x264 " + info.h264 : ", ohne x264") + "), " + info.threads + " Threads, " + Math.round((info.bitrate || 0) / 1e6) + " Mbit/s"
         + (info.fixed_bitrate ? " fest" : "") + "; nice " + (info.nice != null ? info.nice : "?")
         + (info.encode_nice != null ? " (Kodieren " + info.encode_nice + ")" : "") + ", Regler " + (info.governor || "?")

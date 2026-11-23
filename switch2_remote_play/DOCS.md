@@ -156,6 +156,9 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
 | Bild unscharf | Messwerte → Bildqualität *1080p · 30 fps*; **Datenrate** sollte bei Bewegung über 2,5 Mbit/s liegen (`webrtc_min_bitrate`/`webrtc_max_bitrate` in der config.yaml) |
 | Ursache unklar | Messwerte → **Aufzeichnung starten**, spielen, bei Rucklern oben auf **Ruckler!** tippen, beenden. Die Textdatei nennt zu jedem Einbruch die vermutete Ursache (auch unter `/share/game_remote/aufzeichnungen`) |
 | Ruckelt ab und zu | Messwerte → **Pi**: rot bei Hitze (Kühler!) oder Unterspannung (offizielles 27-W-Netzteil). Pi und PC/Tablet per Kabel oder 5-GHz-WLAN |
+| Touch/Controller ohne Wirkung | Oben **Konsole** muss grün sein. *reconnecting*: Konsole einschalten bzw. mit ihrem eigenen Controller aufwecken, die Bridge verbindet sich dann von selbst. *connecting*: Kopplungsmodus – auf der Konsole *Griffweise/Reihenfolge ändern* öffnen |
+| Kein Bild, Capture gelb „schwarz“ | Die Capture-Card bekommt kein HDMI-Bild: Konsole im Standby oder Kabel/Dock prüfen |
+| Capture-Card nur ~20 fps, „Konsole auf 1080p stellen“ | Die Konsole gibt 4K aus; in ihren Einstellungen die TV-Auflösung auf 1080p stellen |
 | Bild hängt / Capture rot | Messwerte → **Capture-Card neu starten**. Meldet sie sich danach nicht zurück, USB-Stecker ziehen; verschwindet die Karte immer wieder von selbst, Netzteil (27 W) und USB-3-Anschluss prüfen (`dmesg | grep -i usb` am Pi) |
 | Kein Ton | Messwerte → **Ton** zeigt den Grund. Konsole auf Ton über TV/HDMI stellen; `arecord -l` am Pi muss die Capture-Card zeigen |
 | Koppeln klappt nicht | Auf der Konsole *Griffweise/Reihenfolge ändern* offen lassen, einmal drücken, bis zu einer Minute warten; Protokoll: `journalctl -u switch2-bridge -n 80` |

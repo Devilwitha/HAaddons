@@ -4,7 +4,8 @@
 - Safety-Watchdog: Kommen länger als watchdog_seconds keine Heartbeats/Eingaben vom Client,
   werden alle Tasten losgelassen und die Sticks auf (0, 0) gesetzt.
 - Merkt sich die Bluetooth-Adresse der gekoppelten Konsole und verbindet sich nach einem
-  Neustart von selbst wieder, solange die Konsole an ist.
+  Neustart oder Abbruch (Konsole im Standby) von selbst wieder, sobald sie erreichbar ist
+  (nxbt_patch.py – nxbt allein fiele nach einer Sekunde in den Kopplungsmodus).
 - Stürzt nxbt ab (z. B. weil der Bluetooth-Dienst kurz weg war), wird nxbt komplett neu gestartet –
   sonst bliebe der Adapter belegt und jede weitere Kopplung endete mit "No adapters available".
 
@@ -91,6 +92,8 @@ class ControllerEmulator:
 
     def _start_nxbt(self):
         import nxbt
+        import nxbt_patch
+        nxbt_patch.install_nxbt()             # Wiederverbinden statt Kopplungsmodus (vor nxbt.Nxbt())
         self.nxbt = nxbt
         addresses = self._load_addresses()
         if addresses:

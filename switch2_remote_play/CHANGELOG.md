@@ -1,5 +1,18 @@
 # Änderungen
 
+## 1.0.22
+
+- **Steuerung nach Standby der Konsole tot:** nxbt gab das Wiederverbinden nach etwa einer Sekunde auf (beim Start
+  der Bridge sogar nach einem Versuch) und wartete danach nur noch im Kopplungsmodus („Konsole: connecting“) – nach
+  dem Aufwecken verband sich die Konsole nicht mehr. Die Bridge versucht es jetzt alle 2 s mit der gekoppelten
+  Konsole, bis sie wieder erreichbar ist. Kopplungsmodus nur noch über **Konsole koppeln**
+- **Schwarzes Bild** wird erkannt: Die Cam Link liefert ohne HDMI-Signal weiter (schwarze) Bilder, bisher stand dann
+  „Videosignal ok“. Jetzt wird „Capture“ gelb mit „Bild seit … s schwarz – Konsole im Standby?“
+- **4K-Signal:** Messwerte → Capture-Card rät zu 1080p in den Konsolen-Einstellungen (die Cam Link schafft 3840×2160
+  über USB am Pi nur mit etwa 20 fps)
+- Aufzeichnung: nach einem Neuaufbau von WebRTC (z. B. Codec-Wechsel) keine negativen Werte mehr
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.21
 
 - **Capture-Card neu starten** meldete bei manchen Karten (z. B. Cam Link 4K) „USB-Reset fehlgeschlagen: [Errno 19]

@@ -128,6 +128,8 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   `/dev/bus/usb/<bus>/<dev>` (aus `/sys/class/video4linux/videoN/device`), neu öffnen – der Dienst läuft als root.
   Die Cam Link meldet sich dabei ab und neu an (ENODEV = Erfolg); sonst Rückfall `authorized` 0/1 in sysfs.
   Danach bis zu 15 s warten, bis das Videogerät wieder da ist (`_wait_reappear`), erst dann antworten.
+  Ohne HDMI-Signal liefert die Cam Link evtl. weiter schwarze Bilder: `_check_blank` (Y-Stichprobe alle
+  0,5 s) → `blank` (Sekunden) im Capture-Status, ab 5 s.
 - **Ton** nur über WebRTC: Bridge liest die Capture-Card per `arecord` (alsa-utils, 48 kHz Stereo, 20-ms-Pakete,
   höchstens 60 ms Puffer), nur solange jemand zuhört. Die Tonspur bekommt eine **eigene Stream-ID**
   (`sender._stream_id`), sonst gleicht der Browser Bild und Ton ab und verzögert das Bild. `audio.device`:
@@ -136,6 +138,9 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   Die Bridge beendet dann die nxbt-Prozesse selbst (`controllers.terminate()`, `resource_manager.shutdown()`,
   ohne `_on_exit`, das BlueZ neu starten würde) und legt `nxbt.Nxbt()` mit mehreren Versuchen neu an.
   Koppeln während eines laufenden Versuchs (`connecting`, < 90 s) wird abgelehnt.
+  `nxbt_patch.py` (vor `nxbt.Nxbt()`, Controller-Prozesse erben ihn per fork): nxbt fällt sonst nach 1–2 fehlgeschlagenen
+  Wiederverbindungen in den Kopplungsmodus (`connect()`), nach Standby der Konsole bliebe die Steuerung tot. Der Patch
+  ersetzt `connect()` durch Wiederverbinden alle 2 s, solange eine Adresse bekannt ist (aus der Bridge oder `getpeername`).
   Der nxbt-Start läuft im Hintergrund (`controller_main`): WebSocket und Video sind sofort da, Koppeln wartet.
   Beenden: `_shutdown_nxbt` mit Zeitlimit, danach `os._exit(0)` (kein atexit von nxbt, kein Warten auf den
   Thread-Pool wie bei `asyncio.run`); `TimeoutStopSec=15` in der Dienstdatei.
