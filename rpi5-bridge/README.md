@@ -2,7 +2,7 @@
 
 Gegenstück zum Home-Assistant-Add-on [Game Remote](../switch2_remote_play/). Läuft auf einem
 Raspberry Pi 5 neben der Spielkonsole: gibt sich per Bluetooth als Pro Controller aus (nxbt)
-und streamt das Bild der USB-Capture-Card (WebRTC und MJPEG) an Home Assistant.
+und streamt das Bild der USB-Capture-Card (WebRTC oder JPEG-Einzelbilder per WebSocket) an Home Assistant.
 
 ## Installieren / aktualisieren
 ```bash

@@ -68,7 +68,7 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 - Browser → Bridge: `{"type":"input","buttons":[...],"ls":[x,y],"rs":[x,y]}` (x/y −100…100, y oben
   positiv), `{"type":"heartbeat","t":ms}`, `{"type":"system","action":"pair"|"capture_restart"}`,
   `{"type":"system","action":"video_mode","mode":"720p60"|"1080p30"}`
-- Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"stream":{webrtc:{fps,age,convert,encode}|null,mjpeg_fps,webrtc_clients,audio:{state,detail,device,listeners}},"clients":n}`,
+- Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"stream":{webrtc:{fps,age,convert,encode}|null,jpeg:{fps,age,encode}|null,jpeg_clients,mjpeg_fps,webrtc_clients,audio:{state,detail,device,listeners}},"clients":n}`,
   `{"type":"pong","t":ms}`, `{"type":"info"|"error","message":...}`
 - Der Ingress-Server schickt zusätzlich `{"type":"proxy","status":"connected"|"unreachable"|"bridge_closed"}`.
 - Schnellster Weg für Eingaben: WebRTC-Datenkanal `input` (ungeordnet, `maxRetransmits: 0`) direkt zum Pi,
@@ -86,8 +86,15 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 - **venv mit `--system-site-packages`**: `python3-opencv`, `python3-numpy`, `python3-dbus` kommen aus apt.
   Keine Abhängigkeit hinzufügen, die NumPy 2 per pip nachzieht (bricht das apt-OpenCV).
 - **WebRTC** nur im LAN (Medien gehen direkt Pi → Browser). Das Frontend fällt nach 8 s automatisch auf
-  MJPEG zurück (läuft komplett über Ingress). aiortc ohne STUN-Server starten
+  Einzelbilder zurück (läuft komplett über Ingress). aiortc ohne STUN-Server starten
   (`RTCConfiguration(iceServers=[])`), sonst wartet der Aufbau Sekunden auf Google-STUN.
+- **Einzelbilder** (Übertragung „jpeg“, wählbar unter Messwerte, `localStorage` `sw2-transport`, Vorgabe
+  `stream_mode`): WebSocket `/frames` der Bridge, vom Add-on unter `video/frames` durchgereicht. Nachricht = 4 Byte
+  Länge + JSON-Kopf `{id,age,enc,pt}` + JPEG; der Browser dekodiert per `createImageBitmap` und schickt
+  `{"type":"ack"}`, höchstens `JPEG_WINDOW` = 2 Bilder unbestätigt. MJPEG (multipart) über Ingress kam nicht an
+  (HA komprimiert/puffert die Antwort) – `stream_mode: mjpeg` gilt als `jpeg`. Liefert die Karte MJPG, liest die
+  Bridge mit `CAP_PROP_CONVERT_RGB = 0` die Roh-JPEGs (`jpeg_passthrough`), dekodiert nur für WebRTC-Zuschauer;
+  sind die Rohdaten kein JPEG, öffnet sie die Karte ohne Durchreichen neu. Die Cam Link 4K liefert kein MJPG (YUYV).
 - **Watchdog** 2,0 s ohne Heartbeat/Eingabe → alle Tasten los, Sticks (0, 0).
 - **Bildqualität** (`MODES` in `video_streamer.py`): 720p60 oder 1080p30 (Software-VP8 auf dem Pi 5 schafft 1080p
   nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und

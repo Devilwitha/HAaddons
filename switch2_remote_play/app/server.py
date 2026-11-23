@@ -5,14 +5,16 @@ Aufgaben:
   - /api/config: Optionen fürs Frontend (stream_mode, default_touch_overlay, haptic_feedback)
   - /ws: WebSocket-Weiterleitung an die Raspberry Pi 5 Bridge (ws://pi_host:pi_ws_port)
   - /video/<pfad>: HTTP-Weiterleitung an den Video-Server der Bridge
-    (http://pi_host:pi_video_port/<pfad>), z. B. /video/offer (WebRTC-Signaling) und
-    /video/stream.mjpg (MJPEG)
+    (http://pi_host:pi_video_port/<pfad>), z. B. /video/offer (WebRTC-Signaling)
+  - /video/frames: WebSocket-Weiterleitung der Einzelbilder (JPEG) von der Bridge
 
 Der Browser spricht dadurch nur mit Home Assistant - auch über HTTPS und Nabu Casa,
 ohne CORS und ohne direkten Zugriff auf IP und Ports des Pi. Ausnahme: Bei WebRTC laufen
 nur das Signaling über diesen Server, die Videodaten selbst gehen direkt (UDP) vom Pi
 zum Browser. Ist der Pi nicht direkt erreichbar (unterwegs), schaltet das Frontend
-automatisch auf MJPEG um, das vollständig über Ingress läuft.
+automatisch auf Einzelbilder (JPEG über WebSocket) um, die vollständig über Ingress laufen.
+MJPEG als multipart-Antwort kommt über Ingress nicht zuverlässig an (Home Assistant komprimiert und puffert
+solche Antworten) - darum WebSocket, das Ingress unverändert durchreicht.
 """
 import asyncio
 import json
@@ -56,6 +58,8 @@ CONSOLE_TEXT = {
 CAPTURE_TEXT = {"ok": "Bild", "no_signal": "Kein Signal", "unavailable": "Nicht verfügbar"}
 VIDEO_PATH = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 WS_MAX_MESSAGE = 256 * 1024
+FRAME_MAX_MESSAGE = 8 * 1024 * 1024
+STREAM_MODES = ("webrtc", "jpeg")
 OFFER_MAX_BODY = 256 * 1024
 
 log = logging.getLogger("switch2")
@@ -73,7 +77,9 @@ def load_options():
     options["pi_host"] = str(options["pi_host"]).strip()
     options["pi_ws_port"] = int(options["pi_ws_port"])
     options["pi_video_port"] = int(options["pi_video_port"])
-    if options["stream_mode"] not in ("webrtc", "mjpeg"):
+    if options["stream_mode"] == "mjpeg":          # ältere Einstellung: jetzt Einzelbilder
+        options["stream_mode"] = "jpeg"
+    if options["stream_mode"] not in STREAM_MODES:
         options["stream_mode"] = "webrtc"
     options["default_touch_overlay"] = bool(options["default_touch_overlay"])
     options["haptic_feedback"] = bool(options["haptic_feedback"])
@@ -275,6 +281,36 @@ async def ws_proxy(request):
     return client
 
 
+async def frames_proxy(request):
+    """Einzelbilder der Bridge (WebSocket /frames) an den Browser, Bestätigungen zurück."""
+    options = request.app["options"]
+    client = web.WebSocketResponse(heartbeat=20, compress=False, max_msg_size=WS_MAX_MESSAGE)
+    await client.prepare(request)
+    target = f"ws://{bridge_host(options)}:{options['pi_video_port']}/frames"
+    try:
+        async with request.app["session"].ws_connect(target, heartbeat=20, max_msg_size=FRAME_MAX_MESSAGE,
+                                                     timeout=aiohttp.ClientWSTimeout(ws_close=5)) as upstream:
+            async def pipe(source, dest):
+                async for msg in source:
+                    if msg.type == aiohttp.WSMsgType.BINARY:
+                        await dest.send_bytes(msg.data)
+                    elif msg.type == aiohttp.WSMsgType.TEXT:
+                        await dest.send_str(msg.data)
+                    else:
+                        break
+
+            tasks = {asyncio.create_task(pipe(client, upstream)), asyncio.create_task(pipe(upstream, client))}
+            _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
+        log.warning("Einzelbilder %s nicht erreichbar: %s", target, err)
+    if not client.closed:
+        await client.close()
+    return client
+
+
 async def video_proxy(request):
     """Leitet HTTP-Anfragen an den Video-Server der Bridge weiter (auch endlose MJPEG-Streams)."""
     path = request.match_info["path"]
@@ -414,6 +450,7 @@ def make_app(options, ingress_only=True, stats=None, hub=None):
     app.router.add_get("/", index)
     app.router.add_get("/api/config", api_config)
     app.router.add_get("/ws", ws_proxy)
+    app.router.add_get("/video/frames", frames_proxy)
     app.router.add_route("*", "/video/{path:.*}", video_proxy)
     app.router.add_static("/static/", STATIC_DIR)
     return app

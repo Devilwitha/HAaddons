@@ -1,5 +1,17 @@
 # Änderungen
 
+## 1.0.9
+
+- Neue Wahl unter **Messwerte → Übertragung**: *Video – Pi kodiert* (WebRTC, wenig Datenrate, mit Ton) oder
+  *Einzelbilder – Gerät dekodiert* (JPEG). Bei Einzelbildern kodiert der Pi keinen Videostrom mehr: Liefert die
+  Capture-Card selbst JPEG, wird es unverändert durchgereicht, sonst nur schnell als JPEG verpackt. Dekodiert wird
+  im Browser. Die Wahl merkt sich der Browser; `stream_mode` in der Konfiguration ist nur die Vorgabe
+- Einzelbilder laufen als WebSocket über Home Assistant und ersetzen MJPEG, das über Ingress nicht ankam
+  (`stream_mode: mjpeg` gilt jetzt als `jpeg`). Neue Bilder gibt es erst, wenn das Gerät die vorigen gezeichnet
+  hat – bei langsamer Leitung sinkt die Bildrate, das Bild bleibt aber aktuell statt hinterherzuhängen
+- Auch der automatische Wechsel, wenn WebRTC nicht zustande kommt, nutzt jetzt Einzelbilder
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.8
 
 - Bridge findet die Capture-Card selbst (`device: "auto"`), auch wenn sie nach Umstecken, Neustart oder

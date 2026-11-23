@@ -51,7 +51,7 @@ stehen in `/etc/switch2-bridge/config.yaml`, danach `sudo systemctl restart swit
 | `pi_host` | IP-Adresse oder Hostname des Raspberry Pi 5 |
 | `pi_ws_port` | WebSocket-Port der Bridge (Standard 8765) |
 | `pi_video_port` | Video-Port der Bridge (Standard 8766) |
-| `stream_mode` | `webrtc` (geringste Latenz) oder `mjpeg` (funktioniert überall) |
+| `stream_mode` | Vorgabe für die Übertragung: `webrtc` (Pi kodiert Video, mit Ton) oder `jpeg` (Einzelbilder, funktioniert überall). Umschalten auch unter **Messwerte → Übertragung** |
 | `default_touch_overlay` | Touch-Gamepad beim ersten Öffnen anzeigen |
 | `haptic_feedback` | kurzes Vibrieren bei Tastendruck (Android) |
 | `use_mqtt` | Sensoren per MQTT als Gerät anlegen (Standard: an), sonst über die REST-API |
@@ -70,7 +70,15 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
 ## Bedienung
 - **Obere Leiste** (mit dem Pfeil einklappbar): Status von Bridge, Konsole, Capture und Ping,
   Schalter **Touch-Steuerung**, **Controller**, **Ton**, **Messwerte**, **Konsole koppeln**, **Vollbild**.
-- **Ton:** kommt bei WebRTC von der Capture-Card mit (nicht bei MJPEG). Browser spielen Ton erst nach einer
+- **Übertragung** (unter **Messwerte**, merkt sich der Browser):
+  - *Video – Pi kodiert* (WebRTC): Der Pi komprimiert das Bild zu einem Videostrom. Wenig Datenrate (3–10 Mbit/s),
+    mit Ton, im Heimnetz direkt vom Pi zum Gerät.
+  - *Einzelbilder – Gerät dekodiert* (JPEG): Der Pi gibt einzelne JPEG-Bilder weiter, dein Gerät entpackt sie.
+    Liefert die Capture-Card selbst JPEG, rechnet der Pi gar nichts (Messwerte: „durchgereicht“), sonst verpackt er
+    nur schnell als JPEG – deutlich weniger Arbeit als ein Videostrom, auch 1080p mit 60 fps. Läuft über Home
+    Assistant und damit auch unterwegs, braucht aber mehr Datenrate (20–60 Mbit/s) und hat keinen Ton. Bei langsamer
+    Leitung sinkt die Bildrate, das Bild bleibt aktuell.
+- **Ton:** kommt bei *Video* (WebRTC) von der Capture-Card mit (nicht bei Einzelbildern). Browser spielen Ton erst nach einer
   Berührung ab – einmal auf die Seite tippen. Bild und Ton werden nicht abgeglichen, damit das Bild nicht
   wartet; der Ton kann dadurch ein paar Millisekunden hinterherhängen. Abschalten am Pi:
   `audio: device: "off"` in `/etc/switch2-bridge/config.yaml`.
@@ -120,8 +128,8 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
 - **WebRTC und unterwegs:** Über Home Assistant läuft bei WebRTC nur der Verbindungsaufbau; das
   Video selbst geht direkt vom Pi zum Browser. Das klappt im Heimnetz. Von unterwegs (z. B. über
   Nabu Casa) ist der Pi nicht direkt erreichbar – dann schaltet die Seite nach einigen Sekunden
-  automatisch auf **MJPEG** um, das vollständig über Home Assistant läuft (mehr Bandbreite, etwas
-  mehr Verzögerung).
+  automatisch auf **Einzelbilder** um, die vollständig über Home Assistant laufen (mehr Bandbreite, etwas
+  mehr Verzögerung, kein Ton).
 - **Geringe Verzögerung:** Bei WebRTC gehen auch die Eingaben über einen Datenkanal direkt vom Browser
   zum Pi (ohne Umweg über Home Assistant). Am wenigsten Verzögerung gibt es mit Kabel-LAN für Pi und
   PC/Konsole, einem Controller per USB und `webrtc_fps: 60` in `/etc/switch2-bridge/config.yaml`.
@@ -142,7 +150,8 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
 | **Konsole** rot | nxbt läuft nicht: `journalctl -u switch2-bridge -n 50` |
 | **Capture** gelb | Karte gefunden, aber kein Bild: Konsole im Standby oder HDMI-Kabel prüfen |
 | **Capture** rot | Keine Capture-Card: USB-Kabel prüfen, `v4l2-ctl --list-devices`. Die Bridge sucht die Karte selbst (`device: "auto"`) |
-| Ruckelt | Messwerte → Bildqualität *720p · 60 fps*; sonst `webrtc_fps`/`mjpeg_fps` in der config.yaml senken |
+| Ruckelt | Messwerte → Bildqualität *720p · 60 fps*; Pi ausgelastet (**Kodieren + Senden** hoch) → Übertragung *Einzelbilder*; unterwegs/WLAN langsam → Übertragung *Video* |
+| Kein Bild bei MJPEG | Gibt es nicht mehr: `stream_mode: mjpeg` nutzt jetzt Einzelbilder über WebSocket (Add-on ab 1.0.9 und Bridge aktualisieren) |
 | Bild unscharf | Messwerte → Bildqualität *1080p · 30 fps*; **Datenrate** sollte bei Bewegung über 2,5 Mbit/s liegen (`webrtc_min_bitrate`/`webrtc_max_bitrate` in der config.yaml) |
 | Bild hängt / Capture rot | Messwerte → **Capture-Card neu starten** |
 | Kein Ton | Messwerte → **Ton** zeigt den Grund. Konsole auf Ton über TV/HDMI stellen; `arecord -l` am Pi muss die Capture-Card zeigen |

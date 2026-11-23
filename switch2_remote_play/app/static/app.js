@@ -1,8 +1,9 @@
 /* Game Remote – Oberfläche.
  *
  * - WebSocket "ws" (über den Ingress-Server an die Bridge): Eingaben senden, Status empfangen
- * - Video: WebRTC über "video/offer", automatischer Wechsel auf MJPEG ("video/stream.mjpg"),
- *   wenn WebRTC nicht zustande kommt (z. B. unterwegs über Nabu Casa)
+ * - Video: WebRTC über "video/offer" (der Pi kodiert) oder Einzelbilder über den WebSocket "video/frames"
+ *   (JPEG, der Browser dekodiert). Wählbar unter Messwerte → Übertragung; kommt WebRTC nicht zustande
+ *   (z. B. unterwegs über Nabu Casa), wird automatisch auf Einzelbilder gewechselt
  * - Eingaben aus Touch-Gamepad und echten Controllern (HTML5 Gamepad API) werden zusammengeführt
  *
  * - Eingaben gehen bei WebRTC über den Datenkanal "input" direkt an den Pi (mit "seq"), sonst über den WebSocket
@@ -175,24 +176,33 @@
   // ------------------------------------------------------------------ Video
   const video = $("video");
   const audio = $("audio");
-  const mjpeg = $("mjpeg");
+  const frames = $("frames");
+  const framesCtx = frames.getContext("2d", { alpha: false, desynchronized: true });
   let pc = null;
   let mode = "webrtc";
   let capturePlaying = false;
   let webrtcTimer = null;
-  let mjpegRetry = null;
+  let framesWs = null;
+  let framesRetry = null;
+  // Messwerte der Einzelbilder (im Browser gezählt)
+  const fstat = { frames: 0, bytes: 0, decode: 0, skipped: 0, info: null, last: -2 };
 
   function showVideo(which) {
     capturePlaying = !!which;
     video.hidden = which !== "webrtc";
-    mjpeg.hidden = which !== "mjpeg";
+    frames.hidden = which !== "jpeg";
     $("novideo").hidden = !!which;
-    $("st-mode").textContent = which === "webrtc" ? "· WebRTC" : which === "mjpeg" ? "· MJPEG" : "";
+    $("st-mode").textContent = which === "webrtc" ? "· WebRTC" : which === "jpeg" ? "· Einzelbilder" : "";
   }
 
   function stopVideo() {
     clearTimeout(webrtcTimer);
-    clearTimeout(mjpegRetry);
+    clearTimeout(framesRetry);
+    if (framesWs) {
+      const ws = framesWs;
+      framesWs = null;
+      try { ws.close(); } catch (err) { /* schon zu */ }
+    }
     if (pc) {
       pc.close();
       pc = null;
@@ -203,23 +213,20 @@
     }
     video.srcObject = null;
     audio.srcObject = null;
-    mjpeg.onload = null;
-    mjpeg.onerror = null;
-    mjpeg.removeAttribute("src");
     showVideo(null);
   }
 
   function startVideo(wanted) {
     stopVideo();
-    mode = wanted;
-    if (wanted === "webrtc" && window.RTCPeerConnection) startWebRTC();
-    else startMjpeg();
+    mode = wanted === "webrtc" && window.RTCPeerConnection ? "webrtc" : "jpeg";
+    if (mode === "webrtc") startWebRTC();
+    else startFrames();
   }
 
-  function fallbackToMjpeg(reason) {
+  function fallbackToJpeg(reason) {
     if (mode !== "webrtc") return;
-    toast("WebRTC nicht möglich (" + reason + ") – Video läuft jetzt über MJPEG.");
-    startVideo("mjpeg");
+    toast("WebRTC nicht möglich (" + reason + ") – Video läuft jetzt als Einzelbilder über Home Assistant.");
+    startVideo("jpeg");
   }
 
   function waitIce(conn, timeout) {
@@ -278,7 +285,7 @@
         clearTimeout(webrtcTimer);
         showVideo("webrtc");
       } else if (conn.connectionState === "failed") {
-        fallbackToMjpeg("Verbindung fehlgeschlagen");
+        fallbackToJpeg("Verbindung fehlgeschlagen");
       } else if (conn.connectionState === "disconnected" && capturePlaying) {
         webrtcTimer = setTimeout(() => {
           if (conn === pc && conn.connectionState !== "connected") startVideo("webrtc");
@@ -286,7 +293,7 @@
       }
     };
     webrtcTimer = setTimeout(() => {
-      if (conn === pc && conn.connectionState !== "connected") fallbackToMjpeg("Pi nicht direkt erreichbar");
+      if (conn === pc && conn.connectionState !== "connected") fallbackToJpeg("Pi nicht direkt erreichbar");
     }, WEBRTC_TIMEOUT_MS);
     try {
       const offer = await conn.createOffer();
@@ -302,19 +309,71 @@
       if (conn !== pc) return;
       await conn.setRemoteDescription(answer);
     } catch (err) {
-      if (conn === pc) fallbackToMjpeg(err.message);
+      if (conn === pc) fallbackToJpeg(err.message);
     }
   }
 
-  function startMjpeg() {
-    mjpeg.onload = () => showVideo("mjpeg");
-    mjpeg.onerror = () => {
-      showVideo(null);
-      mjpegRetry = setTimeout(() => {
-        mjpeg.src = "video/stream.mjpg?t=" + Date.now();
-      }, 2000);
+  // Einzelbilder: JPEG über WebSocket (läuft durch Ingress), dekodiert wird hier im Browser
+  // (createImageBitmap, meist in Hardware). Jedes gezeichnete Bild wird bestätigt; die Bridge schickt
+  // höchstens zwei unbestätigte Bilder – bei langsamer Leitung sinkt die Bildrate, das Bild bleibt aktuell.
+  function decodeJpeg(blob) {
+    if (window.createImageBitmap) return createImageBitmap(blob);
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(blob);
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("JPEG")); };
+      img.src = url;
+    });
+  }
+
+  function startFrames() {
+    const url = new URL("video/frames", location.href);
+    url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(url.href);
+    ws.binaryType = "arraybuffer";
+    framesWs = ws;
+    fstat.last = -2;
+    const ack = (id) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ack", id }));
     };
-    mjpeg.src = "video/stream.mjpg?t=" + Date.now();
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === "string" || ev.data.byteLength < 4) return;
+      const view = new DataView(ev.data);
+      const len = view.getUint32(0);
+      let head = {};
+      try { head = JSON.parse(new TextDecoder().decode(new Uint8Array(ev.data, 4, len))); } catch (err) { /* ohne Kopf */ }
+      const blob = new Blob([new Uint8Array(ev.data, 4 + len)], { type: "image/jpeg" });
+      const t0 = performance.now();
+      decodeJpeg(blob).then((img) => {
+        if (ws !== framesWs) return;
+        const id = typeof head.id === "number" ? head.id : -1;
+        // Zwei Bilder dekodieren gleichzeitig – ein älteres, das später fertig wird, nicht mehr zeichnen
+        if (id === -1 || id > fstat.last) {
+          if (frames.width !== img.width || frames.height !== img.height) {
+            frames.width = img.width;
+            frames.height = img.height;
+          }
+          framesCtx.drawImage(img, 0, 0);
+          fstat.last = id;
+          fstat.frames += 1;
+          fstat.bytes += ev.data.byteLength;
+          fstat.decode += performance.now() - t0;
+          fstat.info = head;
+          if (!capturePlaying) showVideo("jpeg");
+        } else {
+          fstat.skipped += 1;
+        }
+        if (img.close) img.close();
+        ack(head.id);
+      }).catch(() => ack(head.id));
+    };
+    ws.onclose = () => {
+      if (ws !== framesWs) return;
+      framesWs = null;
+      showVideo(null);
+      framesRetry = setTimeout(() => { if (mode === "jpeg" && !framesWs) startFrames(); }, 2000);
+    };
   }
 
   // ------------------------------------------------------------------ Eingaben zusammenführen
@@ -632,6 +691,21 @@
     setTimeout(() => { $("cap-restart").disabled = false; }, 8000);
   });
 
+  function preferredTransport() {
+    let saved = null;
+    try { saved = localStorage.getItem("sw2-transport"); } catch (err) { /* ohne Speicher */ }
+    if (saved === "webrtc" || saved === "jpeg") return saved;
+    return config.stream_mode === "webrtc" ? "webrtc" : "jpeg";
+  }
+
+  $("transport").addEventListener("change", (ev) => {
+    const value = ev.target.value === "webrtc" ? "webrtc" : "jpeg";
+    try { localStorage.setItem("sw2-transport", value); } catch (err) { /* ohne Speicher */ }
+    prevRtc = null;
+    startVideo(value);
+    toast(value === "webrtc" ? "Übertragung: Video (der Pi kodiert)" : "Übertragung: Einzelbilder (dein Gerät dekodiert)");
+  });
+
   function renderVideoControls(stream, cap) {
     const modes = Array.isArray(stream.modes) ? stream.modes : [];
     const select = $("video-mode");
@@ -648,7 +722,6 @@
     if (document.activeElement !== select && stream.mode) select.value = stream.mode;
     $("video-mode-field").hidden = modes.length === 0;
     $("cap-restart").hidden = !cap.can_restart;
-    $("stats-actions").hidden = modes.length === 0 && !cap.can_restart;
   }
 
   $("fs-btn").addEventListener("click", async () => {
@@ -697,6 +770,7 @@
   let dcPing = null;
   let statsTimer = null;
   let prevRtc = null;
+  let prevJpeg = null;
 
   function setVal(id, text, level) {
     const cell = $(id);
@@ -736,18 +810,26 @@
       setVal("sv-age", ms(rtc.age), grade(rtc.age, 20, 40));
       setVal("sv-convert", ms(rtc.convert), grade(rtc.convert, 5, 10));
       setVal("sv-encode", ms(rtc.encode), grade(rtc.encode, 16, 33));
+    } else if (mode === "jpeg" && stream.jpeg) {
+      const jp = stream.jpeg;
+      const through = cap.passthrough || (fstat.info && fstat.info.pt);
+      setVal("sv-sent", jp.fps + " fps (Einzelbilder" + (through ? ", JPEG der Karte durchgereicht" : "") + ")",
+        grade(-jp.fps, -Math.min(sendTarget - 5, wanted - 5), -(sendTarget / 2 - 5)));
+      setVal("sv-age", ms(jp.age), grade(jp.age, 20, 40));
+      setVal("sv-convert", "–");
+      setVal("sv-encode", through ? "0 ms (durchgereicht)" : ms(jp.encode) + " (JPEG)", through ? "good" : grade(jp.encode, 8, 16));
     } else {
-      setVal("sv-sent", stream.mjpeg_fps !== undefined ? stream.mjpeg_fps + " fps (MJPEG)" : "–");
+      setVal("sv-sent", "–");
       ["sv-age", "sv-convert", "sv-encode"].forEach((id) => setVal(id, "–"));
     }
     setVal("sv-ping-dc", channelOpen() ? ms(dcPing) : "kein Datenkanal", channelOpen() ? grade(dcPing, 5, 20) : "warn");
     setVal("sv-ping-ws", ms(wsPing), grade(wsPing, 15, 50));
     setVal("sv-input", channelOpen() ? "Datenkanal (direkt)" : "WebSocket (über Home Assistant)", channelOpen() ? "good" : "warn");
 
-    const el = mode === "webrtc" ? video : mjpeg;
-    const w = el.videoWidth || el.naturalWidth || 0;
-    const h = el.videoHeight || el.naturalHeight || 0;
-    setVal("sv-video", (mode === "webrtc" ? "WebRTC" : "MJPEG") + (w ? " · " + w + "×" + h : ""), mode === "webrtc" ? "good" : "warn");
+    const w = mode === "webrtc" ? video.videoWidth : (capturePlaying ? frames.width : 0);
+    const h = mode === "webrtc" ? video.videoHeight : (capturePlaying ? frames.height : 0);
+    setVal("sv-video", (mode === "webrtc" ? "WebRTC" : "Einzelbilder (JPEG)") + (w ? " · " + w + "×" + h : ""),
+      capturePlaying ? "good" : "warn");
     const sound = soundInfo();
     setVal("sv-audio", sound[0], sound[1]);
 
@@ -780,6 +862,23 @@
           prevRtc = cur;
         }
       } catch (err) { /* Verbindung gerade weg */ }
+    } else if (mode === "jpeg") {
+      prevRtc = null;
+      const now = performance.now();
+      const cur = { t: now, frames: fstat.frames, bytes: fstat.bytes, decode: fstat.decode, skipped: fstat.skipped };
+      if (prevJpeg && now > prevJpeg.t) {
+        const seconds = (now - prevJpeg.t) / 1000;
+        const count = cur.frames - prevJpeg.frames;
+        const fps = count / seconds;
+        setVal("sv-fps", Math.round(fps) + " fps", grade(-fps, -(sendTarget * 5 / 6), -(sendTarget / 2 - 5)));
+        const dec = count > 0 ? (cur.decode - prevJpeg.decode) / count : null;
+        setVal("sv-decode", ms(dec), grade(dec, 8, 16));
+        setVal("sv-jitter", "keiner", "good");
+        setVal("sv-dropped", String(cur.skipped), cur.skipped - prevJpeg.skipped > 0 ? "warn" : "good");
+        const mbit = ((cur.bytes - prevJpeg.bytes) * 8) / seconds / 1e6;
+        setVal("sv-rate", mbit.toFixed(1).replace(".", ",") + " Mbit/s", "");
+      }
+      prevJpeg = cur;
     } else {
       prevRtc = null;
       ["sv-fps", "sv-jitter", "sv-decode", "sv-dropped", "sv-rate"].forEach((id) => setVal(id, "–"));
@@ -792,6 +891,7 @@
     $("stats-btn").setAttribute("aria-expanded", open ? "true" : "false");
     clearInterval(statsTimer);
     prevRtc = null;
+    prevJpeg = null;
     if (open) {
       updateStats();
       statsTimer = setInterval(updateStats, 1000);
@@ -819,8 +919,8 @@
   let rtResults = [];
 
   function grab() {
-    const el = mode === "webrtc" ? video : mjpeg;
-    if (!(el.videoWidth || el.naturalWidth)) return null;
+    const el = mode === "webrtc" ? video : frames;
+    if (mode === "webrtc" ? !video.videoWidth : !capturePlaying) return null;
     try {
       rtCtx.drawImage(el, 0, 0, RT_W, RT_H);
       const data = rtCtx.getImageData(0, 0, RT_W, RT_H).data;
@@ -910,14 +1010,14 @@
   });
 
   // ------------------------------------------------------------------ Ton
-  // Der Ton kommt als eigene WebRTC-Spur (nur bei WebRTC, nicht bei MJPEG). Browser spielen Ton erst nach
+  // Der Ton kommt als eigene WebRTC-Spur (nur bei WebRTC, nicht bei Einzelbildern). Browser spielen Ton erst nach
   // einer Berührung oder einem Klick ab – darum startet er spätestens beim ersten Tippen auf die Seite.
   let soundWanted = true;
   try { soundWanted = localStorage.getItem("sw2-sound") !== "off"; } catch (err) { /* ohne Speicher */ }
 
   function soundInfo() {
     const a = (lastStatus && lastStatus.stream && lastStatus.stream.audio) || null;
-    if (mode !== "webrtc") return ["Ton gibt es nur über WebRTC", "warn"];
+    if (mode !== "webrtc") return ["Ton gibt es nur bei Übertragung „Video“", "warn"];
     if (!audio.srcObject) return [a && a.state === "disabled" ? "am Pi abgeschaltet" : "keine Tonspur", "warn"];
     if (a && a.state === "unavailable") return [a.detail || "keine Ton-Quelle", "bad"];
     if (!soundWanted) return ["stumm", ""];
@@ -958,7 +1058,8 @@
     setTouch(load("switch2-touch", config.default_touch_overlay), false);
     setBar(load("switch2-bar-collapsed", false));
     connect();
-    startVideo(config.stream_mode);
+    $("transport").value = preferredTransport();
+    startVideo(preferredTransport());
     requestWakeLock();
     if (navigator.getGamepads && Array.from(navigator.getGamepads()).some(Boolean)) startPolling();
   }

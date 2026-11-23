@@ -3,6 +3,10 @@
 HTTP-Server (Standard-Port 8766):
   POST /offer         WebRTC-Signaling (aiortc): {"sdp", "type"} -> Antwort {"sdp", "type"}
                       Bringt das Angebot einen Datenkanal "input" mit, kommen die Eingaben direkt darüber.
+  GET  /frames        WebSocket mit Einzelbildern (JPEG), der Browser dekodiert. Jede Nachricht: 4 Byte Länge
+                      + JSON-Kopf {id, age, enc, pt} + JPEG. Der Browser bestätigt gezeichnete Bilder mit
+                      {"type": "ack"}; höchstens JPEG_WINDOW Bilder sind unterwegs – so passt sich die Bildrate
+                      der Leitung an, statt dass sich Bilder aufstauen (auch über Home Assistant/unterwegs).
   GET  /stream.mjpg   MJPEG-Stream (multipart/x-mixed-replace)
   GET  /snapshot.jpg  einzelnes Bild
   GET  /status        Zustand der Capture-Card als JSON
@@ -11,7 +15,10 @@ Ton: Bringt das WebRTC-Angebot eine Tonspur mit, nimmt die Bridge den Ton der Ca
 auf (siehe AudioSource). Die Tonspur bekommt eine eigene Stream-ID, damit der Browser das Bild nicht
 zugunsten der Lippensynchronität verzögert.
 
-Die Capture-Card wird im MJPEG-Format geöffnet (geringste USB-Latenz). Ist sie nicht da oder
+Die Capture-Card wird im MJPEG-Format geöffnet (geringste USB-Latenz). Liefert sie wirklich JPEG, werden
+die Bilder unverändert durchgereicht (jpeg_passthrough): für Einzelbilder kodiert der Pi dann gar nichts,
+dekodiert wird nur, wenn ein WebRTC-Zuschauer da ist. Karten ohne MJPEG (z. B. Cam Link: YUYV) werden
+umgerechnet und für Einzelbilder als JPEG kodiert (libjpeg-turbo, deutlich billiger als VP8). Ist sie nicht da oder
 liefert sie kein Bild (Konsole im Standby), wird ein "Kein Signal"-Bild gezeigt und alle
 2 Sekunden neu verbunden. device: "test" erzeugt ein Testbild ohne Capture-Card.
 
@@ -53,6 +60,7 @@ log = logging.getLogger("bridge.video")
 RECONNECT_SECONDS = 2.0
 NO_SIGNAL_AFTER = 1.5               # so lange ohne Bild = kein Signal
 VIDEO_CLOCK = 90000
+JPEG_WINDOW = 2                     # so viele Einzelbilder dürfen unbestätigt unterwegs sein
 
 
 USBDEVFS_RESET = 0x5514              # _IO('U', 20)
@@ -111,11 +119,26 @@ def find_capture_device(dev_root="/dev", sys_root="/sys"):
     return None
 
 
+def fourcc_name(value):
+    code = int(value or 0)
+    return "".join(chr((code >> (8 * i)) & 0xFF) for i in range(4)).strip("\x00 ")
+
+
+def as_jpeg(frame):
+    """Rohdaten der Capture-Card (CAP_PROP_CONVERT_RGB = 0) als JPEG-Bytes, sonst None."""
+    if frame is None or frame.dtype != np.uint8 or frame.ndim > 2 or frame.size < 4:
+        return None
+    flat = frame.reshape(-1)
+    if flat[0] != 0xFF or flat[1] != 0xD8:
+        return None
+    return flat.tobytes()
+
+
 def usb_device_dir(video_device):
     """sysfs-Ordner des USB-Geräts zu /dev/videoN (der mit busnum/devnum)."""
     name = os.path.basename(os.path.realpath(video_device))
     path = os.path.realpath(f"/sys/class/video4linux/{name}/device")
-    while path not in ("/", "") and not os.path.exists(os.path.join(path, "busnum")):
+    while not os.path.exists(os.path.join(path, "busnum")) and os.path.dirname(path) != path:
         path = os.path.dirname(path)
     return path if os.path.exists(os.path.join(path, "busnum")) else None
 
@@ -151,9 +174,18 @@ class FrameSource:
         self.fps = int(cfg.get("fps", 60))
         self.fourcc = str(cfg.get("fourcc", "MJPG"))[:4]
         self.jpeg_quality = int(cfg.get("jpeg_quality", 80))
+        self.allow_passthrough = bool(cfg.get("jpeg_passthrough", True))
+        self.format = ""                       # Bildformat, das die Karte tatsächlich liefert
+        self.passthrough = False               # JPEG der Karte wird unverändert weitergegeben
+        self._raw_failed = set()               # Geräte, deren Rohdaten kein JPEG waren
+        # Wird vom VideoStreamer gesetzt: True, solange jemand dekodierte Bilder braucht (WebRTC)
+        self.want_decoded = None
         self.frame = None
         self.frame_id = 0
         self.frame_time = 0.0
+        self._latest = (0, None, None, 0.0)    # (id, Bild oder None, JPEG oder None, Zeitpunkt)
+        self._decoded = (-1, None)
+        self._decode_lock = threading.Lock()
         self.state = "unavailable"
         self.detail = "noch nicht gestartet"
         self.actual = (0, 0, 0)
@@ -235,10 +267,11 @@ class FrameSource:
         if self._thread:
             self._thread.join(timeout=3)
 
-    def _publish(self, frame):
+    def _publish(self, frame, jpeg=None):
+        now = time.monotonic()
+        self._latest = (self.frame_id + 1, frame, jpeg, now)
         self.frame = frame
         self.frame_id += 1
-        now = time.monotonic()
         if self.frame_time:
             dt = now - self.frame_time
             if dt > 0:
@@ -287,12 +320,35 @@ class FrameSource:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             self.actual = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
                            int(round(cap.get(cv2.CAP_PROP_FPS))))
-            log.info("Capture-Card %s geöffnet: %dx%d @ %d fps", device, *self.actual)
+            self.format = fourcc_name(cap.get(cv2.CAP_PROP_FOURCC))
+            self.passthrough = False
+            raw = (self.allow_passthrough and self.format == "MJPG" and device not in self._raw_failed
+                   and bool(cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)))
+            log.info("Capture-Card %s geöffnet: %dx%d @ %d fps, Format %s%s", device, *self.actual,
+                     self.format or "?", " (JPEG wird durchgereicht)" if raw else "")
             self.state = "no_signal"
             self.detail = "warte auf Bild"
             failures = 0
             while not self._stop.is_set() and not self._reopen.is_set():
                 ok, frame = cap.read()
+                if ok and frame is not None and raw:
+                    data = as_jpeg(frame)
+                    if data is None:
+                        log.info("Capture-Card liefert kein JPEG zum Durchreichen - Bilder werden umgerechnet")
+                        self._raw_failed.add(device)
+                        self._reopen.set()
+                        break
+                    decoded = None
+                    if self.want_decoded is None or self.want_decoded():
+                        decoded = cv2.imdecode(frame.reshape(-1), cv2.IMREAD_COLOR)
+                        if decoded is None:            # beschädigtes Bild überspringen
+                            continue
+                    failures = 0
+                    self.passthrough = True
+                    self.state = "ok"
+                    self.detail = ""
+                    self._publish(decoded, data)
+                    continue
                 if ok and frame is not None:
                     failures = 0
                     self.state = "ok"
@@ -363,19 +419,40 @@ class FrameSource:
 
     def current(self):
         """Neuestes Bild oder das "Kein Signal"-Bild."""
-        if self.frame is not None and self.state == "ok":
-            return self.frame, self.frame_id
+        frame_id, frame, raw, _taken = self._latest
+        if frame_id > 0 and self.state == "ok":
+            if frame is None and raw is not None:
+                frame = self._decode(frame_id, raw)
+            if frame is not None:
+                return frame, frame_id
         return self.placeholder, -1
 
-    def jpeg(self):
+    def _decode(self, frame_id, raw):
+        """Durchgereichtes JPEG bei Bedarf dekodieren (z. B. erster WebRTC-Zuschauer)."""
+        with self._decode_lock:
+            if self._decoded[0] != frame_id:
+                self._decoded = (frame_id, cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR))
+            return self._decoded[1]
+
+    def jpeg_frame(self):
+        """(JPEG, Bild-ID, Aufnahmezeit, Sekunden fürs Kodieren). Durchgereichte Bilder kosten nichts,
+        sonst wird jedes Bild höchstens einmal kodiert (mehrere Zuschauer teilen es)."""
+        frame_id, frame, raw, taken = self._latest
+        if frame_id > 0 and self.state == "ok" and raw is not None:
+            return raw, frame_id, taken, 0.0
         frame, frame_id = self.current()
+        key = frame_id if frame_id != -1 else ("placeholder", id(frame))
         with self._jpeg_lock:
-            if frame_id != -1 and self._jpeg[1] == frame_id:
-                return self._jpeg[0]
+            if self._jpeg[1] == key:
+                return self._jpeg[0], frame_id, taken, 0.0
+            started = time.monotonic()
             ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             data = buf.tobytes() if ok else b""
-            self._jpeg = (data, frame_id)
-            return data
+            self._jpeg = (data, key)
+            return data, frame_id, taken, time.monotonic() - started
+
+    def jpeg(self):
+        return self.jpeg_frame()[0]
 
     async def wait_frame(self, last_id, timeout):
         """Wartet auf ein neueres Bild als last_id (oder bis timeout)."""
@@ -392,7 +469,8 @@ class FrameSource:
         w, h, f = self.actual
         return {"state": self.state, "detail": self.detail, "device": self.current_device,
                 "width": w, "height": h, "fps": round(self._measured_fps) if self.state == "ok" else 0,
-                "webrtc": HAVE_WEBRTC, "can_restart": True, "target_fps": self.fps}
+                "webrtc": HAVE_WEBRTC, "can_restart": True, "target_fps": self.fps,
+                "format": self.format, "passthrough": self.passthrough and self.state == "ok"}
 
 
 class CaptureTrack(MediaStreamTrack):
@@ -639,6 +717,9 @@ class VideoStreamer:
         self.on_channel = None
         self.webrtc_stats = StreamStats()
         self.mjpeg_stats = StreamStats()
+        self.jpeg_stats = StreamStats()
+        self.jpeg_clients = 0
+        self.source.want_decoded = lambda: bool(self.pcs)
         self.runner = None
         set_bitrate(self.max_bitrate, self.min_bitrate)
         if self.mode in MODES:
@@ -763,9 +844,73 @@ class VideoStreamer:
             pass
         return response
 
+    async def handle_frames(self, request):
+        """Einzelbilder über WebSocket: der Browser dekodiert (createImageBitmap), der Pi kodiert höchstens
+        JPEG oder reicht das JPEG der Capture-Card durch. Neue Bilder gibt es erst nach Bestätigung."""
+        ws = web.WebSocketResponse(heartbeat=20, compress=False, max_msg_size=64 * 1024)
+        await ws.prepare(request)
+        loop = asyncio.get_running_loop()
+        inflight = [0]
+        acked = asyncio.Event()
+
+        async def reader():
+            async for msg in ws:
+                if msg.type != web.WSMsgType.TEXT:
+                    continue
+                try:
+                    data = json.loads(msg.data)
+                except ValueError:
+                    continue
+                if isinstance(data, dict) and data.get("type") == "ack":
+                    inflight[0] = max(0, inflight[0] - 1)
+                    acked.set()
+
+        read_task = asyncio.create_task(reader())
+        self.jpeg_clients += 1
+        log.info("Einzelbilder: Zuschauer %s verbunden", request.remote)
+        last_id = None
+        next_at = 0.0
+        try:
+            while not ws.closed and not read_task.done():
+                if inflight[0] >= JPEG_WINDOW:
+                    acked.clear()
+                    try:
+                        await asyncio.wait_for(acked.wait(), 3.0)
+                    except asyncio.TimeoutError:
+                        inflight[0] = 0              # Bestätigung verloren: weitermachen statt hängen
+                    continue
+                now = time.monotonic()
+                if now < next_at:
+                    await asyncio.sleep(next_at - now)
+                await self.source.wait_frame(last_id, 1.0)
+                data, frame_id, taken, enc = await loop.run_in_executor(None, self.source.jpeg_frame)
+                if not data or (frame_id != -1 and frame_id == last_id):
+                    continue
+                last_id = frame_id
+                sent = time.monotonic()
+                head = {"id": frame_id, "enc": round(enc * 1000, 1), "pt": self.source.passthrough}
+                if frame_id != -1:
+                    head["age"] = round((sent - taken) * 1000, 1)
+                    self.jpeg_stats.add("age", sent - taken)
+                    self.jpeg_stats.add("encode", enc)
+                    self.jpeg_stats.frame(sent)
+                raw_head = json.dumps(head).encode()
+                await ws.send_bytes(len(raw_head).to_bytes(4, "big") + raw_head + data)
+                inflight[0] += 1
+                next_at = sent + 1.0 / max(1, self.webrtc_fps)
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        finally:
+            read_task.cancel()
+            self.jpeg_clients -= 1
+            log.info("Einzelbilder: Zuschauer %s getrennt", request.remote)
+        return ws
+
     def stats(self):
         """Messwerte für den Status an den Browser."""
         return {"webrtc": self.webrtc_stats.snapshot() if self.pcs else None,
+                "jpeg": self.jpeg_stats.snapshot() if self.jpeg_clients else None,
+                "jpeg_clients": self.jpeg_clients,
                 "mjpeg_fps": self.mjpeg_stats.fps(),
                 "webrtc_clients": len(self.pcs),
                 "audio": self.audio.status(),
@@ -784,6 +929,7 @@ class VideoStreamer:
         app = web.Application(client_max_size=256 * 1024)
         app.router.add_post("/offer", self.handle_offer)
         app.router.add_get("/stream.mjpg", self.handle_mjpeg)
+        app.router.add_get("/frames", self.handle_frames)
         app.router.add_get("/snapshot.jpg", self.handle_snapshot)
         app.router.add_get("/status", self.handle_status)
         self.runner = web.AppRunner(app, access_log=None)

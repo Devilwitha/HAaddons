@@ -29,8 +29,8 @@ Analogstick und C-Tasten). ROMs per Upload oder Samba nach `/share/n64`. Spielst
 Speicherstände liegen auf dem Server. Details: [DOCS.md](n64_emulator/DOCS.md)
 
 ### [Game Remote](switch2_remote_play/)
-Eine Spielkonsole aus der HA-Seitenleiste spielen: Video über WebRTC (automatisch MJPEG von
-unterwegs), Touch-Gamepad mit zwei Sticks und echte Controller (Xbox, PlayStation) mit einstellbarer
+Eine Spielkonsole aus der HA-Seitenleiste spielen: Video über WebRTC oder als Einzelbilder (JPEG,
+entlastet den Pi, automatisch von unterwegs), Touch-Gamepad mit zwei Sticks und echte Controller (Xbox, PlayStation) mit einstellbarer
 Belegung. Braucht einen Raspberry Pi 5 mit USB-Capture-Card neben der Konsole, der sich per
 Bluetooth als Pro Controller ausgibt – eingerichtet mit einem Befehl, siehe
 [rpi5-bridge](rpi5-bridge/). Details: [DOCS.md](switch2_remote_play/DOCS.md)

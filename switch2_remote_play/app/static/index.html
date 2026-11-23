@@ -11,7 +11,7 @@
 <body>
   <main id="stage">
     <video id="video" autoplay playsinline muted></video>
-    <img id="mjpeg" alt="" hidden>
+    <canvas id="frames" width="1280" height="720" hidden></canvas>
     <audio id="audio" autoplay></audio>
     <div id="novideo" class="novideo">
       <div class="novideo-icon">&#128250;</div>
@@ -75,7 +75,13 @@
       <h2>Messwerte</h2>
       <button class="icon-btn" id="stats-close" type="button" aria-label="Schließen">&#10005;</button>
     </div>
-    <div class="stats-actions" id="stats-actions" hidden>
+    <div class="stats-actions" id="stats-actions">
+      <label class="field" title="Video: der Pi kodiert einen Videostrom (wenig Daten, mit Ton, nur im Heimnetz direkt). Einzelbilder: der Pi gibt JPEG-Bilder weiter, dein Gerät dekodiert sie (entlastet den Pi, läuft auch über Home Assistant/unterwegs, mehr Daten, ohne Ton).">Übertragung
+        <select id="transport">
+          <option value="webrtc">Video – Pi kodiert (WebRTC, mit Ton)</option>
+          <option value="jpeg">Einzelbilder – Gerät dekodiert (JPEG)</option>
+        </select>
+      </label>
       <label class="field" id="video-mode-field" hidden>Bildqualität
         <select id="video-mode"></select>
       </label>
