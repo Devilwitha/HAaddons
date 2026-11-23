@@ -1,5 +1,13 @@
 # Änderungen
 
+## 1.0.21
+
+- **Capture-Card neu starten** meldete bei manchen Karten (z. B. Cam Link 4K) „USB-Reset fehlgeschlagen: [Errno 19]
+  No such device“: Die Karte meldet sich beim Zurücksetzen komplett ab und neu an – das ist jetzt kein Fehler mehr.
+  Die Bridge wartet bis zu 15 s, bis die Karte wieder da ist, und meldet erst dann Erfolg oder „meldet sich nicht
+  zurück“. Klappt der USB-Reset gar nicht, meldet sie die Karte über sysfs ab und wieder an
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.20
 
 - **H.264** als Video-Codec (Messwerte → Video-Codec, Vorgabe): Die Aufzeichnungen zeigten, dass der Pi 5 VP8 bei

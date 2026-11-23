@@ -126,6 +126,8 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   wechselt). Ein eingetragenes `/dev/videoN` ohne USB-Karte dahinter wird ebenfalls durch die Suche ersetzt.
   **Capture-Card neu starten**: Karte schließen, `USBDEVFS_RESET` auf
   `/dev/bus/usb/<bus>/<dev>` (aus `/sys/class/video4linux/videoN/device`), neu öffnen – der Dienst läuft als root.
+  Die Cam Link meldet sich dabei ab und neu an (ENODEV = Erfolg); sonst Rückfall `authorized` 0/1 in sysfs.
+  Danach bis zu 15 s warten, bis das Videogerät wieder da ist (`_wait_reappear`), erst dann antworten.
 - **Ton** nur über WebRTC: Bridge liest die Capture-Card per `arecord` (alsa-utils, 48 kHz Stereo, 20-ms-Pakete,
   höchstens 60 ms Puffer), nur solange jemand zuhört. Die Tonspur bekommt eine **eigene Stream-ID**
   (`sender._stream_id`), sonst gleicht der Browser Bild und Ton ab und verzögert das Bild. `audio.device`:

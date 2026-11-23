@@ -27,10 +27,12 @@ liefert sie kein Bild (Konsole im Standby), wird ein "Kein Signal"-Bild gezeigt 
 2 Sekunden neu verbunden. device: "test" erzeugt ein Testbild ohne Capture-Card.
 
 Bildqualität (MODES) lässt sich im Browser umschalten und wird in state_file gemerkt. „Capture-Card neu
-starten“ schließt die Karte, setzt ihren USB-Anschluss zurück (USBDEVFS_RESET) und öffnet sie neu.
+starten“ schließt die Karte, setzt ihren USB-Anschluss zurück (USBDEVFS_RESET, sonst über „authorized“ in sysfs),
+wartet, bis sie sich wieder angemeldet hat, und öffnet sie neu.
 """
 import asyncio
 import collections
+import errno
 import fractions
 import glob
 import json
@@ -70,6 +72,7 @@ JPEG_WINDOW = 2                     # so viele Einzelbilder dürfen unbestätigt
 
 
 USBDEVFS_RESET = 0x5514              # _IO('U', 20)
+REAPPEAR_SECONDS = 15.0             # so lange darf sich die Karte nach dem USB-Reset neu anmelden
 
 # Bildqualität: Aufnahme (Breite, Höhe, fps der Capture-Card), gesendete Bilder pro Sekunde und höchste Bitrate.
 # 1080p kodiert der Pi 5 in Software nur mit etwa 30 Bildern pro Sekunde.
@@ -387,12 +390,30 @@ def usb_device_dir(video_device):
     return path if os.path.exists(os.path.join(path, "busnum")) else None
 
 
+def usb_reauthorize(usb_dir):
+    """USB-Gerät ab- und wieder anmelden (sysfs „authorized“) - wirkt wie Aus- und Einstecken."""
+    path = os.path.join(usb_dir, "authorized")
+    try:
+        with open(path, "w") as fh:
+            fh.write("0")
+        time.sleep(0.5)
+        with open(path, "w") as fh:
+            fh.write("1")
+    except OSError as err:
+        log.info("Capture-Card über %s neu anmelden fehlgeschlagen: %s", path, err)
+        return False
+    return True
+
+
 def usb_reset(usb_dir):
-    """USB-Gerät zurücksetzen (wie Aus- und Einstecken). Braucht Root-Rechte."""
+    """USB-Gerät zurücksetzen (wie Aus- und Einstecken). Braucht Root-Rechte.
+
+    Manche Karten (z. B. Cam Link 4K) melden sich beim Zurücksetzen komplett ab und neu an – der Kernel
+    antwortet dann mit ENODEV. Das ist kein Fehler: die Karte kommt unter neuer Gerätenummer zurück."""
     if fcntl is None:
         return False, "USB-Reset gibt es nur unter Linux"
-    if not usb_dir:
-        return False, "USB-Anschluss der Capture-Card nicht gefunden"
+    if not usb_dir or not os.path.isdir(usb_dir):
+        return False, "USB-Anschluss der Capture-Card nicht gefunden (Karte abgesteckt?)"
     try:
         bus = int(Path(usb_dir, "busnum").read_text())
         dev = int(Path(usb_dir, "devnum").read_text())
@@ -401,9 +422,17 @@ def usb_reset(usb_dir):
             fcntl.ioctl(fd, USBDEVFS_RESET, 0)
         finally:
             os.close(fd)
-    except (OSError, ValueError) as err:
-        return False, f"USB-Reset fehlgeschlagen: {err}"
-    return True, "Capture-Card neu gestartet"
+        return True, "Capture-Card neu gestartet"
+    except OSError as err:
+        if err.errno == errno.ENODEV:
+            return True, "Capture-Card meldet sich neu am USB an"
+        reason = err
+    except ValueError as err:
+        reason = err
+    log.info("USB-Reset der Capture-Card ging nicht (%s) - melde sie über sysfs neu an", reason)
+    if usb_reauthorize(usb_dir):
+        return True, "Capture-Card neu angemeldet"
+    return False, f"USB-Reset fehlgeschlagen: {reason}"
 
 
 class FrameSource:
@@ -479,7 +508,7 @@ class FrameSource:
         self.placeholder = self._make_placeholder()
         self._reopen.set()
 
-    def restart(self, timeout=20.0):
+    def restart(self, timeout=REAPPEAR_SECONDS + 10.0):
         """Capture-Card schließen, USB zurücksetzen, neu öffnen (blockiert – im Executor aufrufen)."""
         if self.device == "test":
             return True, "Testbild neu gestartet"
@@ -497,14 +526,37 @@ class FrameSource:
         self._reopen.clear()
         if self._restart_usb:
             self._restart_usb = None
-            usb_dir = self._usb_dir or usb_device_dir(self.current_device)
-            self._restart_result = usb_reset(usb_dir)
-            log.info("Capture-Card: %s", self._restart_result[1])
             self.state = "unavailable"
             self.detail = "wird neu gestartet"
+            # sysfs-Ordner frisch ermitteln: nach einem früheren Neustart hat die Karte evtl. eine neue Nummer
+            usb_dir = None
+            try:
+                usb_dir = usb_device_dir(self.current_device)
+            except OSError:
+                pass
+            ok, text = usb_reset(usb_dir or self._usb_dir)
+            log.info("Capture-Card: %s", text)
+            if ok:
+                ok, text = self._wait_reappear(text)
+            self._restart_result = (ok, text)
             self._restart_done.set()
-            self._stop.wait(2.5)          # Gerät meldet sich am USB neu an
         return True
+
+    def _wait_reappear(self, text):
+        """Nach dem USB-Reset warten, bis die Karte wieder als Videogerät da ist."""
+        self._stop.wait(1.5)                      # Kernel meldet das alte Gerät erst ab
+        deadline = time.monotonic() + REAPPEAR_SECONDS
+        while not self._stop.is_set():
+            device = self._resolve_device()
+            if device and os.path.exists(device):
+                return True, text
+            if time.monotonic() > deadline:
+                break
+            self._stop.wait(0.5)
+        msg = ("Capture-Card meldet sich nach dem Neustart nicht zurück – USB-Stecker ziehen und wieder "
+               "einstecken (Netzteil des Pi stark genug?)")
+        log.warning(msg)
+        return False, msg
 
     # ------------------------------------------------------------------ Thread
     def start(self, loop):
