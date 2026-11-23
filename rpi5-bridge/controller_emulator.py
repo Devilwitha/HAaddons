@@ -76,6 +76,7 @@ class ControllerEmulator:
         self._recovering = False
         self._last_recover = 0.0
         self._crashed_since = 0.0
+        self._press_logged = 0.0
 
     # ------------------------------------------------------------------ Start / Kopplung
     async def start(self):
@@ -172,7 +173,9 @@ class ControllerEmulator:
             return False, "nxbt läuft nicht: " + (self.error or "unbekannter Fehler")
         state = self._state() if self.nx is not None and self.index is not None else "crashed"
         if state == "connected":
-            return True, "Die Konsole ist schon verbunden."
+            # Nicht ablehnen: nxbt meldet „connected“, solange die Bluetooth-Verbindung steht – auch wenn die Konsole
+            # den Controller gar nicht mehr benutzt. Wer koppeln drückt, will neu koppeln.
+            log.info("Konsole gilt als verbunden - Verbindung wird für eine neue Kopplung getrennt")
         if state == "connecting" and time.monotonic() - self._pairing_since < PAIR_BUSY_SECONDS:
             return True, ("Kopplung läuft bereits – auf der Konsole „Controller → Griffweise/Reihenfolge ändern“ "
                           "offen lassen und bis zu einer Minute warten.")
@@ -275,6 +278,13 @@ class ControllerEmulator:
         new = (frozenset(b for b in buttons if b in VALID_BUTTONS), clamp_stick(ls), clamp_stick(rs))
         if not self.enabled and new != (self.buttons, self.ls, self.rs):
             log.info("Testmodus - Eingabe: Tasten=%s LS=%s RS=%s", ",".join(sorted(new[0])) or "-", new[1], new[2])
+        if new[0] and new[0] != self.buttons:
+            REC.count("in_press")
+            now = time.monotonic()
+            if self.enabled and now - self._press_logged > 10:   # zur Fehlersuche, höchstens alle 10 s
+                self._press_logged = now
+                log.info("Taste %s angekommen - Konsole: %s", ",".join(sorted(new[0])),
+                         "verbunden" if self._connected else self.status().get("state"))
         changed = new != (self.buttons, self.ls, self.rs)
         self.buttons, self.ls, self.rs = new
         self.heartbeat()
@@ -356,6 +366,8 @@ class ControllerEmulator:
                         if current != last_sent or started - last_time > 0.05:
                             sent_at = time.monotonic()
                             self.nx.set_controller_input(self.index, self._packet())
+                            if current[0] and current != last_sent:
+                                REC.count("nx_press")
                             spent = (time.monotonic() - sent_at) * 1000.0
                             REC.sample("nxbt", spent)
                             if spent > 15:

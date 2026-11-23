@@ -1,5 +1,14 @@
 # Änderungen
 
+## 1.0.25
+
+- **Konsole koppeln** geht jetzt immer: Bisher lehnte die Bridge mit „Die Konsole ist schon verbunden“ ab, sobald
+  nxbt eine Bluetooth-Verbindung meldete – auch wenn die Konsole den Controller gar nicht benutzte. Jetzt wird die
+  Verbindung getrennt und der Kopplungsmodus gestartet
+- Fehlersuche Steuerung: Die Aufzeichnung zählt Tastendrücke im Browser, am Pi und an die Konsole weitergegeben;
+  das Protokoll der Bridge zeigt höchstens alle 10 s „Taste … angekommen – Konsole: …“
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.24
 
 - Aufzeichnung bewertet jedes Zeitfenster nach der **gerade eingestellten** Bildqualität: Nach dem Umschalten auf

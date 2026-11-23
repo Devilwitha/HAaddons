@@ -416,7 +416,9 @@
       const msg = merged();
       const key = JSON.stringify(msg);
       if (key !== lastSent) {
+        const before = lastSent ? JSON.parse(lastSent).buttons : [];
         lastSent = key;
+        if (rec && msg.buttons.some((b) => before.indexOf(b) < 0)) rec.presses += 1;
         sendInput(msg);
         reactionInput(msg);
       }
@@ -1252,7 +1254,7 @@
     const st = lastStatus || {};
     const r = {
       t0: performance.now(), started: new Date(), rows: [], events: [], acc: recAcc(), prev: null, prevJ: null,
-      lastShown: null, busy: false, marks: 0, path: null, size: null, bridgeOk: false,
+      lastShown: null, busy: false, marks: 0, presses: 0, path: null, size: null, bridgeOk: false,
       info: {
         version: config.version || "?", ua: navigator.userAgent, host: location.hostname,
         screen: screen.width + "×" + screen.height + " @" + (window.devicePixelRatio || 1),
@@ -1623,6 +1625,8 @@
       L.push("       Hänger         max " + ms(max(piVals("lag"))) + ", über 15 ms: " + countKind("Pi", "lag") + "×");
       L.push("       nxbt           Ø " + ms(piMean("nxbt")) + ", max " + ms(max(piVals("nxbt"))) + ", über 15 ms: " + countKind("Pi", "nxbt") + "×");
       L.push("       Eingaben       " + sum(piCounts("in_dc")) + " über Datenkanal, " + sum(piCounts("in_ws")) + " über WebSocket, längste Lücke im Datenkanal " + ms(max(piVals("in_gap"))));
+      L.push("       Tastendrücke   " + (r.presses || 0) + " im Browser, " + sum(piCounts("in_press")) + " am Pi angekommen, "
+        + sum(piCounts("nx_press")) + " an die Konsole weitergegeben" + (sum(piCounts("in_press")) && !sum(piCounts("nx_press")) ? " (Konsole nicht verbunden?)" : ""));
       L.push("       System         CPU max " + f(max(piVals("cpu"))) + " %, Temperatur max " + f(max(piVals("temp")), 1) + " °C");
       if (Array.from(pi.values()).some((v) => v.p_busy != null)) {
         L.push("       Alle Kerne     Ø " + f(avg(piVals("p_busy"))) + " %, max " + f(max(piVals("p_busy"))) + " %; Kernel/Interrupts max " + f(max(piVals("p_irq"))) + " %, I/O max " + f(max(piVals("p_io"))) + " %");
