@@ -222,6 +222,10 @@ class FrameSource:
         self.jpeg_quality = int(cfg.get("jpeg_quality", 80))
         self.allow_passthrough = bool(cfg.get("jpeg_passthrough", True))
         self.allow_nv12 = bool(cfg.get("nv12", True))
+        # Bildpuffer im Treiber. Mit nur einem Puffer hat die Karte keinen Platz für das nächste Bild, solange die
+        # Bridge das aktuelle kopiert - bei 60 fps gehen so immer wieder Bilder verloren (~40-45 fps). Der
+        # Lese-Thread holt die Bilder sofort ab, die Puffer füllen sich also nicht (keine zusätzliche Verzögerung).
+        self.buffers = max(2, min(8, int(cfg.get("capture_buffers", 3))))
         self.format = ""                       # Bildformat, das die Karte tatsächlich liefert
         self.passthrough = False               # JPEG der Karte wird unverändert weitergegeben
         self.raw_mode = None                   # "jpeg" / "nv12" = Rohdaten der Karte, None = OpenCV rechnet um
@@ -367,7 +371,7 @@ class FrameSource:
                 # Karten ohne MJPEG (Cam Link: YUYV/NV12): NV12 roh lesen spart die Umrechnung nach BGR
                 self._set_format(cap, "NV12")
                 self.format = fourcc_name(cap.get(cv2.CAP_PROP_FOURCC))
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, self.buffers)
             self.actual = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
                            int(round(cap.get(cv2.CAP_PROP_FPS))))
             self.passthrough = False
@@ -378,9 +382,10 @@ class FrameSource:
                 self.raw_mode = "nv12" if cap.set(cv2.CAP_PROP_CONVERT_RGB, 0) else None
             raw = self.raw_mode == "jpeg"
             scaled = self._scale_size(*self.actual[:2])
-            log.info("Capture-Card %s geöffnet: %dx%d @ %d fps, Format %s%s%s", device, *self.actual,
+            log.info("Capture-Card %s geöffnet: %dx%d @ %d fps, Format %s%s%s, %d Puffer", device, *self.actual,
                      self.format or "?", {"jpeg": " (JPEG wird durchgereicht)", "nv12": " (roh)"}.get(self.raw_mode, ""),
-                     f", verkleinert auf {scaled[0]}x{scaled[1]}" if scaled else "")
+                     f", verkleinert auf {scaled[0]}x{scaled[1]}" if scaled else "",
+                     int(cap.get(cv2.CAP_PROP_BUFFERSIZE) or self.buffers))
             self.state = "no_signal"
             self.detail = "warte auf Bild"
             failures = 0

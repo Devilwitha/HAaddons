@@ -1,5 +1,13 @@
 # Änderungen
 
+## 1.0.12
+
+- Capture-Card liefert wieder volle 60 fps statt immer wieder nur ~40: Die Bridge öffnete die Karte mit einem
+  einzigen Bildpuffer. Solange sie ein Bild kopierte, hatte die Karte keinen Platz für das nächste, und es ging
+  verloren. Jetzt 3 Puffer (`capture_buffers`); der Lese-Thread holt die Bilder sofort ab, die Verzögerung
+  steigt dadurch nicht
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.11
 
 - Keine Hänger mehr durch Schlüsselbilder: aiortc baute den Video-Encoder bei jeder Änderung der Datenrate um

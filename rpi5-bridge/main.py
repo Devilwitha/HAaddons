@@ -45,7 +45,8 @@ DEFAULT_CONFIG_PATHS = [Path("/etc/switch2-bridge/config.yaml"), HERE / "config.
 DEFAULTS = {
     "websocket": {"host": "0.0.0.0", "port": 8765},
     "video": {"host": "0.0.0.0", "port": 8766, "device": "auto", "width": 1280, "height": 720,
-              "fps": 60, "fourcc": "MJPG", "jpeg_quality": 80, "jpeg_passthrough": True, "nv12": True, "mjpeg_fps": 30, "webrtc_fps": 60,
+              "fps": 60, "fourcc": "MJPG", "jpeg_quality": 80, "jpeg_passthrough": True, "nv12": True,
+              "capture_buffers": 3, "mjpeg_fps": 30, "webrtc_fps": 60,
               "webrtc_max_bitrate": 6000000, "webrtc_min_bitrate": 3000000, "webrtc_fixed_bitrate": True,
               "webrtc_threads": 4},
     "system": {"tune": True, "cpu_governor": "performance", "wifi_power_save_off": True},

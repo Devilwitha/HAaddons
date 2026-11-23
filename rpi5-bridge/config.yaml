@@ -21,6 +21,7 @@ video:
   webrtc_fixed_bitrate: true  # feste Datenrate: aiortc legt den Encoder sonst bei jeder Änderung neu an (Hänger)
   webrtc_threads: 4           # Kerne für den VP8-Encoder (aiortc nimmt sonst nur 2)
   jpeg_passthrough: true      # liefert die Karte JPEG, Bilder unverändert weitergeben (Pi kodiert nichts)
+  capture_buffers: 3          # Bildpuffer der Karte (1 = Bilder gehen verloren, ~40 statt 60 fps)
   nv12: true                  # Karten ohne MJPEG (z. B. Cam Link 4K): NV12 roh lesen, spart Umrechnung
   mjpeg_fps: 30               # Bilder pro Sekunde im MJPEG-Stream
   webrtc_fps: 60              # Bilder pro Sekunde über WebRTC (mehr = weniger Verzögerung; schafft die CPU
