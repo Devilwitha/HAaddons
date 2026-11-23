@@ -48,4 +48,5 @@ log_level: "INFO"             # DEBUG für mehr Details
 system:
   tune: true                  # beim Start Pi auf gleichmäßige Leistung stellen (gilt bis zum Neustart)
   cpu_governor: "performance" # kein Hoch- und Heruntertakten mitten im Bild
+  priority: -10               # Vorrang vor anderen Programmen auf dem Pi (nice, -20 bis 19; 0 = aus)
   wifi_power_save_off: true   # WLAN-Stromsparen aus (sonst Aussetzer von 50-200 ms)

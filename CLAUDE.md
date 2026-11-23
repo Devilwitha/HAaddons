@@ -106,7 +106,9 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   (`webrtc_min_bitrate` 3 Mbit/s). aiortc legt den Encoder bei > 10 % Bitraten-Änderung neu an (Schlüsselbild,
   Hänger) → `webrtc_fixed_bitrate` (MIN = MAX); `vpx.number_of_threads` wird auf 4 Kerne gepatcht (`use_all_cores`), `cpu-used` über einen
   Ersatz für `vpx.av` auf -12 wie libwebrtc auf ARM (`set_vp8_speed`, `webrtc_speed`).
-  `system_tune.py`: CPU-Regler performance, WLAN-Stromsparen aus, Temperatur/Last/`vcgencmd get_throttled` im Status. **Gerät** `device: "auto"`: `/dev/v4l/by-id/usb-*-video-index0`, sonst erstes
+  `system_tune.py`: CPU-Regler performance, WLAN-Stromsparen aus, nice -10 (`set_priority` vor allen Threads),
+  Temperatur/Last/`vcgencmd get_throttled` im Status – `refresh()` nur im Thread-Pool (blockiert sonst den
+  Event-Loop), `lag_watch` misst Hänger des Event-Loops; `gc.freeze()` nach dem Start. **Gerät** `device: "auto"`: `/dev/v4l/by-id/usb-*-video-index0`, sonst erstes
   USB-Videogerät mit `index` 0 in `/sys/class/video4linux` (der Pi 5 hat eigene Videogeräte, die Nummer der Karte
   wechselt). Ein eingetragenes `/dev/videoN` ohne USB-Karte dahinter wird ebenfalls durch die Suche ersetzt.
   **Capture-Card neu starten**: Karte schließen, `USBDEVFS_RESET` auf

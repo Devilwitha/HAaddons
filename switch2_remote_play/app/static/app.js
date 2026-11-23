@@ -808,8 +808,11 @@
       const now = Array.isArray(sys.throttled) ? sys.throttled : [];
       if (now.length) parts.push(now.join(", "));
       else if (sys.throttled_before) parts.push("war gedrosselt");
-      const hot = (sys.temp || 0) >= 80 || (sys.cpu || 0) >= 90;
-      const warm = (sys.temp || 0) >= 70 || (sys.cpu || 0) >= 75 || sys.throttled_before;
+      // Hänger: längste Verzögerung der Bridge in den letzten Sekunden (über 17 ms fällt bei 60 fps ein Bild aus)
+      const lag = typeof sys.lag === "number" ? sys.lag : 0;
+      if (lag >= 8) parts.push("Hänger " + lag + " ms");
+      const hot = (sys.temp || 0) >= 80 || (sys.cpu || 0) >= 90 || lag > 33;
+      const warm = (sys.temp || 0) >= 70 || (sys.cpu || 0) >= 75 || sys.throttled_before || lag > 17;
       setVal("sv-system", parts.join(" · ") || "–", now.length || hot ? "bad" : warm ? "warn" : "good");
       $("sv-system").title = sys.governor ? "CPU-Regler: " + sys.governor : "";
     } else {

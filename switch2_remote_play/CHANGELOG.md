@@ -1,5 +1,15 @@
 # Änderungen
 
+## 1.0.16
+
+- Die Bridge hat Vorrang auf dem Pi (`priority: -10` im Abschnitt `system`): Einlesen, Kodieren und Eingaben warten
+  nicht mehr, wenn andere Programme rechnen. Gilt auch für Bluetooth (nxbt) und Ton
+- Kurze Hänger alle 2 Sekunden beseitigt: Die Abfrage von Temperatur und Drosselung (`vcgencmd`, seit 1.0.11)
+  lief im Hauptablauf der Bridge und hielt dabei Bilder und Eingaben an. Sie läuft jetzt nebenher
+- Weniger Pausen durch Pythons Speicherbereinigung (Objekte vom Start werden nicht mehr jedes Mal durchsucht)
+- Messwerte → **Pi** zeigt „Hänger … ms“, wenn die Bridge selbst ins Stocken gerät (gelb ab 17 ms, rot ab 33 ms)
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.15
 
 - Messwerte: Eine einzelne Spitze bei **Kodieren + Senden** wird erst rot, wenn sie über der doppelten Zeit pro Bild

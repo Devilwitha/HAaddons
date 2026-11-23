@@ -4,8 +4,13 @@ tune(): CPU-Takt-Regler auf "performance" (kein Hochtakten mitten im Bild) und W
 (sonst Aussetzer von 50-200 ms, wenn der Pi per WLAN verbunden ist). Beides gilt bis zum Neustart; die
 Bridge setzt es bei jedem Start erneut. Braucht Root-Rechte (der Dienst läuft als root).
 
-SystemStats: Temperatur, CPU-Last und Drosselung (vcgencmd get_throttled) für die Messanzeige.
+set_priority(): Bridge mit Vorrang vor anderen Programmen auf dem Pi (nice). Muss vor dem Start der Threads
+laufen - unter Linux gilt der Wert pro Thread und wird an neue Threads und Prozesse (nxbt, arecord) vererbt.
+
+SystemStats: Temperatur, CPU-Last und Drosselung (vcgencmd get_throttled) für die Messanzeige, dazu die längste
+Verzögerung des Event-Loops (Hänger der Bridge selbst).
 """
+import collections
 import glob
 import logging
 import os
@@ -50,14 +55,36 @@ def tune(cfg):
                 log.info("WLAN-Stromsparen für %s nicht änderbar: %s", name, err)
 
 
+def set_priority(cfg):
+    """Vorrang für die Bridge: Bilder einlesen, kodieren und Eingaben weitergeben sollen nicht warten, wenn
+    andere Programme auf dem Pi rechnen. nice -10 statt Echtzeit-Priorität: Bluetooth und Kernel bleiben bedient."""
+    cfg = cfg or {}
+    if not cfg.get("tune", True) or not hasattr(os, "setpriority"):
+        return
+    try:
+        value = int(cfg.get("priority", -10))
+    except (TypeError, ValueError):
+        return
+    if value == 0:
+        return
+    try:
+        os.setpriority(os.PRIO_PROCESS, 0, max(-20, min(19, value)))
+        log.info("Priorität der Bridge: nice %d", os.getpriority(os.PRIO_PROCESS, 0))
+    except OSError as err:
+        log.info("Priorität nicht änderbar (%s) - läuft die Bridge als root?", err)
+
+
 class SystemStats:
-    """Zustand des Pi, höchstens alle 2 Sekunden neu gelesen."""
+    """Zustand des Pi. refresh() liest (mit vcgencmd, dauert einige Millisekunden) und läuft deshalb im
+    Thread-Pool; snapshot() gibt nur den letzten Stand zurück und blockiert den Event-Loop nie."""
+
+    LAG_SECONDS = 3.0
 
     def __init__(self):
         self._cpu_prev = None
-        self._cache = None
-        self._cache_at = 0.0
+        self._cache = {}
         self._vcgencmd = shutil.which("vcgencmd")
+        self._lags = collections.deque(maxlen=600)
 
     def _cpu(self):
         try:
@@ -97,10 +124,15 @@ class SystemStats:
         except OSError:
             return None
 
-    def snapshot(self):
+    def add_lag(self, seconds):
+        self._lags.append((time.monotonic(), seconds * 1000.0))
+
+    def lag_peak(self):
         now = time.monotonic()
-        if self._cache is not None and now - self._cache_at < 2.0:
-            return self._cache
+        recent = [ms for t, ms in self._lags if now - t <= self.LAG_SECONDS]
+        return round(max(recent)) if recent else None
+
+    def refresh(self):
         flags = self._throttled()
         current = [text for bit, text in THROTTLE_NOW.items() if flags is not None and flags & bit]
         self._cache = {
@@ -110,5 +142,6 @@ class SystemStats:
             "throttled": current,
             "throttled_before": bool(flags is not None and flags & THROTTLE_SINCE_BOOT),
         }
-        self._cache_at = now
-        return self._cache
+
+    def snapshot(self):
+        return dict(self._cache, lag=self.lag_peak())

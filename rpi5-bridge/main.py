@@ -22,6 +22,7 @@ Zustand alle 50 ms - kommt CHANNEL_STALE Sekunden nichts, gilt der Kanal als neu
 """
 import argparse
 import asyncio
+import gc
 import json
 import logging
 import math
@@ -35,7 +36,7 @@ from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
 from controller_emulator import ControllerEmulator, clamp_stick
-from system_tune import SystemStats, tune
+from system_tune import SystemStats, set_priority, tune
 from video_streamer import VideoStreamer
 
 log = logging.getLogger("bridge")
@@ -49,7 +50,7 @@ DEFAULTS = {
               "capture_buffers": 3, "mjpeg_fps": 30, "webrtc_fps": 60,
               "webrtc_max_bitrate": 6000000, "webrtc_min_bitrate": 3000000, "webrtc_fixed_bitrate": True,
               "webrtc_threads": 4, "webrtc_speed": -12},
-    "system": {"tune": True, "cpu_governor": "performance", "wifi_power_save_off": True},
+    "system": {"tune": True, "cpu_governor": "performance", "wifi_power_save_off": True, "priority": -10},
     "audio": {"device": "auto"},
     "controller": {"enabled": True, "watchdog_seconds": 2.0, "input_rate_hz": 120,
                    "reconnect_file": "/var/lib/switch2-bridge/switch_addresses.json"},
@@ -244,9 +245,22 @@ class Bridge:
         await asyncio.gather(*(ws.send(message) for ws in list(self.clients)), return_exceptions=True)
 
     async def status_loop(self):
+        loop = asyncio.get_running_loop()
+        tick = 0
         while True:
             await asyncio.sleep(1.0)
+            if tick % 2 == 0:             # vcgencmd und Dateien im Thread-Pool, nie im Event-Loop
+                await loop.run_in_executor(None, self.system.refresh)
+            tick += 1
             await self.broadcast_status()
+
+    async def lag_watch(self):
+        """Misst, wie lange der Event-Loop hängt (soll 10 ms schlafen, wacht später auf). Hänger verzögern
+        Bilder und Eingaben gleichermaßen - die Messanzeige zeigt die längste der letzten Sekunden."""
+        while True:
+            start = time.monotonic()
+            await asyncio.sleep(0.01)
+            self.system.add_lag(max(0.0, time.monotonic() - start - 0.01))
 
     # ------------------------------------------------------------------ Start / Stopp
     async def controller_main(self):
@@ -263,7 +277,10 @@ class Bridge:
         # Bluetooth (nxbt) startet im Hintergrund: das kann mit mehreren Versuchen eine Weile dauern, die
         # Steuerverbindung (Status, Messwerte, Koppeln) soll aber sofort erreichbar sein.
         self.tasks = [asyncio.create_task(self.controller_main()), asyncio.create_task(self.status_loop()),
-                      asyncio.create_task(self.channel_watch())]
+                      asyncio.create_task(self.channel_watch()), asyncio.create_task(self.lag_watch())]
+        # Alles, was der Start angelegt hat (Module, OpenCV, aiortc), aus der Speicherbereinigung nehmen:
+        # sonst durchsucht Python bei jedem vollen Durchlauf Hunderttausende Objekte und hält dabei alles an
+        gc.freeze()
         # Ohne Kompression: die Nachrichten sind winzig, Packen kostet nur Zeit
         async with serve(self.handle_client, ws_cfg["host"], int(ws_cfg["port"]),
                          max_size=MAX_MESSAGE, ping_interval=20, ping_timeout=20, compression=None):
@@ -287,6 +304,8 @@ def main():
                         datefmt="%H:%M:%S", stream=sys.stdout)
     cfg = load_config(args.config)
     logging.getLogger().setLevel(str(cfg.get("log_level", "INFO")).upper())
+    if not args.dry_run:
+        set_priority(cfg.get("system"))   # vor allen Threads: der Wert wird an sie vererbt
 
     async def runner():
         bridge = Bridge(cfg, args.dry_run)
