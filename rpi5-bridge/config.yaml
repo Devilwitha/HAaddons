@@ -18,6 +18,8 @@ video:
   fps: 60                     # Aufnahme von der Capture-Card
   fourcc: "MJPG"              # USB-2.0-Karten: "MJPG"; echte USB-3.0-Karten: "YUYV" (unkomprimiert, schneller)
   jpeg_quality: 80            # Qualität der Einzelbilder/des MJPEG-Streams (1-100)
+  webrtc_fixed_bitrate: true  # feste Datenrate: aiortc legt den Encoder sonst bei jeder Änderung neu an (Hänger)
+  webrtc_threads: 4           # Kerne für den VP8-Encoder (aiortc nimmt sonst nur 2)
   jpeg_passthrough: true      # liefert die Karte JPEG, Bilder unverändert weitergeben (Pi kodiert nichts)
   nv12: true                  # Karten ohne MJPEG (z. B. Cam Link 4K): NV12 roh lesen, spart Umrechnung
   mjpeg_fps: 30               # Bilder pro Sekunde im MJPEG-Stream
@@ -40,3 +42,8 @@ controller:
   reconnect_file: "/var/lib/switch2-bridge/switch_addresses.json"
 
 log_level: "INFO"             # DEBUG für mehr Details
+
+system:
+  tune: true                  # beim Start Pi auf gleichmäßige Leistung stellen (gilt bis zum Neustart)
+  cpu_governor: "performance" # kein Hoch- und Heruntertakten mitten im Bild
+  wifi_power_save_off: true   # WLAN-Stromsparen aus (sonst Aussetzer von 50-200 ms)

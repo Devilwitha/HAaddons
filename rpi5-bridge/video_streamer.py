@@ -79,22 +79,52 @@ MODES = {
 }
 
 
-def set_bitrate(max_bitrate, min_bitrate=0):
+def set_bitrate(max_bitrate, min_bitrate=0, fixed=False):
     """aiortc begrenzt die Bitrate von VP8/H.264 fest und startet niedrig. Die Schätzung des Browsers (REMB)
-    hält das Bild sonst lange unscharf; im Heimnetz ist eine Untergrenze von einigen Mbit/s kein Problem."""
+    hält das Bild sonst lange unscharf; im Heimnetz ist eine Untergrenze von einigen Mbit/s kein Problem.
+
+    fixed: Untergrenze = Obergrenze. aiortc legt den Encoder bei jeder Bitraten-Änderung über 10 % neu an –
+    das erzwingt ein großes Schlüsselbild und lässt das Bild kurz hängen. Mit fester Bitrate passiert das nie."""
     if not HAVE_WEBRTC or not max_bitrate:
         return
     try:
         from aiortc.codecs import vpx, h264
         top = int(max_bitrate)
-        low = max(0, min(int(min_bitrate or 0), top))
+        low = top if fixed else max(0, min(int(min_bitrate or 0), top))
         for mod in (vpx, h264):
             mod.MAX_BITRATE = top
             if low:
                 mod.MIN_BITRATE = low
-            mod.DEFAULT_BITRATE = min(top, max(low, top // 2))
+            mod.DEFAULT_BITRATE = top if fixed else min(top, max(low, top // 2))
     except (ImportError, AttributeError) as err:
         log.debug("Bitrate nicht anpassbar: %s", err)
+
+
+def use_all_cores(limit=4):
+    """aiortc kodiert VP8 auf einem Pi 5 (4 Kerne) bei 720p und 1080p mit nur 2 Threads. Mit allen Kernen
+    sinkt die Zeit pro Bild deutlich – wichtig für gleichmäßige 60 fps."""
+    if not HAVE_WEBRTC:
+        return
+    try:
+        from aiortc.codecs import vpx
+        original = vpx.number_of_threads
+
+        def number_of_threads(pixels, cpus):
+            if pixels > 640 * 480 and cpus >= 3:
+                return max(1, min(cpus, int(limit)))
+            return original(pixels, cpus)
+
+        vpx.number_of_threads = number_of_threads
+    except (ImportError, AttributeError) as err:
+        log.debug("Threads nicht anpassbar: %s", err)
+
+
+def pace(next_at, picked, period):
+    """Nächster Sendezeitpunkt im festen Raster. Die Bilder der Karte kommen nicht auf die Millisekunde genau;
+    ein Raster ab dem letzten Senden würde bei 60 von 60 fps immer wieder ein Bild auslassen (Ruckler)."""
+    if next_at and picked - next_at < period:
+        return max(next_at + period, picked + period * 0.5)
+    return picked + period
 
 
 def _is_usb_video(node):
@@ -587,15 +617,15 @@ class CaptureTrack(MediaStreamTrack):
         if self.returned_at is not None:
             # Zeit seit der Rückgabe des letzten Bildes = Kodieren + Senden in aiortc
             self.stats.add("encode", now - self.returned_at)
-        if now < self.next_at:
-            await asyncio.sleep(self.next_at - now)
+        if now < self.next_at - 0.004:            # 4 ms Spielraum: Bilder der Karte schwanken etwas
+            await asyncio.sleep(self.next_at - 0.004 - now)
         await self.source.wait_frame(self.last_id, 0.5)
         frame, frame_id, fmt = self.source.i420_frame()
         self.last_id = frame_id
         picked = time.monotonic()
         if frame_id != -1 and self.source.frame_time:
             self.stats.add("age", picked - self.source.frame_time)
-        self.next_at = picked + 1.0 / max(1, self.max_fps())
+        self.next_at = pace(self.next_at, picked, 1.0 / max(1, self.max_fps()))
         video_frame = av.VideoFrame.from_ndarray(frame, format=fmt)
         video_frame.pts = int((time.monotonic() - self.start) * VIDEO_CLOCK)
         video_frame.time_base = fractions.Fraction(1, VIDEO_CLOCK)
@@ -794,6 +824,7 @@ class VideoStreamer:
         self.webrtc_fps = int(cfg.get("webrtc_fps", 60))
         self.max_bitrate = int(cfg.get("webrtc_max_bitrate", 6000000))
         self.min_bitrate = int(cfg.get("webrtc_min_bitrate", 3000000))
+        self.fixed_bitrate = bool(cfg.get("webrtc_fixed_bitrate", True))
         self.state_file = Path(cfg.get("state_file", "/var/lib/switch2-bridge/video_mode.json"))
         self.source = FrameSource(cfg)
         self.mode = self._initial_mode(cfg)
@@ -807,7 +838,8 @@ class VideoStreamer:
         self.jpeg_clients = 0
         self.source.want_decoded = lambda: bool(self.pcs)
         self.runner = None
-        set_bitrate(self.max_bitrate, self.min_bitrate)
+        set_bitrate(self.max_bitrate, self.min_bitrate, self.fixed_bitrate)
+        use_all_cores(cfg.get("webrtc_threads", 4))
         if self.mode in MODES:
             self._apply_mode(self.mode, reopen=False)
 
@@ -828,7 +860,8 @@ class VideoStreamer:
         mode = MODES[key]
         self.mode = key
         self.webrtc_fps = mode["send"]
-        set_bitrate(max(mode["bitrate"], self.max_bitrate if key == "720p60" else 0), self.min_bitrate)
+        set_bitrate(max(mode["bitrate"], self.max_bitrate if key == "720p60" else 0), self.min_bitrate,
+                    self.fixed_bitrate)
         if reopen:
             self.source.set_format(mode["width"], mode["height"], mode["fps"])
         else:
@@ -966,8 +999,8 @@ class VideoStreamer:
                         inflight[0] = 0              # Bestätigung verloren: weitermachen statt hängen
                     continue
                 now = time.monotonic()
-                if now < next_at:
-                    await asyncio.sleep(next_at - now)
+                if now < next_at - 0.004:
+                    await asyncio.sleep(next_at - 0.004 - now)
                 await self.source.wait_frame(last_id, 1.0)
                 data, frame_id, taken, enc = await loop.run_in_executor(None, self.source.jpeg_frame)
                 if not data or (frame_id != -1 and frame_id == last_id):
@@ -983,7 +1016,7 @@ class VideoStreamer:
                 raw_head = json.dumps(head).encode()
                 await ws.send_bytes(len(raw_head).to_bytes(4, "big") + raw_head + data)
                 inflight[0] += 1
-                next_at = sent + 1.0 / max(1, self.webrtc_fps)
+                next_at = pace(next_at, sent, 1.0 / max(1, self.webrtc_fps))
         except (ConnectionResetError, asyncio.CancelledError):
             pass
         finally:

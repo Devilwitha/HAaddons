@@ -102,7 +102,9 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 - **Bildqualität** (`MODES` in `video_streamer.py`): 720p60 oder 1080p30 (Software-VP8 auf dem Pi 5 schafft 1080p
   nur mit ~30 fps), gemerkt in `/var/lib/switch2-bridge/video_mode.json`. aiortc startet sonst mit 500 kbit/s und
   folgt der REMB-Schätzung des Browsers → `MIN_BITRATE`/`MAX_BITRATE` von `aiortc.codecs.vpx`/`h264` werden gesetzt
-  (`webrtc_min_bitrate` 3 Mbit/s). **Gerät** `device: "auto"`: `/dev/v4l/by-id/usb-*-video-index0`, sonst erstes
+  (`webrtc_min_bitrate` 3 Mbit/s). aiortc legt den Encoder bei > 10 % Bitraten-Änderung neu an (Schlüsselbild,
+  Hänger) → `webrtc_fixed_bitrate` (MIN = MAX); `vpx.number_of_threads` wird auf 4 Kerne gepatcht (`use_all_cores`).
+  `system_tune.py`: CPU-Regler performance, WLAN-Stromsparen aus, Temperatur/Last/`vcgencmd get_throttled` im Status. **Gerät** `device: "auto"`: `/dev/v4l/by-id/usb-*-video-index0`, sonst erstes
   USB-Videogerät mit `index` 0 in `/sys/class/video4linux` (der Pi 5 hat eigene Videogeräte, die Nummer der Karte
   wechselt). Ein eingetragenes `/dev/videoN` ohne USB-Karte dahinter wird ebenfalls durch die Suche ersetzt.
   **Capture-Card neu starten**: Karte schließen, `USBDEVFS_RESET` auf

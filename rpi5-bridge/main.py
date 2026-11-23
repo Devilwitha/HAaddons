@@ -35,6 +35,7 @@ from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
 from controller_emulator import ControllerEmulator, clamp_stick
+from system_tune import SystemStats, tune
 from video_streamer import VideoStreamer
 
 log = logging.getLogger("bridge")
@@ -45,7 +46,9 @@ DEFAULTS = {
     "websocket": {"host": "0.0.0.0", "port": 8765},
     "video": {"host": "0.0.0.0", "port": 8766, "device": "auto", "width": 1280, "height": 720,
               "fps": 60, "fourcc": "MJPG", "jpeg_quality": 80, "jpeg_passthrough": True, "nv12": True, "mjpeg_fps": 30, "webrtc_fps": 60,
-              "webrtc_max_bitrate": 6000000, "webrtc_min_bitrate": 3000000},
+              "webrtc_max_bitrate": 6000000, "webrtc_min_bitrate": 3000000, "webrtc_fixed_bitrate": True,
+              "webrtc_threads": 4},
+    "system": {"tune": True, "cpu_governor": "performance", "wifi_power_save_off": True},
     "audio": {"device": "auto"},
     "controller": {"enabled": True, "watchdog_seconds": 2.0, "input_rate_hz": 120,
                    "reconnect_file": "/var/lib/switch2-bridge/switch_addresses.json"},
@@ -85,6 +88,7 @@ def load_config(path):
 
 class Bridge:
     def __init__(self, cfg, dry_run):
+        self.dry_run = dry_run
         self.cfg = cfg
         self.controller = ControllerEmulator(cfg["controller"], dry_run=dry_run)
         self.video = VideoStreamer(cfg["video"], cfg.get("audio"))
@@ -182,6 +186,7 @@ class Bridge:
             "switch": self.controller.status(),
             "capture": self.video.source.status(),
             "stream": self.video.stats(),
+            "system": self.system.snapshot(),
             "clients": len(self.clients),
         })
 
@@ -245,6 +250,9 @@ class Bridge:
     # ------------------------------------------------------------------ Start / Stopp
     async def run(self):
         ws_cfg = self.cfg["websocket"]
+        self.system = SystemStats()
+        if not self.dry_run:
+            await asyncio.get_running_loop().run_in_executor(None, tune, self.cfg.get("system"))
         await self.video.start()
         await self.controller.start()
         self.tasks = [asyncio.create_task(self.controller.run()), asyncio.create_task(self.status_loop()),

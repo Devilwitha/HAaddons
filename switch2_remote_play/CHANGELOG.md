@@ -1,5 +1,17 @@
 # Änderungen
 
+## 1.0.11
+
+- Keine Hänger mehr durch Schlüsselbilder: aiortc baute den Video-Encoder bei jeder Änderung der Datenrate um
+  mehr als 10 % neu auf und schickte danach ein großes Komplettbild. Die Datenrate ist jetzt fest
+  (`webrtc_fixed_bitrate`, im Heimnetz kein Problem)
+- Der Pi kodiert mit allen 4 Kernen statt mit 2 (`webrtc_threads`)
+- Bilder werden im festen Takt gesendet (gleichmäßige Abstände)
+- Die Bridge stellt den Pi beim Start auf gleichmäßige Leistung: CPU-Regler „performance“ und
+  WLAN-Stromsparen aus (Abschnitt `system` in der config.yaml)
+- Messwerte → **Pi**: Temperatur, CPU-Last und Drosselung (Unterspannung, Hitze)
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.10
 
 - *720p · 60 fps* ist jetzt wirklich 720p: Capture-Cards wie die Cam Link 4K liefern immer das HDMI-Signal der

@@ -800,6 +800,21 @@
     const rtc = stream.webrtc || null;
     const wanted = cap.fps || 0;
     renderVideoControls(stream, cap);
+    const sys = st.system || null;
+    if (sys) {
+      const parts = [];
+      if (typeof sys.temp === "number") parts.push(Math.round(sys.temp) + " °C");
+      if (typeof sys.cpu === "number") parts.push("CPU " + sys.cpu + " %");
+      const now = Array.isArray(sys.throttled) ? sys.throttled : [];
+      if (now.length) parts.push(now.join(", "));
+      else if (sys.throttled_before) parts.push("war gedrosselt");
+      const hot = (sys.temp || 0) >= 80 || (sys.cpu || 0) >= 90;
+      const warm = (sys.temp || 0) >= 70 || (sys.cpu || 0) >= 75 || sys.throttled_before;
+      setVal("sv-system", parts.join(" · ") || "–", now.length || hot ? "bad" : warm ? "warn" : "good");
+      $("sv-system").title = sys.governor ? "CPU-Regler: " + sys.governor : "";
+    } else {
+      setVal("sv-system", "–");
+    }
     // Ampel nach der gewählten Bildqualität (60 oder 30 fps), ältere Bridges ohne Angabe: 60
     const capTarget = cap.target_fps || 60;
     const sendTarget = stream.target_fps || 60;

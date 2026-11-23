@@ -154,6 +154,7 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
 | Kein Bild bei MJPEG | Gibt es nicht mehr: `stream_mode: mjpeg` nutzt jetzt Einzelbilder über WebSocket (Add-on ab 1.0.9 und Bridge aktualisieren) |
 | Pi langsam bei 1080p-Signal | Die Bridge verkleinert bei *720p · 60 fps* selbst (Messwerte → **Capture-Card** zeigt „→ 1280×720“). Eine Karte, die MJPEG liefert (`v4l2-ctl --list-formats-ext` zeigt `MJPG`), entlastet bei Einzelbildern am meisten |
 | Bild unscharf | Messwerte → Bildqualität *1080p · 30 fps*; **Datenrate** sollte bei Bewegung über 2,5 Mbit/s liegen (`webrtc_min_bitrate`/`webrtc_max_bitrate` in der config.yaml) |
+| Ruckelt ab und zu | Messwerte → **Pi**: rot bei Hitze (Kühler!) oder Unterspannung (offizielles 27-W-Netzteil). Pi und PC/Tablet per Kabel oder 5-GHz-WLAN |
 | Bild hängt / Capture rot | Messwerte → **Capture-Card neu starten** |
 | Kein Ton | Messwerte → **Ton** zeigt den Grund. Konsole auf Ton über TV/HDMI stellen; `arecord -l` am Pi muss die Capture-Card zeigen |
 | Koppeln klappt nicht | Auf der Konsole *Griffweise/Reihenfolge ändern* offen lassen, einmal drücken, bis zu einer Minute warten; Protokoll: `journalctl -u switch2-bridge -n 80` |
