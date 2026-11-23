@@ -129,7 +129,8 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   Die Cam Link meldet sich dabei ab und neu an (ENODEV = Erfolg); sonst Rückfall `authorized` 0/1 in sysfs.
   Danach bis zu 15 s warten, bis das Videogerät wieder da ist (`_wait_reappear`), erst dann antworten.
   Ohne HDMI-Signal liefert die Cam Link evtl. weiter schwarze Bilder: `_check_blank` (Y-Stichprobe alle
-  0,5 s) → `blank` (Sekunden) im Capture-Status, ab 5 s.
+  0,5 s) → `blank` (Sekunden) im Capture-Status, ab 5 s. Ganz ohne Bilder wartet OpenCV pro `read()` auf `select`:
+  `OPENCV_VIDEOIO_V4L_SELECT_TIMEOUT=2` (Sekunden, Vorgabe 10) und `OPENCV_LOG_LEVEL=ERROR` vor `import cv2`.
 - **Ton** nur über WebRTC: Bridge liest die Capture-Card per `arecord` (alsa-utils, 48 kHz Stereo, 20-ms-Pakete,
   höchstens 60 ms Puffer), nur solange jemand zuhört. Die Tonspur bekommt eine **eigene Stream-ID**
   (`sender._stream_id`), sonst gleicht der Browser Bild und Ton ab und verzögert das Bild. `audio.device`:

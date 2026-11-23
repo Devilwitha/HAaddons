@@ -66,6 +66,18 @@ def install(server_cls, retry_seconds=RETRY_SECONDS, sleep=time.sleep):
                     log.info("Konsole nicht erreichbar (%s) - versuche es weiter", err)
                 sleep(retry_seconds)
 
+    orig_on_exit = getattr(server_cls, "_on_exit", None)
+
+    def _on_exit(self):
+        # nxbt ruft beim Beenden self.bt.reset_address() auf, das es in BlueZ nicht gibt -> Traceback im Protokoll
+        if orig_on_exit is None:
+            return
+        try:
+            orig_on_exit(self)
+        except Exception:
+            pass
+
+    server_cls._on_exit = _on_exit
     server_cls.run = run
     server_cls.mainloop = mainloop
     server_cls.connect = connect

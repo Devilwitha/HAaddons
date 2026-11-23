@@ -1,5 +1,13 @@
 # Änderungen
 
+## 1.0.23
+
+- Ohne HDMI-Signal wartete die Bridge bei jedem Leseversuch 10 s auf die Capture-Card und schrieb jedes Mal
+  „select() timeout“ ins Protokoll. Jetzt 2 s (`OPENCV_VIDEOIO_V4L_SELECT_TIMEOUT`), „kein Bild“ erscheint schneller,
+  im Protokoll steht einmal „Capture-Card liefert kein Bild mehr (kein HDMI-Signal? Konsole im Standby?)“
+- Kein nxbt-Traceback („reset_address“) mehr beim Beenden der Bridge
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.22
 
 - **Steuerung nach Standby der Konsole tot:** nxbt gab das Wiederverbinden nach etwa einer Sekunde auf (beim Start

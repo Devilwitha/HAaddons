@@ -50,9 +50,15 @@ try:
 except ImportError:
     fcntl = None
 
-import cv2
-import numpy as np
-from aiohttp import web
+# Ohne HDMI-Signal liefert die Capture-Card keine Bilder; OpenCV wartet dann pro Leseversuch 10 s (select) und
+# schreibt jedes Mal eine Warnung ins Protokoll. 2 s reichen, „kein Bild“ wird so schneller erkannt; die Warnungen
+# ersetzt die Bridge durch eine eigene Meldung beim Wechsel. Muss vor dem ersten Öffnen gesetzt sein (Sekunden).
+os.environ.setdefault("OPENCV_VIDEOIO_V4L_SELECT_TIMEOUT", "2")
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
+
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+from aiohttp import web  # noqa: E402
 
 try:
     from aiortc import RTCConfiguration, RTCPeerConnection, RTCRtpSender, RTCSessionDescription
@@ -718,6 +724,8 @@ class FrameSource:
                     continue
                 failures += 1
                 if time.monotonic() - self.frame_time > NO_SIGNAL_AFTER:
+                    if self.state == "ok":
+                        log.info("Capture-Card liefert kein Bild mehr (kein HDMI-Signal? Konsole im Standby?)")
                     self.state = "no_signal"
                     self.detail = "kein Bild (Konsole im Standby?)"
                 if failures > max(30, self.fps):
