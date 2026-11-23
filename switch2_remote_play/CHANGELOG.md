@@ -1,5 +1,13 @@
 # Änderungen
 
+## 1.0.15
+
+- Messwerte: Eine einzelne Spitze bei **Kodieren + Senden** wird erst rot, wenn sie über der doppelten Zeit pro Bild
+  liegt (darunter überbrückt das nächste Bild, es fällt keins aus) – bis dahin gelb
+- **Ping über Home Assistant** ohne Ampel, solange die Eingaben direkt über den Datenkanal gehen (dann laufen über
+  Home Assistant nur Status und Messwerte, z. B. von unterwegs über Nabu Casa)
+- Nur das Add-on aktualisieren, die Bridge bleibt
+
 ## 1.0.14
 
 - Hält 60 fps auch in bewegten Szenen: Der Pi kodiert VP8 mit der Geschwindigkeit, die WebRTC in Browsern

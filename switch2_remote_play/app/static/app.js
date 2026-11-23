@@ -832,8 +832,11 @@
       const budget = 1000 / sendTarget;
       const peak = rtc.encode_peak;
       const showPeak = peak != null && peak > (rtc.encode || 0) * 1.3 && peak > 3;
+      // Mittelwert über der Zeit pro Bild = Bildrate sinkt; einzelne Spitzen bis zur doppelten Zeit
+      // überbrückt das nächste, schon wartende Bild (nur gelb), darüber fällt sichtbar ein Bild aus
+      const grades = [grade(rtc.encode, budget * 0.8, budget), peak != null ? grade(peak, budget, budget * 2) : ""];
       setVal("sv-encode", ms(rtc.encode) + (showPeak ? " · Spitze " + ms(peak) : ""),
-        grade(Math.max(rtc.encode || 0, peak || 0), budget * 0.8, budget));
+        grades.includes("bad") ? "bad" : grades.includes("warn") ? "warn" : grades[0]);
     } else if (mode === "jpeg" && stream.jpeg) {
       const jp = stream.jpeg;
       const through = cap.passthrough || (fstat.info && fstat.info.pt);
@@ -847,7 +850,9 @@
       ["sv-age", "sv-convert", "sv-encode"].forEach((id) => setVal(id, "–"));
     }
     setVal("sv-ping-dc", channelOpen() ? ms(dcPing) : "kein Datenkanal", channelOpen() ? grade(dcPing, 5, 20) : "warn");
-    setVal("sv-ping-ws", ms(wsPing), grade(wsPing, 15, 50));
+    // Laufen die Eingaben über den Datenkanal, gehen über Home Assistant nur noch Status und Messwerte
+    setVal("sv-ping-ws", ms(wsPing) + (channelOpen() && wsPing != null ? " · nur Status" : ""),
+      channelOpen() ? "" : grade(wsPing, 15, 50));
     setVal("sv-input", channelOpen() ? "Datenkanal (direkt)" : "WebSocket (über Home Assistant)", channelOpen() ? "good" : "warn");
 
     const w = mode === "webrtc" ? video.videoWidth : (capturePlaying ? frames.width : 0);
