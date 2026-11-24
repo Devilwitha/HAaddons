@@ -1,5 +1,14 @@
 # Änderungen
 
+## 1.0.26
+
+- **Bluetooth nur, wenn jemand steuert:** Ist in keinem offenen Game Remote die Touch-Steuerung an (und kein
+  Controller am Gerät), trennt die Bridge nach 10 s den Bluetooth-Controller von der Konsole und versucht auch nicht
+  mehr, sich zu verbinden. Das gilt auch, wenn niemand Game Remote offen hat. Touch-Steuerung einschalten oder am
+  Controller eine Taste drücken verbindet sofort wieder. Status der Konsole dann „Bluetooth aus – niemand steuert“
+- **Konsole koppeln** funktioniert auch in diesem Zustand
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.25
 
 - **Konsole koppeln** geht jetzt immer: Bisher lehnte die Bridge mit „Die Konsole ist schon verbunden“ ab, sobald

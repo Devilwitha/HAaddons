@@ -12,6 +12,8 @@
  *   {"type":"input","buttons":["A","DPAD_UP",...],"ls":[x,y],"rs":[x,y]}   x/y: -100..100, y oben positiv
  *   {"type":"heartbeat","t":<ms>}                                          Antwort: {"type":"pong","t":<ms>}
  *   {"type":"system","action":"pair"}
+ *   {"type":"system","action":"control","active":true}       will steuern (Touch an oder Controller da) – will
+ *                                                             niemand steuern, trennt die Bridge das Bluetooth
  *   {"type":"system","action":"capture_restart"}            Capture-Card per USB-Reset neu starten
  *   {"type":"system","action":"video_mode","mode":"1080p30"} Bildqualität umschalten
  */
@@ -75,6 +77,7 @@
     ws = new WebSocket(wsUrl());
     ws.onopen = () => {
       wsRetry = 1000;
+      updateControl(true);
       if (lastInput && !channelOpen()) send(lastInput);
     };
     ws.onmessage = (ev) => {
@@ -131,6 +134,7 @@
     connecting: ["busy", "Warte auf die Konsole – dort „Controller → Griffweise/Reihenfolge ändern“ öffnen"],
     reconnecting: ["busy", "Verbinde mit der gekoppelten Konsole … – Konsole einschalten bzw. aufwecken (andere Konsole: „Konsole koppeln“)"],
     initializing: ["busy", "Controller wird gestartet …"],
+    paused: ["off", "Bluetooth aus – niemand steuert (Touch-Steuerung einschalten oder am Controller eine Taste drücken)"],
     disconnected: ["off", "Nicht gekoppelt – auf „Konsole koppeln“ tippen"],
     crashed: ["err", "Controller-Emulation abgestürzt"],
     unavailable: ["err", "Controller-Emulation nicht verfügbar"],
@@ -438,6 +442,27 @@
     $("touch-toggle").checked = visible;
     vpad.show(visible);
     if (remember) store("switch2-touch", visible);
+    updateControl(false);
+    if (remember && !visible && !wantsControl() && lastStatus && (lastStatus.switch || {}).state === "connected") {
+      toast("Touch-Steuerung aus – Bluetooth zur Konsole wird in 10 s getrennt (sofern niemand sonst steuert)");
+    }
+  }
+
+  // Bluetooth zur Konsole nur, solange jemand steuern will: Touch-Steuerung an oder ein Controller am Gerät.
+  // Die Bridge trennt den Controller, wenn in keinem offenen Fenster gesteuert wird.
+  let controlSent = null;
+
+  function wantsControl() {
+    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).some(Boolean) : false;
+    return $("touch-toggle").checked || pads;
+  }
+
+  function updateControl(force) {
+    const active = wantsControl();
+    if (!force && active === controlSent) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    controlSent = active;
+    send({ type: "system", action: "control", active });
   }
 
   $("touch-toggle").addEventListener("change", (e) => setTouch(e.target.checked, true));
@@ -614,6 +639,7 @@
   function readPads() {
     const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
     if (!pads.length) {
+      updateControl(false);
       if (activePad) {
         activePad = null;
         padState = window.VirtualGamepad.emptyState();
@@ -673,8 +699,12 @@
   window.addEventListener("gamepadconnected", (e) => {
     toast("Controller verbunden: " + e.gamepad.id);
     startPolling();
+    updateControl(false);
   });
-  window.addEventListener("gamepaddisconnected", () => toast("Controller getrennt"));
+  window.addEventListener("gamepaddisconnected", () => {
+    toast("Controller getrennt");
+    setTimeout(() => updateControl(false), 0);
+  });
 
   // ------------------------------------------------------------------ Leiste, Koppeln, Vollbild
   $("pair-btn").addEventListener("click", () => {

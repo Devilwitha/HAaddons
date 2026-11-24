@@ -6,6 +6,9 @@
 - Merkt sich die Bluetooth-Adresse der gekoppelten Konsole und verbindet sich nach einem
   Neustart oder Abbruch (Konsole im Standby) von selbst wieder, sobald sie erreichbar ist
   (nxbt_patch.py – nxbt allein fiele nach einer Sekunde in den Kopplungsmodus).
+- Pausiert: Will niemand steuern (in keinem offenen Game Remote Touch-Steuerung oder Controller an), legt die
+  Bridge den Controller ab – die Bluetooth-Verbindung zur Konsole wird getrennt, es gibt keine
+  Verbindungsversuche mehr. Sobald wieder jemand steuern will, verbindet er sich neu.
 - Stürzt nxbt ab (z. B. weil der Bluetooth-Dienst kurz weg war), wird nxbt komplett neu gestartet –
   sonst bliebe der Adapter belegt und jede weitere Kopplung endete mit "No adapters available".
 
@@ -77,6 +80,8 @@ class ControllerEmulator:
         self._last_recover = 0.0
         self._crashed_since = 0.0
         self._press_logged = 0.0
+        self.paused = False               # Controller abgelegt, weil niemand steuern will
+        self.wanted = lambda: True        # von der Bridge: will gerade jemand steuern?
 
     # ------------------------------------------------------------------ Start / Kopplung
     async def start(self):
@@ -101,7 +106,12 @@ class ControllerEmulator:
             log.info("Verbinde erneut mit gekoppelter Konsole: %s", ", ".join(addresses))
         else:
             log.info("Noch keine Konsole gekoppelt - warte auf Kopplung (Griffweise/Reihenfolge ändern)")
-        self._restart_nxbt(addresses or None)
+        # Niemand will steuern (kein Game Remote offen, Touch aus): nxbt starten, aber ohne Controller –
+        # sonst verbände er sich kurz mit der Konsole und würde gleich wieder getrennt
+        self._restart_nxbt(addresses or None, create=self.wanted())
+        if self.index is None:
+            self.paused = True
+            log.info("Niemand steuert - Bluetooth-Controller bleibt aus, bis Touch-Steuerung oder Controller an ist")
 
     def _shutdown_nxbt(self):
         """Beendet die Prozesse von nxbt und gibt damit den Bluetooth-Adapter frei."""
@@ -126,7 +136,7 @@ class ControllerEmulator:
         except Exception as err:
             log.debug("nxbt-Manager beenden: %s", err)
 
-    def _restart_nxbt(self, reconnect_address):
+    def _restart_nxbt(self, reconnect_address, create=True):
         """nxbt komplett neu starten und einen Controller anlegen. nxbt startet dabei den Bluetooth-Dienst
         neu; bis der Adapter wieder da ist, meldet es "No adapters available" – darum mehrere Versuche."""
         self._shutdown_nxbt()
@@ -134,7 +144,8 @@ class ControllerEmulator:
         for attempt in range(1, RESTART_ATTEMPTS + 1):
             try:
                 self.nx = self.nxbt.Nxbt()
-                self._create(reconnect_address)
+                if create:
+                    self._create(reconnect_address)
                 return
             except Exception as err:
                 last = err
@@ -156,6 +167,61 @@ class ControllerEmulator:
         if reconnect_address is None:
             self._pairing_since = time.monotonic()      # Kopplungsmodus: Konsole kann sich jetzt verbinden
 
+    def _remove(self):
+        """Controller ablegen: der Controller-Prozess endet, die Verbindung zur Konsole ist weg."""
+        if self.nx is not None and self.index is not None:
+            try:
+                self.nx.remove_controller(self.index)
+            except Exception as err:              # abgestürzter Controller: nxbt ganz beenden
+                log.warning("Controller ablegen fehlgeschlagen (%s) - beende nxbt", err)
+                self._shutdown_nxbt()
+        self.index = None
+        self._connected = False
+
+    def can_pause(self):
+        """Nicht mitten in einer Kopplung oder einem Neustart ablegen."""
+        if not self.enabled or self.paused or self._lock.locked() or self._recovering:
+            return False
+        if self.nx is None or self.index is None:
+            return self.nx is not None
+        return not (self._state() == "connecting" and time.monotonic() - self._pairing_since < PAIR_BUSY_SECONDS)
+
+    async def pause(self):
+        """Niemand will steuern: Controller ablegen und keine Verbindungsversuche mehr."""
+        if not self.enabled or self.paused:
+            return
+        self.status()                                 # frisch gekoppelt: Adresse vorher noch speichern
+        async with self._lock:
+            self.release_all()
+            await asyncio.get_running_loop().run_in_executor(None, self._remove)
+            self.paused = True
+        log.info("Touch-Steuerung und Controller aus - Bluetooth-Controller getrennt, keine Verbindungsversuche mehr")
+        REC.event("controller", "Bluetooth-Controller abgelegt (niemand steuert)")
+
+    async def resume(self):
+        """Wieder jemand am Steuern: mit der gekoppelten Konsole verbinden (ohne gekoppelte Konsole: Kopplungsmodus)."""
+        if not self.paused:
+            return
+        async with self._lock:
+            self.paused = False
+            addresses = self._load_addresses() or None
+            log.info("Touch-Steuerung bzw. Controller an - Bluetooth-Controller %s",
+                     "verbindet mit der Konsole" if addresses else "wartet auf Kopplung")
+            REC.event("controller", "Bluetooth-Controller wieder angelegt")
+            loop = asyncio.get_running_loop()
+            try:
+                if self.nx is None:
+                    await loop.run_in_executor(None, self._restart_nxbt, addresses)
+                else:
+                    try:
+                        await loop.run_in_executor(None, self._create, addresses)
+                    except Exception as err:
+                        log.warning("Controller anlegen fehlgeschlagen (%s) - starte nxbt neu", err)
+                        await loop.run_in_executor(None, self._restart_nxbt, addresses)
+            except Exception as err:
+                self.error = f"{err.__class__.__name__}: {err}"
+                log.error("Bluetooth-Controller konnte nicht angelegt werden: %s", self.error)
+
     def _state(self):
         try:
             return self.nx.state[self.index].get("state", "unknown")
@@ -171,7 +237,12 @@ class ControllerEmulator:
             return True, "Bluetooth wird gerade vorbereitet – bitte einen Moment warten und nicht erneut drücken."
         if self.nxbt is None:
             return False, "nxbt läuft nicht: " + (self.error or "unbekannter Fehler")
-        state = self._state() if self.nx is not None and self.index is not None else "crashed"
+        if self.nx is None:
+            state = "crashed"
+        elif self.index is None:
+            state = "paused"
+        else:
+            state = self._state()
         if state == "connected":
             # Nicht ablehnen: nxbt meldet „connected“, solange die Bluetooth-Verbindung steht – auch wenn die Konsole
             # den Controller gar nicht mehr benutzt. Wer koppeln drückt, will neu koppeln.
@@ -180,6 +251,7 @@ class ControllerEmulator:
             return True, ("Kopplung läuft bereits – auf der Konsole „Controller → Griffweise/Reihenfolge ändern“ "
                           "offen lassen und bis zu einer Minute warten.")
         async with self._lock:
+            self.paused = False                       # Koppeln heißt: es soll gesteuert werden
             loop = asyncio.get_running_loop()
             try:
                 if state == "crashed":
@@ -316,6 +388,8 @@ class ControllerEmulator:
     def status(self):
         if not self.enabled:
             return {"state": "unavailable", "detail": self.error}
+        if self.paused and not self._lock.locked():
+            return {"state": "paused", "detail": ""}
         if self._recovering or self._lock.locked():
             return {"state": "initializing",
                     "detail": "Bluetooth wird gestartet …" if self.nx is None else "Bluetooth wird neu gestartet …"}

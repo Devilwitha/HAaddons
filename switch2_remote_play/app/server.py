@@ -54,6 +54,7 @@ TICK_SECONDS = 15
 CONSOLE_TEXT = {
     "connected": "Verbunden", "connecting": "Wartet auf Kopplung", "reconnecting": "Verbindet erneut",
     "initializing": "Startet", "disconnected": "Nicht gekoppelt", "crashed": "Fehler", "unavailable": "Nicht verfügbar",
+    "paused": "Aus (niemand steuert)",
 }
 CAPTURE_TEXT = {"ok": "Bild", "no_signal": "Kein Signal", "unavailable": "Nicht verfügbar"}
 VIDEO_PATH = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -406,6 +407,8 @@ async def bridge_watch(app):
                     log.info("Bridge %s erreichbar", target)
                 stats.bridge["online"] = True
                 app["publish_soon"]()
+                # Diese Verbindung liest nur mit - sie soll den Bluetooth-Controller nicht wach halten
+                await ws.send_str(json.dumps({"type": "system", "action": "control", "active": False}))
                 async for msg in ws:
                     if msg.type != aiohttp.WSMsgType.TEXT:
                         break

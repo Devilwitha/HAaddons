@@ -84,6 +84,10 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
   `audio: device: "off"` in `/etc/switch2-bridge/config.yaml`.
 - **Touch-Gamepad:** zwei Analogsticks, A/B/X/Y, Steuerkreuz, L/ZL/R/ZR, −/+/HOME/Aufnahme.
   Mehrere Finger gleichzeitig (z. B. Stick und A) funktionieren.
+- **Nur zuschauen:** Schaltest du die **Touch-Steuerung** aus (und ist kein Controller am Gerät), trennt der Pi nach
+  10 s die Bluetooth-Verbindung zur Konsole und versucht nicht mehr, sich zu verbinden – solange niemand in einem
+  offenen Game Remote steuert, auch wenn gar keins offen ist. Touch einschalten oder am Controller eine Taste
+  drücken verbindet in wenigen Sekunden wieder. Status der Konsole dann „Bluetooth aus – niemand steuert“.
 - **Echte Controller:** per USB oder Bluetooth am Handy, Tablet oder PC verbinden und eine Taste
   drücken. Unter **Controller** stellst du die Belegung ein:
   - *Wie Konsolen-Anordnung:* die rechte Taste ist A (Xbox B bzw. PlayStation ○)
@@ -156,7 +160,7 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
 | Bild unscharf | Messwerte → Bildqualität *1080p · 30 fps*; **Datenrate** sollte bei Bewegung über 2,5 Mbit/s liegen (`webrtc_min_bitrate`/`webrtc_max_bitrate` in der config.yaml) |
 | Ursache unklar | Messwerte → **Aufzeichnung starten**, spielen, bei Rucklern oben auf **Ruckler!** tippen, beenden. Die Textdatei nennt zu jedem Einbruch die vermutete Ursache (auch unter `/share/game_remote/aufzeichnungen`) |
 | Ruckelt ab und zu | Messwerte → **Pi**: rot bei Hitze (Kühler!) oder Unterspannung (offizielles 27-W-Netzteil). Pi und PC/Tablet per Kabel oder 5-GHz-WLAN |
-| Touch/Controller ohne Wirkung | Oben **Konsole** muss grün sein. *reconnecting*: Konsole einschalten bzw. mit ihrem eigenen Controller aufwecken, die Bridge verbindet sich dann von selbst. *connecting*: Kopplungsmodus – auf der Konsole *Griffweise/Reihenfolge ändern* öffnen |
+| Touch/Controller ohne Wirkung | Oben **Konsole** muss grün sein. *Bluetooth aus*: Touch-Steuerung einschalten bzw. am Controller eine Taste drücken. *reconnecting*: Konsole einschalten bzw. mit ihrem eigenen Controller aufwecken, die Bridge verbindet sich dann von selbst. *connecting*: Kopplungsmodus – auf der Konsole *Griffweise/Reihenfolge ändern* öffnen |
 | Kein Bild, Capture gelb „schwarz“ | Die Capture-Card bekommt kein HDMI-Bild: Konsole im Standby oder Kabel/Dock prüfen |
 | Capture-Card nur ~20 fps, „Konsole auf 1080p stellen“ | Die Konsole gibt 4K aus; in ihren Einstellungen die TV-Auflösung auf 1080p stellen |
 | Bild hängt / Capture rot | Messwerte → **Capture-Card neu starten**. Meldet sie sich danach nicht zurück, USB-Stecker ziehen; verschwindet die Karte immer wieder von selbst, Netzteil (27 W) und USB-3-Anschluss prüfen (`dmesg | grep -i usb` am Pi) |

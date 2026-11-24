@@ -67,7 +67,7 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
 ### Protokoll Browser ↔ Bridge (WebSocket, JSON)
 - Browser → Bridge: `{"type":"input","buttons":[...],"ls":[x,y],"rs":[x,y]}` (x/y −100…100, y oben
   positiv), `{"type":"heartbeat","t":ms}`, `{"type":"system","action":"pair"|"capture_restart"}`,
-  `{"type":"system","action":"video_mode","mode":"720p60"|"1080p30"}`
+  `{"type":"system","action":"video_mode","mode":"720p60"|"1080p30"}`, `{"type":"system","action":"control","active":bool}`
 - Bridge → Browser: `{"type":"status","switch":{state,detail},"capture":{...},"stream":{webrtc:{fps,age,convert,encode}|null,jpeg:{fps,age,encode}|null,jpeg_clients,mjpeg_fps,webrtc_clients,audio:{state,detail,device,listeners}},"clients":n}`,
   `{"type":"pong","t":ms}`, `{"type":"info"|"error","message":...}`
 - Der Ingress-Server schickt zusätzlich `{"type":"proxy","status":"connected"|"unreachable"|"bridge_closed"}`.
@@ -143,6 +143,10 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   Wiederverbindungen in den Kopplungsmodus (`connect()`), nach Standby der Konsole bliebe die Steuerung tot. Der Patch
   ersetzt `connect()` durch Wiederverbinden alle 2 s, solange eine Adresse bekannt ist (aus der Bridge oder `getpeername`).
   Der nxbt-Start läuft im Hintergrund (`controller_main`): WebSocket und Video sind sofort da, Koppeln wartet.
+  **Bluetooth nur bei Bedarf:** Browser schickt `{"type":"system","action":"control","active":…}` (Touch an oder
+  Gamepad da); `control_watch` legt den Controller per `remove_controller` ab (`paused`), wenn `CONTROL_IDLE` = 10 s
+  niemand will (auch ohne Clients), und legt ihn mit gespeicherter Adresse sofort neu an. Clients ohne Meldung
+  zählen als steuernd; der Mitleser `bridge_watch` des Add-ons meldet `false`. Start ohne Zuschauer: nur `Nxbt()`.
   Beenden: `_shutdown_nxbt` mit Zeitlimit, danach `os._exit(0)` (kein atexit von nxbt, kein Warten auf den
   Thread-Pool wie bei `asyncio.run`); `TimeoutStopSec=15` in der Dienstdatei.
 - **Konfiguration der Bridge** liegt nach der Installation in `/etc/switch2-bridge/config.yaml`

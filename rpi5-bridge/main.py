@@ -10,6 +10,10 @@ WebSocket-Protokoll (JSON):
         x, y von -100 bis 100, y nach oben positiv
     {"type": "heartbeat", "t": <Zahl>}          -> {"type": "pong", "t": <Zahl>}
     {"type": "system", "action": "pair"}        -> {"type": "info" | "error", "message": ...}
+    {"type": "system", "action": "control", "active": true | false}
+        Will dieser Client steuern (Touch-Steuerung oder Controller an)? Will CONTROL_IDLE Sekunden lang
+        keiner steuern, wird der Bluetooth-Controller abgelegt (Status "paused"). Clients, die nichts
+        schicken (ältere Versionen), zählen als steuernd.
   Bridge -> Client (jede Sekunde und nach Änderungen)
     {"type": "status", "switch": {"state", "detail"}, "capture": {...}, "clients": n}
 
@@ -61,6 +65,7 @@ DEFAULTS = {
 }
 MAX_MESSAGE = 64 * 1024
 CHANNEL_STALE = 0.5
+CONTROL_IDLE = 10.0                   # so lange darf niemand steuern, dann wird der Bluetooth-Controller abgelegt
 
 
 RECORD_PART = 100 * 1024              # Zeichen pro Teil der Aufzeichnung (Proxy: höchstens 256 KB)
@@ -121,6 +126,9 @@ class Bridge:
         self.video = VideoStreamer(cfg["video"], cfg.get("audio"))
         self.clients = {}                 # websocket -> letzter Eingabezustand
         self.channels = {}                # WebRTC-Datenkanal -> {"state", "seq", "seen"}
+        self.control = {}                 # websocket -> will steuern (True/False, None = nichts gemeldet)
+        self.control_changed = asyncio.Event()
+        self.controller.wanted = self.control_wanted
         self.video.on_channel = self.add_channel
         self.video.source.input_active = lambda: bool(self.controller.buttons)
         self.video.audio.input_active = self.video.source.input_active
@@ -214,6 +222,33 @@ class Bridge:
                 log.warning("Eingabe-Datenkanal ohne Lebenszeichen - Eingaben losgelassen")
                 self.apply_inputs()
 
+    # ------------------------------------------------------------------ Bluetooth nur, wenn jemand steuert
+    def control_wanted(self):
+        return any(active is not False for active in self.control.values())
+
+    async def control_watch(self):
+        """Legt den Bluetooth-Controller ab, wenn CONTROL_IDLE Sekunden niemand steuern will, und legt ihn
+        sofort wieder an, sobald jemand Touch-Steuerung oder einen Controller einschaltet."""
+        idle_since = None
+        while True:
+            try:
+                await asyncio.wait_for(self.control_changed.wait(), 0.5)
+            except asyncio.TimeoutError:
+                pass
+            self.control_changed.clear()
+            if self.control_wanted():
+                idle_since = None
+                if self.controller.paused:
+                    await self.controller.resume()
+                    await self.broadcast_status()
+                continue
+            now = time.monotonic()
+            if idle_since is None:
+                idle_since = now
+            elif now - idle_since >= CONTROL_IDLE and self.controller.can_pause():
+                await self.controller.pause()
+                await self.broadcast_status()
+
     def status_message(self):
         return json.dumps({
             "type": "status",
@@ -228,6 +263,8 @@ class Bridge:
     async def handle_client(self, websocket):
         peer = websocket.remote_address[0] if websocket.remote_address else "?"
         self.clients[websocket] = None
+        self.control[websocket] = None
+        self.control_changed.set()
         log.info("Client verbunden: %s (%d aktiv)", peer, len(self.clients))
         try:
             await websocket.send(self.status_message())
@@ -252,6 +289,12 @@ class Bridge:
                     ok, text = await self.controller.pair()
                     await websocket.send(json.dumps({"type": "info" if ok else "error", "message": text}))
                     await self.broadcast_status()
+                elif kind == "system" and msg.get("action") == "control":
+                    active = bool(msg.get("active"))
+                    if self.control.get(websocket) is not active:
+                        self.control[websocket] = active
+                        log.info("Client %s: Steuerung %s", peer, "an" if active else "aus (nur zuschauen)")
+                        self.control_changed.set()
                 elif kind == "system" and msg.get("action") == "capture_restart":
                     log.info("Capture-Card wird neu gestartet (angefordert von %s)", peer)
                     ok, text = await self.video.restart_capture()
@@ -267,6 +310,8 @@ class Bridge:
             pass
         finally:
             self.clients.pop(websocket, None)
+            self.control.pop(websocket, None)
+            self.control_changed.set()
             if self.clients:
                 self.apply_inputs()
             else:
@@ -279,7 +324,8 @@ class Bridge:
         if state == "start":
             info = self.video.record_info()
             info.update({"bridge": bridge_revision(), "console": self.controller.status().get("state"),
-                         "clients": len(self.clients), "channels": len(self.channels)})
+                         "clients": len(self.clients), "channels": len(self.channels),
+                         "control": sum(1 for active in self.control.values() if active is not False)})
             if hasattr(os, "getpriority"):
                 info["nice"] = os.getpriority(os.PRIO_PROCESS, 0)
             snap = self.system.snapshot()
@@ -349,7 +395,8 @@ class Bridge:
         # Bluetooth (nxbt) startet im Hintergrund: das kann mit mehreren Versuchen eine Weile dauern, die
         # Steuerverbindung (Status, Messwerte, Koppeln) soll aber sofort erreichbar sein.
         self.tasks = [asyncio.create_task(self.controller_main()), asyncio.create_task(self.status_loop()),
-                      asyncio.create_task(self.channel_watch()), asyncio.create_task(self.lag_watch())]
+                      asyncio.create_task(self.channel_watch()), asyncio.create_task(self.lag_watch()),
+                      asyncio.create_task(self.control_watch())]
         # Alles, was der Start angelegt hat (Module, OpenCV, aiortc), aus der Speicherbereinigung nehmen:
         # sonst durchsucht Python bei jedem vollen Durchlauf Hunderttausende Objekte und hält dabei alles an
         gc.freeze()
