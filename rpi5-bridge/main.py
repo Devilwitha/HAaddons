@@ -353,6 +353,7 @@ class Bridge:
             await asyncio.sleep(1.0)
             if REC.active:                # Sollwerte je Fenster (Bildqualität kann während der Aufzeichnung wechseln)
                 REC.value("tfps", self.video.webrtc_fps)
+                REC.value("jfps", self.video.jpeg_fps)
                 REC.value("cfps", self.video.source.actual[2] or None)
                 REC.value("views", len(self.video.pcs) or None)
                 REC.value("jviews", self.video.jpeg_clients or None)

@@ -99,6 +99,10 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   des HDMI-Signals (1080p60): die Bridge liest NV12 roh (`nv12`, sonst Rückfall wie bei JPEG), baut daraus das I420
   für aiortc (`nv12_to_i420`) und verkleinert auf die Größe der Bildqualität (`_scale_size`). Umrechnungen pro Bild
   einmal für alle Zuschauer (`_cached`: bgr, i420, jpeg).
+  **1080p60 nur für Einzelbilder** (`MODES["1080p60"]`: `send` 30 für WebRTC, `jpeg` 60, `jpeg_quality` ≤ 75):
+  `handle_frames` kodiert bis zu `JPEG_PIPELINE` = 2 Bilder gleichzeitig (`snapshot()` → `jpeg_frame(latest)` im
+  Thread-Pool), sendet in Aufnahme-Reihenfolge; `_cached` hält je Art `CACHE_ENTRIES` Futures (gleiches Bild nur
+  einmal, verschiedene parallel). Status/Aufzeichnung: `jpeg_fps` bzw. `jfps` neben `target_fps`/`tfps`.
 - **Aufzeichnung** (Messwerte → Aufzeichnung): `rpi5-bridge/recorder.py` (`REC`, Fenster zu 250 ms: `count`, `sample`
   = max/Summe/Anzahl, `event`, Log-Handler), Messpunkte in Capture, `_Vp8Codec.encode`, `CaptureTrack.recv`, `lag_watch`,
   nxbt-Aufrufen, Eingaben. WebSocket `{"type":"system","action":"record","state":"start"|"stop"}`; Antwort

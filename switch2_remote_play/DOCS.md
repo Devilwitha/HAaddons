@@ -75,7 +75,7 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
     mit Ton, im Heimnetz direkt vom Pi zum Gerät.
   - *Einzelbilder – Gerät dekodiert* (JPEG): Der Pi gibt einzelne JPEG-Bilder weiter, dein Gerät entpackt sie.
     Liefert die Capture-Card selbst JPEG, rechnet der Pi gar nichts (Messwerte: „durchgereicht“), sonst verpackt er
-    nur schnell als JPEG – deutlich weniger Arbeit als ein Videostrom, auch 1080p mit 60 fps. Läuft über Home
+    nur schnell als JPEG – deutlich weniger Arbeit als ein Videostrom, auch 1080p mit 60 fps (Bildqualität *1080p · 60 fps*). Läuft über Home
     Assistant und damit auch unterwegs, braucht aber mehr Datenrate (20–60 Mbit/s) und hat keinen Ton. Bei langsamer
     Leitung sinkt die Bildrate, das Bild bleibt aktuell.
 - **Ton:** kommt bei *Video* (WebRTC) von der Capture-Card mit (nicht bei Einzelbildern). Browser spielen Ton erst nach einer
@@ -96,8 +96,14 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
   - Beschriftung Xbox, PlayStation oder Pro Controller (wird erkannt, lässt sich umstellen). Beim Pro
     Controller passt *Nach Beschriftung* (A = A) – die Vorlage ist dann schon eingestellt.
   Die Belegung gilt pro Gerät und Browser.
-- **Messwerte:** oben **Bildqualität** (*720p · 60 fps* für wenig Verzögerung, *1080p · 30 fps* für ein
-  schärferes Bild; der Pi merkt sich die Wahl) und **Capture-Card neu starten** (setzt den USB-Anschluss der
+- **Messwerte:** oben **Bildqualität** (der Pi merkt sich die Wahl):
+  - *720p · 60 fps* – wenig Verzögerung, geht mit beiden Übertragungen
+  - *1080p · 30 fps* – schärferes Bild als Video
+  - *1080p · 60 fps* – scharf und flüssig, aber nur mit *Einzelbildern* (Video bleibt dabei bei 30 fps, mehr schafft
+    der Pi 5 mit H.264 nicht). Braucht im Heimnetz viel Datenrate (je nach Bild 50–150 Mbit/s, am besten LAN oder
+    5-GHz-WLAN); reicht sie nicht, sinkt die Bildrate, das Bild bleibt aktuell.
+
+  Außerdem **Capture-Card neu starten** (setzt den USB-Anschluss der
   Karte zurück, wie Aus- und Einstecken – hilft, wenn das Bild hängt oder die Karte kein Bild mehr liefert).
   Darunter, wo Verzögerung entsteht – am Pi (Bildrate der Capture-Card, gesendete Bilder,
   Bildalter, Kodieren), im Netz (Ping direkt und über Home Assistant) und im Browser (Datenrate, Puffer,

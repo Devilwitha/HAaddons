@@ -32,6 +32,7 @@ wartet, bis sie sich wieder angemeldet hat, und öffnet sie neu.
 """
 import asyncio
 import collections
+import concurrent.futures
 import errno
 import fractions
 import glob
@@ -75,6 +76,8 @@ RECONNECT_SECONDS = 2.0
 NO_SIGNAL_AFTER = 1.5               # so lange ohne Bild = kein Signal
 VIDEO_CLOCK = 90000
 JPEG_WINDOW = 2                     # so viele Einzelbilder dürfen unbestätigt unterwegs sein
+JPEG_PIPELINE = 2                   # so viele Einzelbilder kodiert der Pi gleichzeitig (1080p-JPEG dauert länger als 17 ms)
+CACHE_ENTRIES = 4                   # so viele Bilder pro Art (BGR, I420, JPEG) bleiben im Zwischenspeicher
 
 
 USBDEVFS_RESET = 0x5514              # _IO('U', 20)
@@ -82,13 +85,16 @@ REAPPEAR_SECONDS = 15.0             # so lange darf sich die Karte nach dem USB-
 BLANK_SPREAD = 12                   # Helligkeitsunterschied im Bild darunter = einfarbig (schwarz)
 BLANK_SECONDS = 5.0                 # so lange einfarbig = vermutlich kein HDMI-Signal (Konsole im Standby)
 
-# Bildqualität: Aufnahme (Breite, Höhe, fps der Capture-Card), gesendete Bilder pro Sekunde und höchste Bitrate.
-# 1080p kodiert der Pi 5 in Software nur mit etwa 30 Bildern pro Sekunde.
+# Bildqualität: Aufnahme (Breite, Höhe, fps der Capture-Card), gesendete Bilder pro Sekunde (send: Video/WebRTC,
+# jpeg: Einzelbilder, Vorgabe wie send) und höchste Bitrate. 1080p kodiert der Pi 5 als Video (H.264/VP8, Software)
+# nur mit etwa 30 Bildern pro Sekunde; JPEG ist viel weniger Arbeit, daher 1080p60 nur für Einzelbilder.
 MODES = {
     "720p60": {"label": "720p · 60 fps (schnell)", "width": 1280, "height": 720, "fps": 60, "send": 60,
                "bitrate": 6000000},
     "1080p30": {"label": "1080p · 30 fps (scharf)", "width": 1920, "height": 1080, "fps": 30, "send": 30,
                 "bitrate": 10000000},
+    "1080p60": {"label": "1080p · 60 fps (nur Einzelbilder, Video 30 fps)", "width": 1920, "height": 1080,
+                "fps": 60, "send": 30, "jpeg": 60, "jpeg_quality": 75, "bitrate": 10000000},
 }
 
 
@@ -480,8 +486,9 @@ class FrameSource:
         self.frame_time = 0.0
         # (id, BGR-Bild, JPEG der Karte, NV12 der Karte, Zeitpunkt) - jeweils None, wenn nicht vorhanden
         self._latest = (0, None, None, None, 0.0)
-        self._cache = {}
-        self._cache_locks = {"bgr": threading.Lock(), "i420": threading.Lock(), "jpeg": threading.Lock()}
+        self._cache = {kind: collections.OrderedDict() for kind in ("bgr", "i420", "jpeg")}
+        self._cache_locks = {kind: threading.Lock() for kind in self._cache}
+        self.quality_limit = 100          # Obergrenze der JPEG-Qualität aus der Bildqualität (1080p60: 75)
         self.state = "unavailable"
         self.detail = "noch nicht gestartet"
         self.actual = (0, 0, 0)
@@ -809,14 +816,31 @@ class FrameSource:
         return img
 
     def _cached(self, kind, key, make):
-        """Jedes Bild wird pro Art (BGR, I420, JPEG) höchstens einmal berechnet - mehrere Zuschauer teilen es."""
-        with self._cache_locks[kind]:
-            hit = self._cache.get(kind)
-            if hit is not None and hit[0] == key:
-                return hit[1]
-            value = make()
-            self._cache[kind] = (key, value)
-            return value
+        """Jedes Bild wird pro Art (BGR, I420, JPEG) höchstens einmal berechnet - mehrere Zuschauer teilen es.
+        Verschiedene Bilder dürfen gleichzeitig berechnet werden (Einzelbilder: zwei JPEGs parallel)."""
+        lock = self._cache_locks[kind]
+        entries = self._cache[kind]
+        with lock:
+            fut = entries.get(key)
+            owner = fut is None
+            if owner:
+                fut = concurrent.futures.Future()
+                entries[key] = fut
+                while len(entries) > CACHE_ENTRIES:
+                    entries.popitem(last=False)
+        if owner:
+            try:
+                fut.set_result(make())
+            except BaseException as err:
+                fut.set_exception(err)
+                with lock:
+                    if entries.get(key) is fut:
+                        del entries[key]
+        return fut.result()
+
+    def snapshot(self):
+        """Neuestes Bild (ID, BGR, JPEG der Karte, NV12, Aufnahmezeit) zum Weiterreichen an jpeg_frame."""
+        return self._latest
 
     def _nv12_planes(self, nv12):
         """Y- und UV-Ebene, auf die gewählte Bildqualität verkleinert."""
@@ -830,9 +854,9 @@ class FrameSource:
             uv = cv2.resize(uv, (size[0] // 2, size[1] // 2), interpolation=cv2.INTER_LINEAR)
         return y, uv
 
-    def bgr_frame(self):
-        """Neuestes Bild als BGR in der gewählten Größe, sonst das "Kein Signal"-Bild."""
-        frame_id, bgr, jpeg, nv12, _taken = self._latest
+    def bgr_frame(self, latest=None):
+        """Neuestes Bild (bzw. latest aus snapshot()) als BGR in der gewählten Größe, sonst das "Kein Signal"-Bild."""
+        frame_id, bgr, jpeg, nv12, _taken = latest or self._latest
         if frame_id <= 0 or self.state != "ok":
             return self.placeholder, -1
 
@@ -863,17 +887,19 @@ class FrameSource:
         # Farbumrechnung mit OpenCV (NEON-optimiert) statt im Encoder: spart pro Bild einige Millisekunden
         return self._cached("i420", key, lambda: cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)), frame_id, "yuv420p"
 
-    def jpeg_frame(self):
+    def jpeg_frame(self, latest=None):
         """(JPEG, Bild-ID, Aufnahmezeit, Sekunden fürs Umrechnen + Kodieren). Durchgereichte Bilder kosten nichts."""
-        frame_id, _bgr, jpeg, _nv12, taken = self._latest
+        latest = latest or self._latest
+        frame_id, _bgr, jpeg, _nv12, taken = latest
         if frame_id > 0 and self.state == "ok" and jpeg is not None:
             return jpeg, frame_id, taken, 0.0
         started = time.monotonic()
-        frame, frame_id = self.bgr_frame()
+        frame, frame_id = self.bgr_frame(latest)
         key = frame_id if frame_id != -1 else ("placeholder", id(frame))
+        quality = min(self.jpeg_quality, self.quality_limit)
 
         def make():
-            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
             return buf.tobytes() if ok else b""
 
         data = self._cached("jpeg", key, make)
@@ -1152,6 +1178,7 @@ class VideoStreamer:
         self.port = int(cfg.get("port", 8766))
         self.mjpeg_fps = int(cfg.get("mjpeg_fps", 30))
         self.webrtc_fps = int(cfg.get("webrtc_fps", 60))
+        self.jpeg_fps = self.webrtc_fps   # Einzelbilder pro Sekunde (1080p60: 60, Video dort 30)
         self.max_bitrate = int(cfg.get("webrtc_max_bitrate", 6000000))
         self.min_bitrate = int(cfg.get("webrtc_min_bitrate", 3000000))
         self.fixed_bitrate = bool(cfg.get("webrtc_fixed_bitrate", True))
@@ -1183,7 +1210,7 @@ class VideoStreamer:
         """Einstellungen und Zustand für den Kopf einer Aufzeichnung."""
         src = self.source
         info = {
-            "mode": self.mode, "webrtc_fps": self.webrtc_fps, "bitrate": self.max_bitrate,
+            "mode": self.mode, "webrtc_fps": self.webrtc_fps, "jpeg_fps": self.jpeg_fps, "bitrate": self.max_bitrate,
             "fixed_bitrate": self.fixed_bitrate, "threads": self.cfg.get("webrtc_threads", 4),
             "speed": self.cfg.get("webrtc_speed", -12), "encode_nice": ENCODE_NICE,
             "codec": self.codec_in_use, "h264": H264_PRESET if HAVE_X264 else None,
@@ -1219,6 +1246,8 @@ class VideoStreamer:
         mode = MODES[key]
         self.mode = key
         self.webrtc_fps = mode["send"]
+        self.jpeg_fps = mode.get("jpeg", mode["send"])
+        self.source.quality_limit = mode.get("jpeg_quality", 100)
         set_h264_fps(self.webrtc_fps)
         set_bitrate(max(mode["bitrate"], self.max_bitrate if key == "720p60" else 0), self.min_bitrate,
                     self.fixed_bitrate)
@@ -1336,12 +1365,16 @@ class VideoStreamer:
 
     async def handle_frames(self, request):
         """Einzelbilder über WebSocket: der Browser dekodiert (createImageBitmap), der Pi kodiert höchstens
-        JPEG oder reicht das JPEG der Capture-Card durch. Neue Bilder gibt es erst nach Bestätigung."""
+        JPEG oder reicht das JPEG der Capture-Card durch. Neue Bilder gibt es erst nach Bestätigung.
+
+        Bis zu JPEG_PIPELINE Bilder werden gleichzeitig kodiert (im Thread-Pool, OpenCV gibt dabei den GIL frei):
+        ein 1080p-JPEG braucht auf dem Pi 5 etwa so lange wie ein Bild bei 60 fps dauert - nacheinander kodiert
+        reichte es nur für etwa 45 fps. Gesendet wird immer in der Reihenfolge der Aufnahme."""
         ws = web.WebSocketResponse(heartbeat=20, compress=False, max_msg_size=64 * 1024)
         await ws.prepare(request)
         loop = asyncio.get_running_loop()
         inflight = [0]
-        acked = asyncio.Event()
+        kick = asyncio.Event()                # Ack, neues Bild oder fertig kodiert: Schleife weiterlaufen lassen
 
         async def reader():
             async for msg in ws:
@@ -1353,47 +1386,81 @@ class VideoStreamer:
                     continue
                 if isinstance(data, dict) and data.get("type") == "ack":
                     inflight[0] = max(0, inflight[0] - 1)
-                    acked.set()
+                    kick.set()
 
         read_task = asyncio.create_task(reader())
+        read_task.add_done_callback(lambda _task: kick.set())
         self.jpeg_clients += 1
         log.info("Einzelbilder: Zuschauer %s verbunden", request.remote)
-        last_id = None
+        pending = collections.deque()         # Futures der gerade kodierten Bilder, in Aufnahme-Reihenfolge
+        frame_wait = None
+        last_taken = None                     # ID des zuletzt zum Kodieren genommenen Bildes
+        last_sent = None
+        submitted_at = 0.0
         next_at = 0.0
+        blocked_since = None                  # seit wann das Fenster voll ist (Bestätigung verloren?)
         try:
             while not ws.closed and not read_task.done():
-                if inflight[0] >= JPEG_WINDOW:
-                    acked.clear()
-                    try:
-                        await asyncio.wait_for(acked.wait(), 3.0)
-                    except asyncio.TimeoutError:
-                        inflight[0] = 0              # Bestätigung verloren: weitermachen statt hängen
-                    continue
+                kick.clear()
                 now = time.monotonic()
-                if now < next_at - 0.004:
-                    await asyncio.sleep(next_at - 0.004 - now)
-                await self.source.wait_frame(last_id, 1.0)
-                data, frame_id, taken, enc = await loop.run_in_executor(None, self.source.jpeg_frame)
-                if not data or (frame_id != -1 and frame_id == last_id):
+                # 1) Ältestes fertiges Bild senden, sobald das Fenster Platz hat
+                if pending and pending[0].done() and inflight[0] < JPEG_WINDOW:
+                    data, frame_id, taken, enc = pending.popleft().result()
+                    if not data or (frame_id != -1 and frame_id == last_sent):
+                        continue
+                    last_sent = frame_id
+                    sent = time.monotonic()
+                    head = {"id": frame_id, "enc": round(enc * 1000, 1), "pt": self.source.passthrough}
+                    if frame_id != -1:
+                        head["age"] = round((sent - taken) * 1000, 1)
+                        self.jpeg_stats.add("age", sent - taken)
+                        self.jpeg_stats.add("encode", enc)
+                        self.jpeg_stats.frame(sent)
+                        REC.count("jpeg")
+                        REC.sample("jpeg_enc", enc * 1000.0)
+                    raw_head = json.dumps(head).encode()
+                    await ws.send_bytes(len(raw_head).to_bytes(4, "big") + raw_head + data)
+                    inflight[0] += 1
                     continue
-                last_id = frame_id
-                sent = time.monotonic()
-                head = {"id": frame_id, "enc": round(enc * 1000, 1), "pt": self.source.passthrough}
-                if frame_id != -1:
-                    head["age"] = round((sent - taken) * 1000, 1)
-                    self.jpeg_stats.add("age", sent - taken)
-                    self.jpeg_stats.add("encode", enc)
-                    self.jpeg_stats.frame(sent)
-                    REC.count("jpeg")
-                    REC.sample("jpeg_enc", enc * 1000.0)
-                raw_head = json.dumps(head).encode()
-                await ws.send_bytes(len(raw_head).to_bytes(4, "big") + raw_head + data)
-                inflight[0] += 1
-                next_at = pace(next_at, sent, 1.0 / max(1, self.webrtc_fps))
+                if inflight[0] >= JPEG_WINDOW:
+                    blocked_since = blocked_since or now
+                    if now - blocked_since > 3.0:
+                        inflight[0] = 0               # Bestätigung verloren: weitermachen statt hängen
+                        blocked_since = None
+                        continue
+                else:
+                    blocked_since = None
+                # 2) Nächstes Bild zum Kodieren geben: höchstens JPEG_PIPELINE gleichzeitig und nicht mehr, als
+                #    nach den Bestätigungen gleich gesendet werden kann (sonst wären sie beim Senden schon alt)
+                timeout = 0.5
+                if len(pending) < JPEG_PIPELINE and inflight[0] + len(pending) <= JPEG_WINDOW:
+                    period = 1.0 / max(1, self.jpeg_fps)
+                    ok = self.source.state == "ok"
+                    fresh = ok and self.source.frame_id != last_taken
+                    if now < next_at - 0.004:
+                        timeout = next_at - 0.004 - now   # Bildrate begrenzen (z. B. 30 von 60 fps der Karte)
+                    elif fresh or (not ok and now - submitted_at >= 1.0):
+                        snap = self.source.snapshot()
+                        last_taken = snap[0]
+                        submitted_at = now
+                        fut = loop.run_in_executor(None, self.source.jpeg_frame, snap)
+                        fut.add_done_callback(lambda _fut: kick.set())
+                        pending.append(fut)
+                        next_at = pace(next_at, now, period)
+                        continue
+                    elif frame_wait is None or frame_wait.done():
+                        frame_wait = asyncio.ensure_future(self.source.wait_frame(last_taken, 1.0))
+                        frame_wait.add_done_callback(lambda _task: kick.set())
+                try:
+                    await asyncio.wait_for(kick.wait(), timeout)
+                except asyncio.TimeoutError:
+                    pass
         except (ConnectionResetError, asyncio.CancelledError):
             pass
         finally:
             read_task.cancel()
+            if frame_wait is not None:
+                frame_wait.cancel()
             self.jpeg_clients -= 1
             log.info("Einzelbilder: Zuschauer %s getrennt", request.remote)
         return ws
@@ -1406,7 +1473,7 @@ class VideoStreamer:
                 "mjpeg_fps": self.mjpeg_stats.fps(),
                 "webrtc_clients": len(self.pcs),
                 "audio": self.audio.status(),
-                "mode": self.mode, "modes": self.modes(), "target_fps": self.webrtc_fps,
+                "mode": self.mode, "modes": self.modes(), "target_fps": self.webrtc_fps, "jpeg_fps": self.jpeg_fps,
                 "codec": self.codec_in_use if self.pcs else None, "codecs": ["h264", "vp8"] if HAVE_X264 else ["vp8"]}
 
     async def handle_snapshot(self, _request):

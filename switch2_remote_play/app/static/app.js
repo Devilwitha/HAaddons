@@ -887,7 +887,8 @@
     }
     // Ampel nach der gewählten Bildqualität (60 oder 30 fps), ältere Bridges ohne Angabe: 60
     const capTarget = cap.target_fps || 60;
-    const sendTarget = stream.target_fps || 60;
+    // Einzelbilder haben eine eigene Bildrate (1080p · 60 fps: Einzelbilder 60, Video 30)
+    const sendTarget = (mode === "jpeg" ? stream.jpeg_fps : 0) || stream.target_fps || 60;
     // z. B. „1920×1080 · 60 fps · NV12 → 1280×720“: die Karte liefert das HDMI-Signal, der Pi verkleinert
     const capText = cap.width + "×" + cap.height + " · " + cap.fps + " fps" + (cap.format ? " · " + cap.format : "")
       + (Array.isArray(cap.scaled) ? " → " + cap.scaled[0] + "×" + cap.scaled[1] : "");
@@ -920,7 +921,7 @@
         grade(-jp.fps, -Math.min(sendTarget - 5, wanted - 5), -(sendTarget / 2 - 5)));
       setVal("sv-age", ms(jp.age), grade(jp.age, 20, 40));
       setVal("sv-convert", "–");
-      setVal("sv-encode", through ? "0 ms (durchgereicht)" : ms(jp.encode) + " (JPEG)", through ? "good" : grade(jp.encode, 8, 16));
+      setVal("sv-encode", through ? "0 ms (durchgereicht)" : ms(jp.encode) + " (JPEG)", through ? "good" : grade(jp.encode, 1000 / sendTarget, 2000 / sendTarget));   // zwei JPEGs gleichzeitig
     } else {
       setVal("sv-sent", "–");
       ["sv-age", "sv-convert", "sv-encode"].forEach((id) => setVal(id, "–"));
@@ -1416,7 +1417,9 @@
   function buildReport(r, bridge, note) {
     const W = REC_WINDOW_MS / 1000;
     const info = (bridge && bridge.info) || {};
-    const target = info.webrtc_fps || (lastStatus && lastStatus.stream && lastStatus.stream.target_fps) || 60;
+    const jpegRec = r.info.mode === "jpeg";
+    const st = (lastStatus && lastStatus.stream) || {};
+    const target = (jpegRec ? info.jpeg_fps || st.jpeg_fps : 0) || info.webrtc_fps || st.target_fps || 60;
     const cardFps = (Array.isArray(info.actual) && info.actual[2]) || 60;
     const budget = 1000 / target;
     const pi = new Map();
@@ -1459,7 +1462,7 @@
     let vCur = Math.max(1, (r.info.mode === "jpeg" ? info.jpeg_clients : info.webrtc_clients) || 1);
     for (let i = 0; i < count; i += 1) {
       const v = pi.get(i);
-      if (v && v.tfps) tCur = v.tfps;
+      if (v && (jpegRec ? v.jfps || v.tfps : v.tfps)) tCur = jpegRec ? v.jfps || v.tfps : v.tfps;
       if (v && v.cfps) cCur = v.cfps;
       if (v && v[viewKey]) vCur = v[viewKey];
       if (v) v.sentpv = (v[sentKey] || 0) / Math.max(1, vCur);
@@ -1519,6 +1522,8 @@
       const lag = max(piRange.map((v) => num(v.lag)));
       const nx = max(piRange.map((v) => num(v.nxbt)));
       const enc = max(piRange.map((v) => num(v.enc)));
+      // Einzelbilder: der Pi kodiert zwei JPEGs gleichzeitig – erst über der doppelten Zeit pro Bild sinkt die Bildrate
+      const jenc = jpegRec ? max(piRange.map((v) => num(v.jpeg_enc))) : null;
       const es = max(piRange.map((v) => num(v.encsend)));
       const kf = sum(piRange.map((v) => v.kf || 0));
       const sent = min(piRange.map((v) => fps(v.sentpv || 0)));
@@ -1566,6 +1571,7 @@
         if (lag != null && lag > 17) { list.push("Bridge hing " + ms(lag)); cats.push("Bridge-Hänger"); }
         if (nx != null && nx > 15) { list.push("nxbt-Aufruf blockierte " + ms(nx)); cats.push("nxbt"); }
         if (enc != null && enc > budget) { list.push("Kodieren dauerte " + ms(enc) + " (Zeit pro Bild " + ms(budget) + ")"); cats.push("Kodieren"); }
+        if (jenc != null && jenc > budget * 2) { list.push("JPEG kodieren dauerte " + ms(jenc) + " (zwei gleichzeitig, Grenze " + ms(budget * 2) + ")"); cats.push("Kodieren"); }
         if (kf > 0) { list.push(kf + "× Schlüsselbild"); cats.push("Schlüsselbild"); }
         if (es != null && es > budget * 2 && !(enc != null && enc > budget)) { list.push("Kodieren + Senden " + ms(es) + " (Warten in aiortc/Bridge)"); cats.push("Senden"); }
         if (!list.length && sent != null && sent < target * 0.85) { list.push("Pi sendete nur " + sent + " fps"); cats.push("Pi sendet zu wenig"); }
@@ -1650,7 +1656,8 @@
         L.push("       Kodieren       Ø " + ms(piMean("enc")) + ", max " + ms(max(piVals("enc"))) + " (Zeit pro Bild " + targets.map((t) => ms(1000 / t)).join(" bzw. ") + "), Schlüsselbilder " + sum(piCounts("kf")) + ", Encoder neu angelegt " + countKind("Pi", "encoder"));
         L.push("       Kodieren+Senden Ø " + ms(piMean("encsend")) + ", max " + ms(max(piVals("encsend"))) + "; Umrechnung Ø " + ms(piMean("conv")) + ", Bildalter Ø " + ms(piMean("age")));
       } else {
-        L.push("       JPEG           Ø " + ms(piMean("jpeg_enc")) + ", max " + ms(max(piVals("jpeg_enc"))));
+        L.push("       JPEG           Ø " + ms(piMean("jpeg_enc")) + ", max " + ms(max(piVals("jpeg_enc")))
+          + " (zwei gleichzeitig: reicht bis " + targets.map((t) => ms(2000 / t)).join(" bzw. ") + " pro Bild)");
       }
       L.push("       Hänger         max " + ms(max(piVals("lag"))) + ", über 15 ms: " + countKind("Pi", "lag") + "×");
       L.push("       nxbt           Ø " + ms(piMean("nxbt")) + ", max " + ms(max(piVals("nxbt"))) + ", über 15 ms: " + countKind("Pi", "nxbt") + "×");

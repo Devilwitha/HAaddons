@@ -1,5 +1,15 @@
 # Änderungen
 
+## 1.0.27
+
+- Neue Bildqualität **1080p · 60 fps** für die Übertragung *Einzelbilder*: Der Pi kodiert dafür zwei JPEG-Bilder
+  gleichzeitig. Ein 1080p-JPEG dauert auf dem Pi 5 etwa so lange, wie ein Bild bei 60 fps Zeit hat, nacheinander
+  reichte es nur für etwa 45 fps. JPEG-Qualität in dieser Stufe höchstens 75, sonst wird die Datenrate zu groß
+  (je nach Bild 50–150 Mbit/s). *Video* (WebRTC) bleibt in dieser Stufe bei 30 fps – mehr schafft der Pi mit
+  H.264 in 1080p nicht
+- Messwerte und Aufzeichnung bewerten Einzelbilder nach ihrer eigenen Bildrate
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.26
 
 - **Bluetooth nur, wenn jemand steuert:** Ist in keinem offenen Game Remote die Touch-Steuerung an (und kein
