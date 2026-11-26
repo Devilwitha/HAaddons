@@ -719,6 +719,21 @@
     setTimeout(() => { $("pair-btn").disabled = false; }, 5000);
   });
 
+  // Home-Taste über Home Assistant (Option home_button, z. B. ein Servo an der Konsole)
+  $("home-btn").addEventListener("click", async () => {
+    const btn = $("home-btn");
+    btn.disabled = true;
+    setTimeout(() => { btn.disabled = false; }, 3000);
+    try {
+      const res = await fetch("api/home_button", { method: "POST", cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) toast("Home-Taste gedrückt");
+      else toast(data.error || "Home-Taste fehlgeschlagen (" + res.status + ")", true);
+    } catch (err) {
+      toast("Home-Taste fehlgeschlagen: keine Verbindung zu Home Assistant", true);
+    }
+  });
+
   // ------------------------------------------------------------------ Bildqualität und Capture-Card
   $("video-mode").addEventListener("change", (ev) => {
     send({ type: "system", action: "video_mode", mode: ev.target.value });
@@ -1815,6 +1830,7 @@
       if (res.ok) Object.assign(config, await res.json());
     } catch (err) { /* Standardwerte */ }
     vpad.setHaptics(config.haptic_feedback);
+    $("home-btn").hidden = !config.home_button;
     setTouch(load("switch2-touch", config.default_touch_overlay), false);
     setBar(load("switch2-bar-collapsed", false));
     connect();

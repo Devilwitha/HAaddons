@@ -7,6 +7,7 @@ Aufgaben:
   - /video/<pfad>: HTTP-Weiterleitung an den Video-Server der Bridge
     (http://pi_host:pi_video_port/<pfad>), z. B. /video/offer (WebRTC-Signaling)
   - /video/frames: WebSocket-Weiterleitung der Einzelbilder (JPEG) von der Bridge
+  - /api/home_button: drückt die in home_button eingetragene Entität (z. B. ein Servo an der Home-Taste)
 
 Der Browser spricht dadurch nur mit Home Assistant - auch über HTTPS und Nabu Casa,
 ohne CORS und ohne direkten Zugriff auf IP und Ports des Pi. Ausnahme: Bei WebRTC laufen
@@ -29,6 +30,7 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 
+import ha_sensors
 from ha_sensors import Sensor, SensorHub
 
 OPTIONS_PATH = Path(os.environ.get("SWITCH2_OPTIONS", "/data/options.json"))
@@ -43,7 +45,12 @@ DEFAULTS = {
     "default_touch_overlay": True,
     "haptic_feedback": True,
     "use_mqtt": True,
+    "home_button": "",
 }
+# Home-Taste (Servo o. Ä.): Entität und der Dienst, der sie auslöst
+HOME_SERVICES = {"button": "press", "input_button": "press", "script": "turn_on"}
+HOME_ENTITY = re.compile(r"^(button|input_button|script)\.[a-z0-9_]+$")
+HOME_GAP = 3.0                        # Sekunden zwischen zwei Drücken
 STATS_PATH = Path(os.environ.get("SWITCH2_STATS", "/data/stats.json"))
 VERSION = os.environ.get("SWITCH2_VERSION") or "dev"
 # Version in den Adressen von Skripten/Stylesheets: Nach einem Update lädt der Browser sie sicher neu
@@ -90,6 +97,11 @@ def load_options():
     options["default_touch_overlay"] = bool(options["default_touch_overlay"])
     options["haptic_feedback"] = bool(options["haptic_feedback"])
     options["use_mqtt"] = bool(options["use_mqtt"])
+    home = str(options.get("home_button") or "").strip().lower()
+    if home and not HOME_ENTITY.match(home):
+        log.warning("home_button „%s“ ist keine button-, input_button- oder script-Entität - Home-Taste aus", home)
+        home = ""
+    options["home_button"] = home
     return options
 
 
@@ -223,8 +235,37 @@ async def api_config(request):
         "stream_mode": options["stream_mode"],
         "default_touch_overlay": options["default_touch_overlay"],
         "haptic_feedback": options["haptic_feedback"],
+        "home_button": bool(options["home_button"]),
         "version": VERSION,
     }))
+
+
+async def api_home_button(request):
+    """Drückt die Entität aus home_button über die REST-API von Home Assistant (höchstens alle HOME_GAP s)."""
+    entity = request.app["options"]["home_button"]
+    if not entity:
+        return web.json_response({"error": "Keine Home-Taste eingerichtet (Option home_button)."}, status=404)
+    now = time.monotonic()
+    state = request.app["home"]                 # veränderbar: der Zustand der laufenden App selbst ist fest
+    if now - state["pressed"] < HOME_GAP:
+        return web.json_response({"error": "Home-Taste wurde gerade gedrückt – kurz warten."}, status=429)
+    state["pressed"] = now
+    domain = entity.split(".", 1)[0]
+    url = f"{ha_sensors.SUPERVISOR}/core/api/services/{domain}/{HOME_SERVICES[domain]}"
+    try:
+        async with request.app["session"].post(url, json={"entity_id": entity},
+                                               headers={"Authorization": f"Bearer {ha_sensors.TOKEN}"},
+                                               timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status >= 400:
+                text = (await resp.text())[:200]
+                log.warning("Home-Taste %s: Home Assistant antwortet %s %s", entity, resp.status, text)
+                return web.json_response({"error": f"Home Assistant antwortet {resp.status} – gibt es {entity}?"},
+                                         status=502)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        log.warning("Home-Taste %s: %s", entity, err)
+        return web.json_response({"error": f"Home Assistant nicht erreichbar: {err}"}, status=502)
+    log.info("Home-Taste gedrückt (%s) von %s", entity, player_of(request))
+    return no_cache(web.json_response({"ok": True}))
 
 
 def save_recording(name, data):
@@ -485,11 +526,13 @@ def make_app(options, ingress_only=True, stats=None, hub=None):
     app["stats"] = stats if stats is not None else Stats(STATS_PATH)
     app["tasks"] = set()
     app["publish_soon"] = publish_soon
+    app["home"] = {"pressed": -HOME_GAP}
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     app.router.add_get("/", index)
     app.router.add_get("/api/config", api_config)
     app.router.add_post("/api/recording", api_recording)
+    app.router.add_post("/api/home_button", api_home_button)
     app.router.add_get("/ws", ws_proxy)
     app.router.add_get("/video/frames", frames_proxy)
     app.router.add_route("*", "/video/{path:.*}", video_proxy)

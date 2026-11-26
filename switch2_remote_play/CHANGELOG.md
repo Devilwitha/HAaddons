@@ -1,5 +1,11 @@
 # Änderungen
 
+## 1.0.28
+
+- Neuer Knopf **⌂ Home-Taste** vorn in der oberen Leiste: drückt über Home Assistant eine Entität, z. B. einen Servo
+  an der Home-Taste der Konsole (weckt sie auch aus dem Standby). Neue Option `home_button` (`button.…`,
+  `input_button.…` oder `script.…`); ohne Eintrag bleibt der Knopf ausgeblendet. Höchstens alle 3 s
+
 ## 1.0.27
 
 - Neue Bildqualität **1080p · 60 fps** für die Übertragung *Einzelbilder*: Der Pi kodiert dafür zwei JPEG-Bilder

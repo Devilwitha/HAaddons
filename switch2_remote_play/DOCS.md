@@ -55,6 +55,7 @@ stehen in `/etc/switch2-bridge/config.yaml`, danach `sudo systemctl restart swit
 | `default_touch_overlay` | Touch-Gamepad beim ersten Öffnen anzeigen |
 | `haptic_feedback` | kurzes Vibrieren bei Tastendruck (Android) |
 | `use_mqtt` | Sensoren per MQTT als Gerät anlegen (Standard: an), sonst über die REST-API |
+| `home_button` | optional: Entität, die der Knopf **⌂ Home-Taste** drückt – `button.…`, `input_button.…` oder `script.…` (z. B. ein Servo an der Home-Taste der Konsole, weckt sie auch aus dem Standby). Leer = Knopf ausgeblendet |
 
 ## Schritt 3: Erstes Koppeln
 1. Auf der Konsole **Controller → Griffweise/Reihenfolge ändern** öffnen.
@@ -69,7 +70,7 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
 
 ## Bedienung
 - **Obere Leiste** (mit dem Pfeil einklappbar): Status von Bridge, Konsole, Capture und Ping,
-  Schalter **Touch-Steuerung**, **Controller**, **Ton**, **Messwerte**, **Konsole koppeln**, **Vollbild**.
+  **⌂ Home-Taste** (nur mit Option `home_button`), Schalter **Touch-Steuerung**, **Controller**, **Ton**, **Messwerte**, **Konsole koppeln**, **Vollbild**.
 - **Übertragung** (unter **Messwerte**, merkt sich der Browser):
   - *Video – Pi kodiert* (WebRTC): Der Pi komprimiert das Bild zu einem Videostrom. Wenig Datenrate (3–10 Mbit/s),
     mit Ton, im Heimnetz direkt vom Pi zum Gerät.
