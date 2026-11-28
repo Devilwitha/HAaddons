@@ -139,6 +139,10 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   höchstens 60 ms Puffer), nur solange jemand zuhört. Die Tonspur bekommt eine **eigene Stream-ID**
   (`sender._stream_id`), sonst gleicht der Browser Bild und Ton ab und verzögert das Bild. `audio.device`:
   `auto` (erste USB-Soundkarte mit Eingang), `off`, ALSA-Name; beim Testbild ein Piepton bei gedrückter Taste.
+  **Ton hängt** (Cam Link: `read error` nach längerem Betrieb, nur Neustecken half): `arecord` 3 s ohne Daten oder
+  `AUDIO_RESET_AFTER` = 3 Abbrüche hintereinander (Lauf < 20 s) → `on_stuck` = `_audio_stuck`: gehört die Soundkarte
+  zur Capture-Card, `source.restart()` (USB-Reset), sonst nur deren USB-Gerät. Höchstens alle 120 s, nach 3 erfolglosen
+  Neustarts Pause bis zu einem guten Lauf; `audio.auto_reset: false` schaltet ab, `resets` im Ton-Status.
 - **nxbt-Abstürze:** Ein abgestürzter Controller-Prozess hält den Adapter belegt („No adapters available“).
   Die Bridge beendet dann die nxbt-Prozesse selbst (`controllers.terminate()`, `resource_manager.shutdown()`,
   ohne `_on_exit`, das BlueZ neu starten würde) und legt `nxbt.Nxbt()` mit mehreren Versuchen neu an.

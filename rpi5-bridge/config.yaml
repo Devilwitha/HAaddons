@@ -39,6 +39,8 @@ audio:
   device: "auto"              # Ton der Capture-Card (nur über WebRTC): "auto" = erste USB-Soundkarte mit
                               # Eingang, "off" = kein Ton, oder ALSA-Name wie "plughw:CARD=Link4K,DEV=0"
                               # (Liste: arecord -l)
+  auto_reset: true            # bricht der Ton 3-mal hintereinander ab oder hängt, die Capture-Card per USB
+                              # neu verbinden (wie Aus- und Einstecken, Bild ca. 3 s schwarz)
 
 controller:
   enabled: true               # false = Testmodus ohne Bluetooth

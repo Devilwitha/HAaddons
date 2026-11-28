@@ -1,5 +1,14 @@
 # Änderungen
 
+## 1.0.29
+
+- Ton hängt: Bricht die Ton-Aufnahme am Pi 3-mal hintereinander ab (z. B. „read error“ der Cam Link) oder kommen
+  3 s lang keine Ton-Daten mehr, verbindet die Bridge die Capture-Card selbst per USB neu – wie Aus- und Einstecken.
+  Das Bild ist dabei etwa 3 s schwarz. Frühestens alle 2 Minuten, nach 3 erfolglosen Versuchen erst wieder,
+  wenn der Ton zwischendurch lief. Abschalten mit `audio: auto_reset: false` in `/etc/switch2-bridge/config.yaml`
+- Messwerte → Ton zeigt, wie oft die Karte automatisch neu verbunden wurde; die Aufzeichnung vermerkt es
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.28
 
 - Neuer Knopf **⌂ Home-Taste** vorn in der oberen Leiste: drückt über Home Assistant eine Entität, z. B. einen Servo

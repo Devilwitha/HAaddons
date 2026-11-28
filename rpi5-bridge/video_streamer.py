@@ -39,6 +39,7 @@ import glob
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -1022,6 +1023,11 @@ AUDIO_CHANNELS = 2
 AUDIO_SAMPLES = 960                 # 20 ms pro Paket (Opus)
 AUDIO_BYTES = AUDIO_SAMPLES * AUDIO_CHANNELS * 2
 AUDIO_BACKLOG = 3                   # höchstens 60 ms Ton puffern, Älteres wird verworfen
+AUDIO_STALL_SECONDS = 3.0           # so lange ohne Ton-Daten = arecord hängt
+AUDIO_GOOD_SECONDS = 20.0           # lief die Aufnahme so lange, gilt der Abbruch als einzelner Aussetzer
+AUDIO_RESET_AFTER = 3               # so viele Abbrüche hintereinander -> Capture-Card neu verbinden
+AUDIO_RESET_GAP = 120.0             # frühestens so lange nach dem letzten automatischen Neustart
+AUDIO_RESET_MAX = 3                 # hilft es so oft hintereinander nicht, aufgeben bis der Ton wieder läuft
 
 
 def find_audio_device():
@@ -1038,12 +1044,34 @@ def find_audio_device():
     return None
 
 
+def audio_usb_dir(device):
+    """sysfs-Ordner des USB-Geräts zur ALSA-Karte in "plughw:CARD=<id>,DEV=0" (None = unbekannt)."""
+    match = re.search(r"CARD=([^,]+)", device or "")
+    if not match:
+        return None
+    for card in Path("/proc/asound").glob("card[0-9]*"):
+        try:
+            if (card / "id").read_text(encoding="utf-8").strip() != match.group(1):
+                continue
+        except OSError:
+            continue
+        path = os.path.realpath(f"/sys/class/sound/{card.name}/device")
+        while not os.path.exists(os.path.join(path, "busnum")) and os.path.dirname(path) != path:
+            path = os.path.dirname(path)
+        return path if os.path.exists(os.path.join(path, "busnum")) else None
+    return None
+
+
 class AudioSource:
     """Ton der Capture-Card über arecord (ALSA), 48 kHz Stereo in Paketen zu 20 ms.
 
     Läuft nur, solange mindestens ein Browser per WebRTC zuhört. device: "auto" sucht die erste
     USB-Soundkarte mit Eingang, "off" schaltet den Ton ab, "test" erzeugt einen Piepton, solange
-    eine Taste gedrückt ist (zum Testen ohne Capture-Card)."""
+    eine Taste gedrückt ist (zum Testen ohne Capture-Card).
+
+    Bricht arecord mehrmals hintereinander ab oder liefert keine Daten mehr (Cam Link nach längerem Betrieb),
+    ruft die Quelle on_stuck auf: die Bridge verbindet die Capture-Card per USB-Reset neu, wie Aus- und
+    Einstecken (auto_reset: false schaltet das ab)."""
 
     def __init__(self, cfg, test_pattern=False):
         device = str((cfg or {}).get("device", "auto")).strip() or "auto"
@@ -1053,6 +1081,12 @@ class AudioSource:
         self.detail = ""
         self.active_device = ""
         self.input_active = None
+        self.auto_reset = bool((cfg or {}).get("auto_reset", True))
+        self.on_stuck = None                # async (device) -> (ok, text), von VideoStreamer gesetzt
+        self.resets = 0                     # automatische Neustarts seit dem Start
+        self._failures = 0
+        self._resets_in_row = 0
+        self._last_reset = -AUDIO_RESET_GAP
         self._queues = set()
         self._task = None
 
@@ -1084,14 +1118,54 @@ class AudioSource:
                     self.detail = "keine Ton-Quelle gefunden (Capture-Card ohne Audio?)"
                     await asyncio.sleep(5)
                     continue
-                await self._record(device)
+                good = await self._record(device)
+                if good:
+                    self._failures = 0
+                    self._resets_in_row = 0
+                elif good is False:
+                    self._failures += 1
+                    if await self._maybe_reset(device):
+                        continue
                 if self._queues:
                     await asyncio.sleep(RECONNECT_SECONDS)
         finally:
             self.state = "off" if self.enabled else "disabled"
             self.active_device = ""
 
+    async def _maybe_reset(self, device):
+        """Nach mehreren Abbrüchen hintereinander die Capture-Card neu verbinden. True = neu verbunden."""
+        if not (self.auto_reset and self.on_stuck) or self._failures < AUDIO_RESET_AFTER:
+            return False
+        if self._resets_in_row >= AUDIO_RESET_MAX:
+            if self._resets_in_row == AUDIO_RESET_MAX:
+                self._resets_in_row += 1
+                log.warning("Ton: %d automatische Neustarts der Capture-Card haben nicht geholfen - keine weiteren, "
+                            "bis der Ton wieder läuft. USB-Stecker ziehen oder arecord -l am Pi prüfen",
+                            AUDIO_RESET_MAX)
+            return False
+        if time.monotonic() - self._last_reset < AUDIO_RESET_GAP:
+            return False
+        self._last_reset = time.monotonic()
+        self._resets_in_row += 1
+        self.resets += 1
+        log.warning("Ton: arecord %d-mal hintereinander abgebrochen (%s) - verbinde die Capture-Card neu",
+                    self._failures, self.detail or device)
+        REC.event("audio", f"Ton hing ({self.detail}) - Capture-Card wird neu verbunden")
+        self.state = "unavailable"
+        self.detail = "Ton hing – Capture-Card wird neu verbunden"
+        try:
+            ok, text = await self.on_stuck(device)
+        except Exception as err:                  # noqa: BLE001 - Ton darf die Bridge nicht stoppen
+            ok, text = False, str(err)
+        self._failures = 0
+        log.info("Ton: Neustart der Capture-Card: %s", text)
+        REC.event("audio", f"Neustart der Capture-Card: {text}")
+        self.detail = (f"Capture-Card automatisch neu verbunden ({text})" if ok
+                       else f"Neustart fehlgeschlagen: {text}")
+        return ok
+
     async def _record(self, device):
+        """Eine arecord-Sitzung. True = lief lange genug, False = Abbruch, None = niemand hört mehr zu."""
         try:
             proc = await asyncio.create_subprocess_exec(
                 "arecord", "-q", "-D", device, "-f", "S16_LE", "-r", str(AUDIO_RATE), "-c", str(AUDIO_CHANNELS),
@@ -1101,24 +1175,35 @@ class AudioSource:
             self.state = "unavailable"
             self.detail = "arecord fehlt (Paket alsa-utils)"
             await asyncio.sleep(10)
-            return
+            return None
+        started = time.monotonic()
+        if not self.detail.startswith("Capture-Card automatisch"):
+            self.detail = ""                      # Hinweis auf den letzten Neustart stehen lassen
         self.state = "ok"
-        self.detail = ""
         self.active_device = device
         log.info("Ton-Aufnahme gestartet: %s", device)
         try:
             while self._queues:
-                self._publish(await proc.stdout.readexactly(AUDIO_BYTES))
+                self._publish(await asyncio.wait_for(proc.stdout.readexactly(AUDIO_BYTES), AUDIO_STALL_SECONDS))
+            return None
         except asyncio.IncompleteReadError:
-            err = (await proc.stderr.read()).decode("utf-8", "replace").strip()
+            try:
+                err = (await asyncio.wait_for(proc.stderr.read(), 2.0)).decode("utf-8", "replace").strip()
+            except asyncio.TimeoutError:
+                err = ""
             self.state = "unavailable"
             self.detail = (err.splitlines() or ["arecord beendet"])[-1][:200]
             log.warning("Ton-Aufnahme beendet: %s", self.detail)
+        except asyncio.TimeoutError:
+            self.state = "unavailable"
+            self.detail = f"Capture-Card liefert seit {AUDIO_STALL_SECONDS:.0f} s keinen Ton (arecord hängt)"
+            log.warning("Ton-Aufnahme: %s", self.detail)
         finally:
             if proc.returncode is None:
                 proc.kill()
             await proc.wait()
             log.info("Ton-Aufnahme gestoppt")
+        return time.monotonic() - started >= AUDIO_GOOD_SECONDS
 
     async def _run_test(self):
         self.state = "ok"
@@ -1140,7 +1225,7 @@ class AudioSource:
 
     def status(self):
         return {"state": self.state, "detail": self.detail, "device": self.active_device,
-                "listeners": len(self._queues)}
+                "listeners": len(self._queues), "resets": self.resets}
 
 
 class AudioTrack(MediaStreamTrack):
@@ -1186,6 +1271,7 @@ class VideoStreamer:
         self.source = FrameSource(cfg)
         self.mode = self._initial_mode(cfg)
         self.audio = AudioSource(audio_cfg, test_pattern=self.source.device == "test")
+        self.audio.on_stuck = self._audio_stuck
         self.pcs = set()
         # Wird von der Bridge gesetzt: on_channel(channel, pc) für den Eingabe-Datenkanal
         self.on_channel = None
@@ -1274,6 +1360,25 @@ class VideoStreamer:
 
     async def restart_capture(self):
         return await asyncio.get_running_loop().run_in_executor(None, self.source.restart)
+
+    async def _audio_stuck(self, device):
+        """Ton hängt: das USB-Gerät der Soundkarte neu verbinden. Ist es die Capture-Card (Normalfall), über
+        restart(), damit auch das Bild sauber geschlossen und neu geöffnet wird."""
+        def find():
+            audio_dir = audio_usb_dir(device)
+            try:
+                video_dir = usb_device_dir(self.source.current_device)
+            except OSError:
+                video_dir = None
+            return audio_dir, video_dir
+        loop = asyncio.get_running_loop()
+        audio_dir, video_dir = await loop.run_in_executor(None, find)
+        if audio_dir and video_dir and os.path.realpath(audio_dir) != os.path.realpath(video_dir):
+            ok, text = await loop.run_in_executor(None, usb_reset, audio_dir)
+            if ok:
+                await asyncio.sleep(3.0)          # Soundkarte meldet sich neu an
+            return ok, text.replace("Capture-Card", "Soundkarte")
+        return await self.restart_capture()
 
     def modes(self):
         items = [{"id": k, "label": m["label"]} for k, m in MODES.items()]

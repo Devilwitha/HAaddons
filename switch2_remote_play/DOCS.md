@@ -171,7 +171,7 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
 | Kein Bild, Capture gelb „schwarz“ | Die Capture-Card bekommt kein HDMI-Bild: Konsole im Standby oder Kabel/Dock prüfen |
 | Capture-Card nur ~20 fps, „Konsole auf 1080p stellen“ | Die Konsole gibt 4K aus; in ihren Einstellungen die TV-Auflösung auf 1080p stellen |
 | Bild hängt / Capture rot | Messwerte → **Capture-Card neu starten**. Meldet sie sich danach nicht zurück, USB-Stecker ziehen; verschwindet die Karte immer wieder von selbst, Netzteil (27 W) und USB-3-Anschluss prüfen (`dmesg | grep -i usb` am Pi) |
-| Kein Ton | Messwerte → **Ton** zeigt den Grund. Konsole auf Ton über TV/HDMI stellen; `arecord -l` am Pi muss die Capture-Card zeigen |
+| Kein Ton | Messwerte → **Ton** zeigt den Grund. Bricht der Ton immer wieder ab, verbindet die Bridge die Capture-Card selbst neu (höchstens alle 2 Minuten, abschaltbar mit `audio: auto_reset: false` am Pi); von Hand: **Capture-Card neu starten**. Konsole auf Ton über TV/HDMI stellen; `arecord -l` am Pi muss die Capture-Card zeigen |
 | Koppeln klappt nicht | Auf der Konsole *Griffweise/Reihenfolge ändern* offen lassen, einmal drücken, bis zu einer Minute warten; Protokoll: `journalctl -u switch2-bridge -n 80` |
 
 ## Entfernen

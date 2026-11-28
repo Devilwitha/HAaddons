@@ -1797,7 +1797,8 @@
     if (a && a.state === "unavailable") return [a.detail || "keine Ton-Quelle", "bad"];
     if (!soundWanted) return ["stumm", ""];
     if (audio.paused) return ["zum Abspielen einmal tippen", "warn"];
-    return ["läuft" + (a && a.device ? " (" + a.device + ")" : ""), "good"];
+    return ["läuft" + (a && a.device ? " (" + a.device + ")" : "")
+      + (a && a.resets ? " · Capture-Card " + a.resets + "× automatisch neu verbunden" : ""), "good"];
   }
 
   function updateSoundBtn() {
