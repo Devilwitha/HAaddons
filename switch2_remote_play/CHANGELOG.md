@@ -1,5 +1,13 @@
 # Änderungen
 
+## 1.0.30
+
+- **Ton auch bei Einzelbildern:** Der Ton der Capture-Card kommt jetzt auch, wenn das Bild als Einzelbilder über
+  Home Assistant läuft (unterwegs oder ohne WebRTC). Er wird unverpackt übertragen (etwa 1,5 Mbit/s zusätzlich) und
+  mit etwa 80 ms Vorlauf abgespielt; kommt er zu spät an, springt er nach vorn, statt hinter dem Bild herzulaufen.
+  Mit ausgeschaltetem Ton (🔇) wird er gar nicht erst geholt
+- Bridge mit `install.sh` aktualisieren
+
 ## 1.0.29
 
 - Ton hängt: Bricht die Ton-Aufnahme am Pi 3-mal hintereinander ab (z. B. „read error“ der Cam Link) oder kommen

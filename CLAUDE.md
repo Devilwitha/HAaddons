@@ -135,10 +135,14 @@ In sichtbaren Namen, Beschreibungen und Texten keine Marken-/Konsolennamen – n
   Ohne HDMI-Signal liefert die Cam Link evtl. weiter schwarze Bilder: `_check_blank` (Y-Stichprobe alle
   0,5 s) → `blank` (Sekunden) im Capture-Status, ab 5 s. Ganz ohne Bilder wartet OpenCV pro `read()` auf `select`:
   `OPENCV_VIDEOIO_V4L_SELECT_TIMEOUT=2` (Sekunden, Vorgabe 10) und `OPENCV_LOG_LEVEL=ERROR` vor `import cv2`.
-- **Ton** nur über WebRTC: Bridge liest die Capture-Card per `arecord` (alsa-utils, 48 kHz Stereo, 20-ms-Pakete,
+- **Ton**: Bridge liest die Capture-Card per `arecord` (alsa-utils, 48 kHz Stereo, 20-ms-Pakete,
   höchstens 60 ms Puffer), nur solange jemand zuhört. Die Tonspur bekommt eine **eigene Stream-ID**
   (`sender._stream_id`), sonst gleicht der Browser Bild und Ton ab und verzögert das Bild. `audio.device`:
   `auto` (erste USB-Soundkarte mit Eingang), `off`, ALSA-Name; beim Testbild ein Piepton bei gedrückter Taste.
+  Bei Einzelbildern: WebSocket `/audio` der Bridge (vom Add-on unter `video/audio` durchgereicht), rohes PCM s16le
+  48 kHz Stereo, eine Nachricht = 20 ms (~1,5 Mbit/s, Opus bräuchte WebCodecs, fehlt in älterem Safari). Der Browser
+  plant jedes Paket als `AudioBufferSourceNode` lückenlos hinter das vorige (`PCM_TARGET` 80 ms Vorlauf, über `PCM_MAX`
+  160 ms wird verworfen); Socket nur offen, solange Ton an ist (`startPcm`/`stopPcm` aus `applySound`).
   **Ton hängt** (Cam Link: `read error` nach längerem Betrieb, nur Neustecken half): `arecord` 3 s ohne Daten oder
   `AUDIO_RESET_AFTER` = 3 Abbrüche hintereinander (Lauf < 20 s) → `on_stuck` = `_audio_stuck`: gehört die Soundkarte
   zur Capture-Card, `source.restart()` (USB-Reset), sonst nur deren USB-Gerät. Höchstens alle 120 s, nach 3 erfolglosen

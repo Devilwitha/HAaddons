@@ -2,6 +2,7 @@
  *
  * - WebSocket "ws" (über den Ingress-Server an die Bridge): Eingaben senden, Status empfangen
  * - Video: WebRTC über "video/offer" (der Pi kodiert) oder Einzelbilder über den WebSocket "video/frames"
+ *   (Ton dann über den WebSocket "video/audio", abgespielt mit der Web Audio API)
  *   (JPEG, der Browser dekodiert). Wählbar unter Messwerte → Übertragung; kommt WebRTC nicht zustande
  *   (z. B. unterwegs über Nabu Casa), wird automatisch auf Einzelbilder gewechselt
  * - Eingaben aus Touch-Gamepad und echten Controllern (HTML5 Gamepad API) werden zusammengeführt
@@ -225,6 +226,7 @@
     }
     video.srcObject = null;
     audio.srcObject = null;
+    stopPcm();
     showVideo(null);
   }
 
@@ -233,6 +235,7 @@
     mode = wanted === "webrtc" && window.RTCPeerConnection ? "webrtc" : "jpeg";
     if (mode === "webrtc") startWebRTC();
     else startFrames();
+    applySound();
   }
 
   function fallbackToJpeg(reason) {
@@ -1785,20 +1788,107 @@
   });
 
   // ------------------------------------------------------------------ Ton
-  // Der Ton kommt als eigene WebRTC-Spur (nur bei WebRTC, nicht bei Einzelbildern). Browser spielen Ton erst nach
-  // einer Berührung oder einem Klick ab – darum startet er spätestens beim ersten Tippen auf die Seite.
+  // Bei WebRTC kommt der Ton als eigene Spur. Bei Einzelbildern holt der Browser ihn über den WebSocket "video/audio"
+  // (PCM 48 kHz, Stereo, 16 Bit, 20 ms pro Nachricht, ~1,5 Mbit/s, läuft wie die Bilder über Home Assistant) und spielt
+  // ihn mit der Web Audio API: jedes Paket wird lückenlos hinter das vorige gesetzt, etwa PCM_TARGET im Voraus. Läuft
+  // der Vorrat leer, beginnt er neu mit PCM_TARGET; wächst er über PCM_MAX (Paketstau, Uhren von Pi und Gerät laufen
+  // leicht verschieden), werden Pakete verworfen – der Ton bleibt so nah am Bild.
+  // Browser spielen Ton erst nach einer Berührung oder einem Klick ab – darum startet er spätestens beim ersten Tippen.
   let soundWanted = true;
   try { soundWanted = localStorage.getItem("sw2-sound") !== "off"; } catch (err) { /* ohne Speicher */ }
 
+  const PCM_RATE = 48000;
+  const PCM_TARGET = 0.08;                 // Sekunden Vorlauf nach einem Neubeginn
+  const PCM_MAX = 0.16;                    // mehr Vorlauf: Paket verwerfen
+  const pcm = { ws: null, ctx: null, next: 0, retry: null, last: 0, closed: "" };
+
+  function pcmContext() {
+    if (pcm.ctx) return pcm.ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    // iOS: Web-Audio-Ton auch bei Stummschalter auf „lautlos“ (wie ein Video)
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (err) { /* älteres iOS */ }
+    try {
+      pcm.ctx = new AC({ sampleRate: PCM_RATE, latencyHint: "interactive" });
+    } catch (err) {
+      pcm.ctx = new AC();                  // ältere Browser: eigene Abtastrate, Web Audio rechnet um
+    }
+    pcm.ctx.onstatechange = updateSoundBtn;
+    return pcm.ctx;
+  }
+
+  function playPcm(data) {
+    const ctx = pcm.ctx;
+    pcm.last = performance.now();
+    if (!ctx || ctx.state !== "running" || data.byteLength < 4) return;
+    const samples = new Int16Array(data, 0, data.byteLength >> 1);
+    const count = samples.length >> 1;
+    const buffer = ctx.createBuffer(2, count, PCM_RATE);
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+    for (let i = 0, j = 0; i < count; i += 1, j += 2) {
+      left[i] = samples[j] / 32768;
+      right[i] = samples[j + 1] / 32768;
+    }
+    const now = ctx.currentTime;
+    if (pcm.next < now + 0.005) pcm.next = now + PCM_TARGET;
+    else if (pcm.next > now + PCM_MAX) return;
+    const node = ctx.createBufferSource();
+    node.buffer = buffer;
+    node.connect(ctx.destination);
+    node.start(pcm.next);
+    pcm.next += count / PCM_RATE;
+  }
+
+  function startPcm() {
+    if (pcm.ws || mode !== "jpeg" || !soundWanted || !pcmContext()) return;
+    clearTimeout(pcm.retry);
+    const url = new URL("video/audio", location.href);
+    url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(url.href);
+    ws.binaryType = "arraybuffer";
+    pcm.ws = ws;
+    pcm.next = 0;
+    pcm.closed = "";
+    ws.onmessage = (ev) => { if (ws === pcm.ws && typeof ev.data !== "string") playPcm(ev.data); };
+    ws.onclose = (ev) => {
+      if (ws !== pcm.ws) return;
+      pcm.ws = null;
+      pcm.closed = ev.reason || "";
+      // 4000 = am Pi abgeschaltet: nicht ständig neu versuchen
+      pcm.retry = setTimeout(startPcm, ev.code === 4000 ? 30000 : 2000);
+      updateSoundBtn();
+    };
+  }
+
+  function stopPcm() {
+    clearTimeout(pcm.retry);
+    if (pcm.ws) {
+      const ws = pcm.ws;
+      pcm.ws = null;
+      try { ws.close(); } catch (err) { /* schon zu */ }
+    }
+    pcm.next = 0;
+  }
+
   function soundInfo() {
     const a = (lastStatus && lastStatus.stream && lastStatus.stream.audio) || null;
-    if (mode !== "webrtc") return ["Ton gibt es nur bei Übertragung „Video“", "warn"];
-    if (!audio.srcObject) return [a && a.state === "disabled" ? "am Pi abgeschaltet" : "keine Tonspur", "warn"];
+    const resets = a && a.resets ? " · Capture-Card " + a.resets + "× automatisch neu verbunden" : "";
+    if (a && a.state === "disabled") return ["am Pi abgeschaltet", "warn"];
+    if (mode === "jpeg") {
+      if (!window.AudioContext && !window.webkitAudioContext) return ["Browser kann keinen Ton abspielen", "warn"];
+      if (!soundWanted) return ["stumm", ""];
+      if (a && a.state === "unavailable") return [a.detail || "keine Ton-Quelle", "bad"];
+      if (!pcm.ws || pcm.ws.readyState !== WebSocket.OPEN) return [pcm.closed || "verbinde …", "warn"];
+      if (!pcm.ctx || pcm.ctx.state !== "running") return ["zum Abspielen einmal tippen", "warn"];
+      if (performance.now() - pcm.last > 1500) return ["keine Ton-Daten vom Pi", "warn"];
+      return ["läuft über Home Assistant" + (a && a.device ? " (" + a.device + ")" : "") + resets, "good"];
+    }
+    if (!audio.srcObject) return ["keine Tonspur", "warn"];
     if (a && a.state === "unavailable") return [a.detail || "keine Ton-Quelle", "bad"];
     if (!soundWanted) return ["stumm", ""];
     if (audio.paused) return ["zum Abspielen einmal tippen", "warn"];
-    return ["läuft" + (a && a.device ? " (" + a.device + ")" : "")
-      + (a && a.resets ? " · Capture-Card " + a.resets + "× automatisch neu verbunden" : ""), "good"];
+    return ["läuft" + (a && a.device ? " (" + a.device + ")" : "") + resets, "good"];
   }
 
   function updateSoundBtn() {
@@ -1811,6 +1901,12 @@
   function applySound() {
     audio.muted = !soundWanted;
     if (soundWanted && audio.srcObject && audio.paused) audio.play().then(updateSoundBtn, updateSoundBtn);
+    if (mode === "jpeg" && soundWanted) {
+      startPcm();
+      if (pcm.ctx && pcm.ctx.state !== "running") pcm.ctx.resume().then(updateSoundBtn, updateSoundBtn);
+    } else {
+      stopPcm();                           // niemand hört zu: der Pi beendet die Ton-Aufnahme
+    }
     updateSoundBtn();
   }
 
@@ -1821,6 +1917,7 @@
   });
   ["pointerdown", "keydown"].forEach((type) => document.addEventListener(type, () => {
     if (soundWanted && audio.srcObject && audio.paused) applySound();
+    if (soundWanted && mode === "jpeg" && pcm.ctx && pcm.ctx.state !== "running") applySound();
   }, true));
   setInterval(updateSoundBtn, 2000);
 

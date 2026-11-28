@@ -7,6 +7,7 @@ Aufgaben:
   - /video/<pfad>: HTTP-Weiterleitung an den Video-Server der Bridge
     (http://pi_host:pi_video_port/<pfad>), z. B. /video/offer (WebRTC-Signaling)
   - /video/frames: WebSocket-Weiterleitung der Einzelbilder (JPEG) von der Bridge
+  - /video/audio: WebSocket-Weiterleitung des Tons (PCM) für Einzelbilder
   - /api/home_button: drückt die in home_button eingetragene Entität (z. B. ein Servo an der Home-Taste)
 
 Der Browser spricht dadurch nur mit Home Assistant - auch über HTTPS und Nabu Casa,
@@ -362,10 +363,20 @@ async def ws_proxy(request):
 
 async def frames_proxy(request):
     """Einzelbilder der Bridge (WebSocket /frames) an den Browser, Bestätigungen zurück."""
+    return await pipe_bridge_ws(request, "frames", "Einzelbilder")
+
+
+async def audio_proxy(request):
+    """Ton der Bridge (WebSocket /audio, PCM in 20-ms-Paketen) für Browser ohne WebRTC."""
+    return await pipe_bridge_ws(request, "audio", "Ton")
+
+
+async def pipe_bridge_ws(request, path, label):
+    """WebSocket des Video-Servers der Bridge unverändert in beide Richtungen durchreichen."""
     options = request.app["options"]
     client = web.WebSocketResponse(heartbeat=20, compress=False, max_msg_size=WS_MAX_MESSAGE)
     await client.prepare(request)
-    target = f"ws://{bridge_host(options)}:{options['pi_video_port']}/frames"
+    target = f"ws://{bridge_host(options)}:{options['pi_video_port']}/{path}"
     try:
         async with request.app["session"].ws_connect(target, heartbeat=20, max_msg_size=FRAME_MAX_MESSAGE,
                                                      timeout=aiohttp.ClientWSTimeout(ws_close=5)) as upstream:
@@ -384,7 +395,7 @@ async def frames_proxy(request):
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
-        log.warning("Einzelbilder %s nicht erreichbar: %s", target, err)
+        log.warning("%s: %s nicht erreichbar: %s", label, target, err)
     if not client.closed:
         await client.close()
     return client
@@ -535,6 +546,7 @@ def make_app(options, ingress_only=True, stats=None, hub=None):
     app.router.add_post("/api/home_button", api_home_button)
     app.router.add_get("/ws", ws_proxy)
     app.router.add_get("/video/frames", frames_proxy)
+    app.router.add_get("/video/audio", audio_proxy)
     app.router.add_route("*", "/video/{path:.*}", video_proxy)
     app.router.add_static("/static/", STATIC_DIR)
     return app

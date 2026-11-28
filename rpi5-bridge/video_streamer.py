@@ -7,13 +7,14 @@ HTTP-Server (Standard-Port 8766):
                       + JSON-Kopf {id, age, enc, pt} + JPEG. Der Browser bestätigt gezeichnete Bilder mit
                       {"type": "ack"}; höchstens JPEG_WINDOW Bilder sind unterwegs – so passt sich die Bildrate
                       der Leitung an, statt dass sich Bilder aufstauen (auch über Home Assistant/unterwegs).
+  GET  /audio         WebSocket mit dem Ton für Einzelbilder: PCM 48 kHz, Stereo, 16 Bit, 20 ms pro Nachricht
   GET  /stream.mjpg   MJPEG-Stream (multipart/x-mixed-replace)
   GET  /snapshot.jpg  einzelnes Bild
   GET  /status        Zustand der Capture-Card als JSON
 
 Ton: Bringt das WebRTC-Angebot eine Tonspur mit, nimmt die Bridge den Ton der Capture-Card per arecord
 auf (siehe AudioSource). Die Tonspur bekommt eine eigene Stream-ID, damit der Browser das Bild nicht
-zugunsten der Lippensynchronität verzögert.
+zugunsten der Lippensynchronität verzögert. Ohne WebRTC holt der Browser den Ton über /audio.
 
 Die Capture-Card wird im MJPEG-Format geöffnet (geringste USB-Latenz). Liefert sie wirklich JPEG, werden
 die Bilder unverändert durchgereicht (jpeg_passthrough): für Einzelbilder kodiert der Pi dann gar nichts,
@@ -1570,6 +1571,38 @@ class VideoStreamer:
             log.info("Einzelbilder: Zuschauer %s getrennt", request.remote)
         return ws
 
+    async def handle_audio(self, request):
+        """Ton ohne WebRTC (Übertragung Einzelbilder, läuft über Home Assistant): PCM 48 kHz Stereo 16 Bit
+        (little endian) in Paketen zu 20 ms, etwa 1,5 Mbit/s. Kommt die Leitung nicht mit, verwirft die Warteschlange
+        der AudioSource ältere Pakete - der Ton bleibt aktuell. Der Browser spielt ihn mit der Web Audio API ab."""
+        ws = web.WebSocketResponse(heartbeat=20, compress=False, max_msg_size=4096)
+        await ws.prepare(request)
+        if not self.audio.enabled:
+            await ws.close(code=4000, message=b"Ton am Pi abgeschaltet")
+            return ws
+
+        async def reader():
+            async for _msg in ws:
+                pass
+
+        read_task = asyncio.create_task(reader())
+        queue = self.audio.subscribe()
+        log.info("Ton über WebSocket: %s verbunden", request.remote)
+        try:
+            while not ws.closed and not read_task.done():
+                try:
+                    data = await asyncio.wait_for(queue.get(), 1.0)
+                except asyncio.TimeoutError:
+                    continue
+                await ws.send_bytes(data)
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        finally:
+            read_task.cancel()
+            self.audio.unsubscribe(queue)
+            log.info("Ton über WebSocket: %s getrennt", request.remote)
+        return ws
+
     def stats(self):
         """Messwerte für den Status an den Browser."""
         return {"webrtc": self.webrtc_stats.snapshot() if self.pcs else None,
@@ -1595,6 +1628,7 @@ class VideoStreamer:
         app.router.add_post("/offer", self.handle_offer)
         app.router.add_get("/stream.mjpg", self.handle_mjpeg)
         app.router.add_get("/frames", self.handle_frames)
+        app.router.add_get("/audio", self.handle_audio)
         app.router.add_get("/snapshot.jpg", self.handle_snapshot)
         app.router.add_get("/status", self.handle_status)
         self.runner = web.AppRunner(app, access_log=None)

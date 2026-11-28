@@ -51,7 +51,7 @@ stehen in `/etc/switch2-bridge/config.yaml`, danach `sudo systemctl restart swit
 | `pi_host` | IP-Adresse oder Hostname des Raspberry Pi 5 |
 | `pi_ws_port` | WebSocket-Port der Bridge (Standard 8765) |
 | `pi_video_port` | Video-Port der Bridge (Standard 8766) |
-| `stream_mode` | Vorgabe für die Übertragung: `webrtc` (Pi kodiert Video, mit Ton) oder `jpeg` (Einzelbilder, funktioniert überall). Umschalten auch unter **Messwerte → Übertragung** |
+| `stream_mode` | Vorgabe für die Übertragung: `webrtc` (Pi kodiert Video) oder `jpeg` (Einzelbilder, funktioniert überall), beide mit Ton. Umschalten auch unter **Messwerte → Übertragung** |
 | `default_touch_overlay` | Touch-Gamepad beim ersten Öffnen anzeigen |
 | `haptic_feedback` | kurzes Vibrieren bei Tastendruck (Android) |
 | `use_mqtt` | Sensoren per MQTT als Gerät anlegen (Standard: an), sonst über die REST-API |
@@ -77,11 +77,13 @@ Danach verbindet sich der Pi nach einem Neustart von selbst wieder, solange die 
   - *Einzelbilder – Gerät dekodiert* (JPEG): Der Pi gibt einzelne JPEG-Bilder weiter, dein Gerät entpackt sie.
     Liefert die Capture-Card selbst JPEG, rechnet der Pi gar nichts (Messwerte: „durchgereicht“), sonst verpackt er
     nur schnell als JPEG – deutlich weniger Arbeit als ein Videostrom, auch 1080p mit 60 fps (Bildqualität *1080p · 60 fps*). Läuft über Home
-    Assistant und damit auch unterwegs, braucht aber mehr Datenrate (20–60 Mbit/s) und hat keinen Ton. Bei langsamer
+    Assistant und damit auch unterwegs, braucht aber mehr Datenrate (20–60 Mbit/s, Ton dazu 1,5 Mbit/s). Bei langsamer
     Leitung sinkt die Bildrate, das Bild bleibt aktuell.
-- **Ton:** kommt bei *Video* (WebRTC) von der Capture-Card mit (nicht bei Einzelbildern). Browser spielen Ton erst nach einer
-  Berührung ab – einmal auf die Seite tippen. Bild und Ton werden nicht abgeglichen, damit das Bild nicht
-  wartet; der Ton kann dadurch ein paar Millisekunden hinterherhängen. Abschalten am Pi:
+- **Ton:** kommt von der Capture-Card – bei *Video* (WebRTC) direkt vom Pi, bei *Einzelbildern* über Home Assistant
+  (unverpackt, etwa 80 ms Vorlauf; kommt er zu spät an, werden alte Stücke übersprungen, damit er beim Bild bleibt).
+  Browser spielen Ton erst nach einer Berührung ab – einmal auf die Seite tippen. Bild und Ton werden nicht
+  abgeglichen, damit das Bild nicht wartet; der Ton kann dadurch etwas hinterherhängen. Ist der Ton
+  ausgeschaltet (🔇), holt die Seite ihn auch nicht vom Pi. Abschalten am Pi:
   `audio: device: "off"` in `/etc/switch2-bridge/config.yaml`.
 - **Touch-Gamepad:** zwei Analogsticks, A/B/X/Y, Steuerkreuz, L/ZL/R/ZR, −/+/HOME/Aufnahme.
   Mehrere Finger gleichzeitig (z. B. Stick und A) funktionieren.
@@ -140,7 +142,7 @@ Die Statistik liegt in `/data/stats.json` und ist im Backup des Add-ons enthalte
   Video selbst geht direkt vom Pi zum Browser. Das klappt im Heimnetz. Von unterwegs (z. B. über
   Nabu Casa) ist der Pi nicht direkt erreichbar – dann schaltet die Seite nach einigen Sekunden
   automatisch auf **Einzelbilder** um, die vollständig über Home Assistant laufen (mehr Bandbreite, etwas
-  mehr Verzögerung, kein Ton).
+  mehr Verzögerung).
 - **Geringe Verzögerung:** Bei WebRTC gehen auch die Eingaben über einen Datenkanal direkt vom Browser
   zum Pi (ohne Umweg über Home Assistant). Am wenigsten Verzögerung gibt es mit Kabel-LAN für Pi und
   PC/Konsole, einem Controller per USB und `webrtc_fps: 60` in `/etc/switch2-bridge/config.yaml`.
