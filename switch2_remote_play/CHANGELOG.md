@@ -1,5 +1,11 @@
 # Änderungen
 
+## 1.0.31
+
+- Messwerte-Fenster passt in seine Breite: lange Werte (z. B. Ton-Gerät, Capture-Format) brechen um, statt das
+  Fenster seitlich verschiebbar zu machen
+- Auswahl „Übertragung“: Hinweis „ohne Ton“ bei Einzelbildern entfernt (Ton gibt es seit 1.0.30 bei beiden)
+
 ## 1.0.30
 
 - **Ton auch bei Einzelbildern:** Der Ton der Capture-Card kommt jetzt auch, wenn das Bild als Einzelbilder über

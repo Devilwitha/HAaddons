@@ -80,9 +80,9 @@
       <button class="icon-btn" id="stats-close" type="button" aria-label="Schließen">&#10005;</button>
     </div>
     <div class="stats-actions" id="stats-actions">
-      <label class="field" title="Video: der Pi kodiert einen Videostrom (wenig Daten, mit Ton, nur im Heimnetz direkt). Einzelbilder: der Pi gibt JPEG-Bilder weiter, dein Gerät dekodiert sie (entlastet den Pi, läuft auch über Home Assistant/unterwegs, mehr Daten, ohne Ton).">Übertragung
+      <label class="field" title="Video: der Pi kodiert einen Videostrom (wenig Daten, nur im Heimnetz direkt). Einzelbilder: der Pi gibt JPEG-Bilder weiter, dein Gerät dekodiert sie (entlastet den Pi, läuft auch über Home Assistant/unterwegs, mehr Daten). Ton gibt es bei beiden.">Übertragung
         <select id="transport">
-          <option value="webrtc">Video – Pi kodiert (WebRTC, mit Ton)</option>
+          <option value="webrtc">Video – Pi kodiert (WebRTC)</option>
           <option value="jpeg">Einzelbilder – Gerät dekodiert (JPEG)</option>
         </select>
       </label>
@@ -99,6 +99,7 @@
               title="Schließt die Capture-Card, setzt ihren USB-Anschluss zurück (wie Aus- und Einstecken) und öffnet sie neu">Capture-Card neu starten</button>
     </div>
     <table class="map stats" id="stats-table">
+      <colgroup><col class="label"><col></colgroup>
       <tbody>
         <tr class="group"><th colspan="2">Raspberry Pi</th></tr>
         <tr><td title="Temperatur, Auslastung und Drosselung des Raspberry Pi – bei Hitze oder schwachem Netzteil taktet er herunter und das Bild ruckelt">Pi</td><td id="sv-system">–</td></tr>

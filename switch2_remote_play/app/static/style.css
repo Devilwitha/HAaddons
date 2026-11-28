@@ -239,7 +239,8 @@ body {
   z-index: 30;
   width: min(380px, calc(100vw - 20px));
   max-height: calc(100dvh - 84px);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -373,9 +374,18 @@ body {
   margin-top: 10px;
 }
 
+/* Feste Spalten: lange Werte (Ton-Gerät, Capture-Format …) brechen um, statt das Fenster seitlich zu verbreitern */
+.stats {
+  table-layout: fixed;
+}
+
+.stats col.label {
+  width: 40%;
+}
+
 .stats td:last-child {
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .stats tr.group th {
